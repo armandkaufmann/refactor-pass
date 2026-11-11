@@ -883,6 +883,7 @@ RUBY_SYMBOL_OPERATOR = re.compile(r":(?:%s)" % RUBY_OPERATOR)
 RUBY_VALUE_AFTER = re.compile(r"(?<![\w$@.:])(?:if|unless|elsif|while|until|and|or|not|when|in|return|then|do|"
                               r"else|case|yield|raise|next|break|puts|print|p|begin)$")
 RUBY_PAIRS = {"(": ")", "[": "]", "{": "}", "<": ">"}
+RUBY_NAME_CHARACTER = re.compile(r"\w|[^\x00-\x7f]")
 
 
 def ruby_value_may_start(line, i):
@@ -892,7 +893,8 @@ def ruby_value_may_start(line, i):
     before = line[:i].rstrip()
     if not before:
         return True
-    if before[-1] in "(,=!&|?:;{[+-*/%<>~^" or RUBY_VALUE_AFTER.search(before):
+    ends_name = before[-1] in "?!" and bool(RUBY_NAME_CHARACTER.match(before[-2:-1]))  # empty?, save!
+    if (before[-1] in "(,=!&|?:;{[+-*/%<>~^" and not ends_name) or RUBY_VALUE_AFTER.search(before):
         return True
     after = line[i + 1:i + 2]
     return (before[-1].isalnum() or before[-1] in "_?!") and i > 0 and line[i - 1].isspace() and \
@@ -1012,8 +1014,10 @@ def ruby_skeleton(lines):
                 code.append('"')
                 i += 1
                 continue
-            if c == "?" and (not before.rstrip() or before.rstrip()[-1] in "(,=[{" or
-                             RUBY_VALUE_AFTER.search(before.rstrip())):
+            # A ? straight after a name's character ends the name, as in next? and nil?; else after a
+            # bracket, an = or a word such as return, it can open a character, as ?a.
+            if c == "?" and not RUBY_NAME_CHARACTER.match(before[-1:]) and (
+                    not before.rstrip() or before.rstrip()[-1] in "(,=[{" or RUBY_VALUE_AFTER.search(before.rstrip())):
                 character = re.match(r"\?(?:\\.|[^\s\w])(?!\w)", line[i:])
                 if character:
                     code.append(mark("s" * len(character.group(0))))
