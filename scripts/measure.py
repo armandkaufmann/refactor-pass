@@ -677,7 +677,9 @@ def body_by_indent(lines, code, skip, start, with_end):
             last = i
             continue
         if indent_of(lines[i]) <= width:
-            if with_end and code[i].strip() == "end":
+            # Its end is at its own indentation: one further out ends the class around a method that has none,
+            # written on one line.
+            if with_end and code[i].strip() == "end" and indent_of(lines[i]) == width:
                 last = i
             break
         last = i

@@ -5,6 +5,7 @@
                    ["one_line", 29, 29, 1], ["area", 34, 35, 2], ["make", 38, 43, 6], ["tail", 49, 55, 6]],
  "scene.gd": [["short", 5, 6, 2], ["make", 8, 9, 2], ["long_one", 11, 19, 8], ["_ready", 21, 22, 2]],
  "orders.rb": [["initialize", 2, 4, 3], ["build", 6, 8, 3], ["long_one", 10, 16, 6], ["kw", 18, 23, 6], ["valid?", 25, 27, 3]],
+ "one-line.rb": [["initialize", 2, 4, 3], ["total", 6, 6, 1], ["size", 10, 10, 1]],
  "OrderController.php": [["__construct", 8, 12, 5], ["show", 15, 20, 5], ["cache", 22, 26, 5], ["filter", 30, 35, 6],
                          ["helper", 38, 41, 4]],
  "server.go": [["New", 10, 12, 3], ["Handle", 14, 19, 6], ["Map", 21, 27, 7], ["braces", 29, 34, 6]],
