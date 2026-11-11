@@ -479,29 +479,36 @@ def put(folder, get_files, source, target, force, dry_run):
         try:
             remove_tree(retired)
         except OSError as error:
-            say("Warning: the old copy, moved to %s, couldn't be removed (%s): remove it yourself." % (retired, error))
+            say("Warning: the old copy, moved to %s, couldn't be removed (%s): remove it yourself, as an agent may "
+                "load it as a second copy." % (retired, error.strerror or error))
     return action
 
 
 def remove_copy(folder, force, dry_run):
-    """Remove the files the record in folder lists, the record, Python's bytecode, and the folders left empty."""
+    """Remove the files the record in folder lists, the record, Python's bytecode, and the folders left empty:
+    the copy is moved aside first, so if that fails nothing has changed. Files it didn't install (only with
+    --force) are put back."""
     record = examine(folder, force)
     if record is None:
         raise Refusal("%s isn't there." % shown_path(folder))
     kept = [p for p in files_in(folder) if p not in record["files"]]
     if dry_run:
         return "would be removed" + (", but for the files it didn't install: " + ", ".join(kept) if kept else "")
+    retired = tempfile.mkdtemp(prefix=RETIRED, dir=os.path.dirname(folder))
+    os.rmdir(retired)
+    os.rename(folder, retired)
     for path in record["files"]:
-        full = os.path.join(folder, *path.split("/"))
+        full = os.path.join(retired, *path.split("/"))
         if os.path.isfile(full):
             os.remove(full)
-    os.remove(os.path.join(folder, RECORD))
-    for top, dirs, names in os.walk(folder, topdown=False):
+    os.remove(os.path.join(retired, RECORD))
+    for top, dirs, names in os.walk(retired, topdown=False):
         if os.path.basename(top) == BYTECODE:
             remove_tree(top)
         elif not os.listdir(top):
             os.rmdir(top)
     if kept:
+        os.rename(retired, folder)
         return "removed, but for the files it didn't install: " + ", ".join(kept)
     return "removed"
 
@@ -633,7 +640,7 @@ def run_install(args):
 
 def put_all(plan, targets, args, show_source):
     """Put each (folder, agents, source) of plan at targets[source], fetching each source once, and only when a
-    copy needs it."""
+    copy needs it. A copy that can't be written is a line of its own, and the others are still done."""
     failed = 0
     fetched = {}
     work = tempfile.mkdtemp(prefix="refactor-pass-install-")
@@ -653,6 +660,9 @@ def put_all(plan, targets, args, show_source):
             except Refusal as refusal:
                 failed += 1
                 say("  Refused: %s" % refusal)
+            except OSError as error:
+                failed += 1
+                say("  %s: couldn't write it: %s" % (shown_path(folder), error.strerror or error))
     finally:
         remove_tree(work)
     twice = [a for a in set(a for _, agents, _ in plan for a in agents)
@@ -745,6 +755,9 @@ def run_uninstall(args):
             done += 1
         except Refusal as refusal:
             failed += refused(refusal, args)
+        except OSError as error:
+            failed += 1
+            say("%s: couldn't remove it: %s" % (shown_path(folder), error.strerror or error))
     if not done and not failed:
         say("No copy of refactor-pass that this installer made was found.")
     return 1 if failed else 0
@@ -779,6 +792,9 @@ def main(argv=None):
         return 1
     except Refusal as refusal:
         say("Refused: %s" % refusal)
+        return 1
+    except OSError as error:
+        say("Couldn't go on: %s%s" % (error.strerror or error, " (%s)" % error.filename if error.filename else ""))
         return 1
 
 

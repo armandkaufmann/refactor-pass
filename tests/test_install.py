@@ -527,6 +527,37 @@ class Untrusted(unittest.TestCase):
         self.assertEqual(updated.code, 0, updated)
         self.assertIn("replaced v1.9.0", updated.out)
 
+    @unittest.skipIf(support.WINDOWS or (hasattr(os, "geteuid") and os.geteuid() == 0),
+                     "folder modes don't stop writing on Windows, nor for root")
+    def test_an_unwritable_folder_is_one_plain_line(self):
+        locked = support.new_folder("locked")
+        open_skills = support.new_folder("skills")
+        os.chmod(locked, 0o555)
+        try:
+            run = install("--source", Sources.tagged(), "--dir", locked, "--dir", open_skills)
+            self.assertEqual(run.code, 1, run)
+            self.assertIn("refactor-pass: couldn't write it: Permission denied", run.out)
+            self.assertNotIn("Traceback", repr(run))
+            self.assertTrue(os.path.isfile(os.path.join(open_skills, "refactor-pass", "SKILL.md")))
+            self.assertEqual(os.listdir(locked), [])
+            self.assertEqual(os.listdir(run.temp), [])
+        finally:
+            os.chmod(locked, 0o755)
+        # An existing copy whose folder can't be written: it stays whole.
+        skills, copy = Refusals.installed(self)
+        before = tree(copy)
+        os.chmod(skills, 0o555)
+        try:
+            run = install("update", "--dir", skills)
+            self.assertEqual(run.code, 1, run)
+            self.assertIn("couldn't write it", run.out)
+            self.assertEqual(tree(copy), before)
+            removed = install("uninstall", "--dir", skills)
+            self.assertIn("couldn't remove it", removed.out)
+            self.assertEqual(tree(copy), before)
+        finally:
+            os.chmod(skills, 0o755)
+
 
 class InstalledCopy(unittest.TestCase):
     """An installed copy works: its scripts run, the page template is found, and in a project it's left out."""
