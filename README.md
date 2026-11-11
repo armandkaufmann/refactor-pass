@@ -87,3 +87,8 @@ The smells and refactorings come from Fowler and Beck's catalogue in
 *Refactoring* and the authors who added to it; the measures and the
 priorities come from empirical studies of smells, churn and refactoring.
 [references/sources.md](references/sources.md) lists them all.
+
+## Licence
+
+It's under the MIT licence ([LICENSE](LICENSE)), so you're free to use,
+change and share it.
