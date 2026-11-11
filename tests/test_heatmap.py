@@ -247,9 +247,9 @@ class History(unittest.TestCase):
         NAIVE = "src/na" + chr(0xEF) + "ve.py"
         # Read from git alone, so no file system needs to hold them: no checkout.
         repo = support.Repo("odd")
-        names = ["src/with space.py", 'src/quote"d.py', NAIVE, "src/-dash.py"]
-        if not support.WINDOWS:  # Git for Windows refuses a backslash in a path.
-            names.append("src/back\\slash.py")
+        names = ["src/with space.py", NAIVE, "src/-dash.py"]
+        if not support.WINDOWS:  # Git for Windows refuses what a Windows name can't hold (core.protectNTFS):
+            names += ['src/quote"d.py', "src/back\\slash.py"]  # a backslash, or any of " : < > | ? *.
         repo.commit("2026-01-01", "Start", dict((name, lines(2)) for name in names))
         repo.commit("2026-01-02", "Grow", dict((name, lines(3)) for name in names))
         repo.commit("2026-01-03", "Move", rename={"src/with space.py": "src/still spaced.py"})
