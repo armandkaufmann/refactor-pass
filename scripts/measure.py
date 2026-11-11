@@ -664,6 +664,21 @@ def preprocessed(lines, code, began_inside, directive, continues):
     return result
 
 
+def string_holes(language, quotes, quote, before):
+    """What opens an interpolation's hole in a string that opens with quote, after the character before
+    it; or None."""
+    if quote == "`" and quotes == "regex":
+        return "${"
+    if quote in ('"', '"""'):
+        if language == "Kotlin":
+            return "${"
+        if language == "Swift":
+            return "\\("
+        if language == "C#" and before == "$":
+            return "{"
+    return None
+
+
 def skeleton(lines, comments, quotes, attributes=False, language=None):
     """Each line with its comments taken out and its strings' insides turned to "s", so brackets
     and code lines can be counted; and whether the line began inside a string or comment. With
@@ -674,9 +689,11 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
     out, began_inside = [], []
     state = None  # Inside: a block comment ("*/"), or a string (its closing quote).
     raw = None  # Inside a string with no escapes: its closing text.
-    # In JavaScript, a template literal's ${...} is code, up to the } that matches its {, and can hold strings
-    # and templates of its own: per ${ still open, how many braces are open inside it.
+    # An interpolation's hole in a string is code, up to the bracket that matches its own, and can hold strings
+    # of its own: JavaScript's template literal's ${...}, Kotlin's "${...}", Swift's "\(...)", C#'s $"{...}".
+    # Per hole still open: how many of its brackets are open inside it, its brackets, and the string it's in.
     templates = []
+    holes = None  # In a string with holes: what opens one (string_holes).
     opens_raw = RAW_STRING.get(language)
     for line in lines:
         began_inside.append(state is not None or bool(templates) or raw is not None)
@@ -699,15 +716,18 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
                     break
                 i, state = end + 2, None
             elif state:
-                if line[i] == "\\":
+                if holes == "{" and (line.startswith("{{", i) or line.startswith("}}", i)):
+                    code.append("ss")  # C#'s brace written twice is a brace.
                     i += 2
-                elif state == "`" and quotes == "regex" and line.startswith("${", i):
-                    code.append("ss")  # The template's own brackets aren't the code's.
-                    templates.append(0)
-                    i, state = i + 2, None
+                elif holes and line.startswith(holes, i):
+                    code.append("s" * len(holes))  # The hole's own brackets aren't the code's.
+                    templates.append([0, holes[-1], ")" if holes[-1] == "(" else "}", state, holes])
+                    i, state, holes = i + len(holes), None, None
+                elif line[i] == "\\":
+                    i += 2
                 elif line.startswith(state, i):
                     code.append(state)
-                    i, state = i + len(state), None
+                    i, state, holes = i + len(state), None, None
                     while language == "Kotlin" and line.startswith('"', i) and code[-1] == '"""':
                         i += 1  # Kotlin's raw string ends at the last """ of a run of quotes: """a""""
                 else:
@@ -726,6 +746,7 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
                 i = opened.end()
             elif line.startswith('"""', i) or line.startswith("'''", i):
                 state = line[i:i + 3]
+                holes = string_holes(language, quotes, state, line[i - 1:i])
                 code.append(state)
                 i += 3
             elif line[i] == "/" and quotes == "regex" and REGEX.match(line, i) and regex_may_start(code, out):
@@ -738,14 +759,15 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
                 i += len(literal.group(0)) if literal else 1
             elif line[i] in "\"'`":
                 state = line[i]
+                holes = string_holes(language, quotes, state, line[i - 1:i])
                 code.append(state)
                 i += 1
-            elif templates and line[i] == "}" and not templates[-1]:  # The end of a ${...}: back in its template.
-                code.append("s")
-                templates.pop()
-                i, state = i + 1, "`"
-            elif templates and line[i] in "{}":
-                templates[-1] += 1 if line[i] == "{" else -1
+            elif templates and line[i] == templates[-1][2] and not templates[-1][0]:  # A hole's end: back in
+                code.append("s")  # its string.
+                _, _, _, state, holes = templates.pop()
+                i += 1
+            elif templates and line[i] in templates[-1][1:3]:
+                templates[-1][0] += 1 if line[i] == templates[-1][1] else -1
                 code.append(line[i])
                 i += 1
             else:
@@ -753,7 +775,7 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
                 i += 1
         if state in ('"', "'") and quotes != "spans" and not line.rstrip().endswith("\\") and not (
                 language == "Rust" and state == '"'):
-            state = None  # Most languages end a one-quote string at the line's end; Rust's go on.
+            state = holes = None  # Most languages end a one-quote string at the line's end; Rust's go on.
         out.append("".join(code))
     if language in PREPROCESSED:
         out = preprocessed(lines, out, began_inside, *PREPROCESSED[language])

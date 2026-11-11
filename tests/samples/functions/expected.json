@@ -83,5 +83,6 @@
  "Annotated.java": [["toString", 4, 6, 3], ["cast", 9, 11, 3], ["parsesEmptyInput", 13, 15, 3],
                     ["Annotated", 17, 19, 3]],
  "Annotated.kt": [["getsTheBody", 4, 6, 3], ["`returns 404 (not found) for a missing path`", 9, 11, 3],
-                  ["body", 13, 15, 3], ["toImmutableSet", 18, 19, 2]]
+                  ["body", 13, 15, 3], ["toImmutableSet", 18, 19, 2]],
+ "Templates.kt": [["header", 1, 3, 3], ["footer", 5, 7, 3]]
 }
