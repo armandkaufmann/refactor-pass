@@ -80,7 +80,7 @@ It points at code to read; it doesn't judge it. What it gets wrong:
   - where a function ends by indentation, a line indented less than its
     body ends it there, as a misindented end does in Ruby;
   - between #if and #else, when each branch opens a function's body its
-    own way, only the first branch's opening is read;
+    own way, only the last branch is read, usually the #else;
   - a C function whose name sits indented on a line of its own, under its
     type, isn't found, nor a C++ constructor written in its class when the
     class's name is in capitals (RE()), as a macro's would be;
@@ -703,11 +703,12 @@ BRACKETS_IN = re.compile(r"[()\[\]{}]")
 
 def preprocessed(lines, code, began_inside, directive, continues):
     """The skeleton's lines with the preprocessor read: a directive's own brackets don't count, nor do those
-    of a conditional's later branches (#elif, #else) when its first branch leaves brackets open, as when
-    each branch opens a function's body its own way; those branches' lines are then set aside (began_inside),
-    so no function is found twice. A first branch that's balanced keeps the others, as alternatives written
-    in full. After #if 0 or #if false, the next branch counts instead. A bracket that doesn't count becomes
-    an s, so its line stays a code line."""
+    of a conditional's earlier branches when a branch leaves brackets open, as when each branch opens a
+    function's body its own way: the last branch is read, usually the #else that a build takes when it
+    names no platform, and the lines of those before it are set aside (began_inside), so no function is
+    found twice. A branch that's balanced keeps the others, as alternatives written in full. After #if 0
+    or #if false, the next branch counts instead. A bracket that doesn't count becomes an s, so its line
+    stays a code line."""
     result, frames, going_on = [], [], False
     for i, line in enumerate(lines):
         found = directive.match(line) if going_on or not began_inside[i] else None
@@ -716,13 +717,21 @@ def preprocessed(lines, code, began_inside, directive, continues):
             going_on = continues and line.rstrip().endswith("\\")
             if word in ("if", "ifdef", "ifndef"):
                 zero = line.split(word, 1)[1].strip() in ("0", "false")
-                frames.append({"skip": zero, "counting": not zero, "net": 0, "zero": zero})
+                frames.append({"skip": zero, "counting": not zero, "net": 0, "zero": zero, "lines": []})
             elif word in ("elif", "elseif", "else") and frames:
                 frame = frames[-1]
                 if frame["zero"]:
                     frame.update(zero=False, skip=False, counting=True, net=0)
-                elif frame["counting"]:
-                    frame.update(counting=False, skip=frame["net"] != 0)
+                elif frame["counting"] and frame["net"] != 0:  # Set the branch aside, and read the next.
+                    for k in frame["lines"]:
+                        result[k] = BRACKETS_IN.sub("s", code[k])
+                        began_inside[k] = True
+                    for outer in frames[:-1]:
+                        if outer["counting"]:
+                            outer["net"] -= frame["net"]
+                    frame.update(net=0, lines=[])
+                elif frame["counting"]:  # Balanced: the others are alternatives written in full.
+                    frame.update(counting=False)
             elif word == "endif" and frames:
                 frames.pop()
             result.append(BRACKETS_IN.sub("s", code[i]))
@@ -734,6 +743,7 @@ def preprocessed(lines, code, began_inside, directive, continues):
             for frame in frames:
                 if frame["counting"]:
                     frame["net"] += net
+                    frame["lines"].append(i)
             result.append(code[i])
     return result
 

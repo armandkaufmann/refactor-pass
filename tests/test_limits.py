@@ -100,10 +100,10 @@ class KnownLimits(unittest.TestCase):
     def test_a_line_indented_less_than_the_body(self):
         self.assertEqual(spans("misindented"), [["call", 2, 6, 5]])
 
-    def test_between_alternatives_the_first_is_read(self):
-        # Known limit, by design: today's behaviour. Each branch opens main's body its own way; the first is
+    def test_between_alternatives_the_last_is_read(self):
+        # Known limit, by design: today's behaviour. Each branch opens main's body its own way; the last is
         # read, wherever the program is built.
-        self.assertEqual(spans("alternatives"), [["umain", 2, 7, 6]])
+        self.assertEqual(spans("alternatives"), [["main", 4, 7, 4]])
 
     @unittest.expectedFailure
     def test_a_c_function_whose_name_sits_indented_on_its_own_line(self):
@@ -145,7 +145,7 @@ class KnownLimits(unittest.TestCase):
                       "follows a closing bracket or a name", "a line inside a PHP heredoc can count as code or not",
                       "an arrow function that returns JSX with no brackets around it ends at its first line",
                       "a line indented less than its body ends it there",
-                      "only the first branch's opening is read",
+                      "only the last branch is read",
                       "a C function whose name sits indented on a line of its own",
                       "a C++ constructor written in its class when the class's name is in capitals",
                       "nesting by indentation counts a continuation line"):
