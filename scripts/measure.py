@@ -112,11 +112,12 @@ C_SHAPES = C_SHAPE + r"|^" + NOT_A_TYPE + r"([A-Za-z_][\w~]*(?:::~?\w+)*)\s*\([^
 # (or its type parameters). What follows the parameters then says whether it's a function (js_function).
 # catch can be a method's name too, written with no space before its bracket, unlike the statement's; async
 # followed by a space starts an anonymous arrow function, such as a callback's.
-JS_FUNCTION = re.compile(r"^\s*(?:export\s+)?(?:default\s+)?(?:declare\s+)?(?:async\s+)?function\s*\*?\s*([\w$]+)")
+JS_FUNCTION = re.compile(r"^\s*(?:export\s+)?(?:default\s+)?(?:declare\s+)?(?:async\s+)?(function)(?![\w$])\s*\*?\s*"
+                         r"([\w$]+)")
 JS_METHOD = re.compile(r"^\s*(?:(?:public|private|protected|static|async|readonly|override|abstract|get|set|declare|"
                        r"accessor)\s+)*\*?\s*(?!(?:if|for|while|switch|function|return|with|else|do|typeof|void|"
-                       r"await|yield|new|case|import|super|instanceof)\b|catch\b(?!\()|async\s)"
-                       r"(#?[\w$]+|\[[^\]]*\])\s*\??\s*(?=[(<])")
+                       r"await|yield|new|case|import|super|instanceof)(?![\w$])|catch(?![\w$(])|async\s)"
+                       r"(#?[\w$]+|\[[^\]]*\])\??\s*(?=[(<])")
 # A name given a value: a variable or a class's property, typed or not; or an object literal's key.
 JS_ASSIGNED = re.compile(r"^\s*(?:export\s+)?(?:(?:const|let|var|public|private|protected|static|readonly|declare|"
                          r"override|accessor)\s+)*(#?[\w$]+)\s*!?\s*(?::(?:[^=]|=>)+)?=(?![=>])\s*")
@@ -126,13 +127,17 @@ JS_TYPED = re.compile(r"^\s*(?:export\s+)?(?:(?:const|let|var|public|private|pro
                       r"override|accessor)\s+)+(#?[\w$]+)\s*[?!]?\s*:\s*")
 # What's assigned: a function written out (its keyword, then an optional * and name), an arrow with one
 # bare parameter, or a named function wrapped in a call, such as React.memo(function Card(...) {...}).
-JS_EXPRESSION = re.compile(r"(?:async\s+)?function\b\s*\*?\s*[\w$]*\s*")
+# The keyword is a whole word: functional and functionName are names.
+JS_EXPRESSION = re.compile(r"(?:async\s+)?function(?![\w$])\s*\*?\s*[\w$]*\s*")
 JS_ONE_PARAMETER = re.compile(r"(?:async\s+)?[\w$]+\s*=>")
-JS_WRAPPED = re.compile(r"[\w.$]+\s*(?:<[^<>()]*>)?\(\s*(?=function\s*\*?\s*[\w$]+\s*[(<])")
-# A type that goes on past the end of its line: one that ends the line with an operator, an open bracket
-# or an arrow, or that the next line goes on with a union, an intersection, a chain or a conditional's ? or :.
-TYPE_GOES_ON = re.compile(r"(?:[|&:?.,<(\[{]|=>|\b(?:extends|keyof|typeof|is|as|in))\s*$")
+JS_WRAPPED = re.compile(r"[\w.$]+\s*(?:<[^<>()]*>)?\(\s*(?=function(?![\w$])\s*\*?\s*[\w$]+\s*[(<])")
+# A type that goes on past the end of its line (read from its last twelve characters): one that ends the
+# line with an operator, an open bracket or an arrow, or that the next line goes on with a union, an
+# intersection, a chain or a conditional's ? or :.
+TYPE_GOES_ON = re.compile(r"(?:[|&:?.,<(\[{]|=>|\b(?:extends|keyof|typeof|is|as|in))$")
 TYPE_GOES_ON_NEXT = re.compile(r"\s*[|&.?:]")
+# A statement that declares a type, whose braces hold its members.
+JS_TYPE_STATEMENT = re.compile(r"(?:export\s+)?(?:declare\s+)?(?:type|interface)\b")
 # A line that is only an object literal's key and its :, as before the { of an object nested in another.
 JS_KEY_ONLY = re.compile(r"\s*(?:[\w$]+|\[[^\]]*\]|\"s*\"|'s*')\s*\??\s*:$")
 # How far a parameter list or a return type may run: a component's destructured props, with their types, can
@@ -140,18 +145,65 @@ JS_KEY_ONLY = re.compile(r"\s*(?:[\w$]+|\[[^\]]*\]|\"s*\"|'s*')\s*\??\s*:$")
 SIGNATURE_LINES = 200
 
 
+# A file's brackets, worked out once per file (brackets_of).
+BRACKETS = {"code": None}
+BRACKET = re.compile(r"[()\[\]{}]")
+
+
+def brackets_of(code):
+    """The file's brackets: where each opening one closes; those left open at the start of each line, as
+    a linked stack ((line, column, bracket), the rest), so that each line keeps its own without a copy;
+    and how many more brackets each line opens than it closes, so a scan can pass a line whole. A closing
+    bracket closes the innermost one open, whichever kind it is."""
+    if BRACKETS["code"] is not code:
+        stacks, closes, net, stack = [], {}, [], None
+        for k, line in enumerate(code):
+            stacks.append(stack)
+            change = 0
+            for found in BRACKET.finditer(line):
+                if found.group() in OPEN:
+                    stack = ((k, found.start(), found.group()), stack)
+                    change += 1
+                else:
+                    change -= 1
+                    if stack is not None:
+                        closes[stack[0][:2]] = (k, found.end())
+                        stack = stack[1]
+            net.append(change)
+        BRACKETS.clear()
+        BRACKETS.update(code=code, stacks=stacks, closes=closes, net=net)
+    return BRACKETS
+
+
+def angle_counts(code):
+    """Each line's count of opening and of closing brackets, angle brackets included but not an arrow's >,
+    for scanning TypeScript's types and generics; worked out once per file, when first needed."""
+    brackets = brackets_of(code)
+    if "counts" not in brackets:
+        brackets["counts"] = [(sum(line.count(c) for c in "([{<"),
+                               sum(line.count(c) for c in ")]}>") - line.count("=>")) for line in code]
+    return brackets["counts"]
+
+
 def js_close(code, i, j, limit):
     """Where the bracket at code[i][j] closes: its line and the column after it, or None if it doesn't
     within limit lines. At a <, angle brackets count too, but not an arrow's >."""
-    angle = code[i][j] == "<"
+    if code[i][j] != "<":
+        end = brackets_of(code)["closes"].get((i, j))
+        return end if end and end[0] - i < limit else None
+    counts = angle_counts(code)
     depth = 0
     for k in range(i, min(len(code), i + limit)):
+        opening, closing = counts[k]
+        if k > i and closing < depth:  # It can't close in this line.
+            depth += opening - closing
+            continue
         line = code[k]
         for col in range(j if k == i else 0, len(line)):
             c = line[col]
-            if c in OPEN or (angle and c == "<"):
+            if c in OPEN or c == "<":
                 depth += 1
-            elif c in CLOSE or (angle and c == ">" and line[col - 1:col] != "="):
+            elif c in CLOSE or (c == ">" and line[col - 1:col] != "="):
                 depth -= 1
                 if depth <= 0:
                     return k, col + 1
@@ -177,8 +229,15 @@ def js_tail(code, k, col, want):
     end of its line an overload or an abstract method, where nothing follows to say so. A { just after
     the type's :, a | or an & or the word is opens an object type, not the body."""
     typed, depth, previous, word = False, 0, "", ""
+    counts = angle_counts(code)
     for i in range(k, min(len(code), k + SIGNATURE_LINES)):
         line = code[i]
+        if i > k and typed and 0 < depth and counts[i][1] < depth:  # Inside the type's brackets throughout.
+            depth += counts[i][0] - counts[i][1]
+            last = line.rstrip()
+            previous = last[-1:] or previous
+            word = re.search(r"[\w$]*$", last).group(0)
+            continue
         gap = True
         for j in range(col if i == k else 0, len(line)):
             c = line[j]
@@ -205,7 +264,7 @@ def js_tail(code, k, col, want):
             letter = c.isalnum() or c in "_$"
             word = (word + c if word and not gap else c) if letter else ""
             previous, gap = c, False
-        if typed and depth == 0 and not TYPE_GOES_ON.search(line):
+        if typed and depth == 0 and not TYPE_GOES_ON.search(line.rstrip()[-12:]):
             following = next((n for n in range(i + 1, min(len(code), i + 20)) if code[n].strip()), None)
             if following is None:
                 return None
@@ -255,30 +314,16 @@ def js_in_braces(code, i):
     return True
 
 
-# The brackets left open at the start of each line of the last file js_opener read, worked out once.
-OPEN_AT = {"code": None, "stacks": None}
-
-
 def js_opener(code, i, col):
     """The innermost bracket left open before code[i][col], as its line, column and character; None at the
     top level."""
-    if OPEN_AT["code"] is not code:
-        stacks, stack = [], []
-        for k, line in enumerate(code):
-            stacks.append(tuple(stack))
-            for at, c in enumerate(line):
-                if c in OPEN:
-                    stack.append((k, at, c))
-                elif c in CLOSE and stack:
-                    stack.pop()
-        OPEN_AT.update(code=code, stacks=stacks)
-    stack = list(OPEN_AT["stacks"][i])
+    stack = brackets_of(code)["stacks"][i]
     for at, c in enumerate(code[i][:col]):
         if c in OPEN:
-            stack.append((i, at, c))
-        elif c in CLOSE and stack:
-            stack.pop()
-    return stack[-1] if stack else None
+            stack = ((i, at, c), stack)
+        elif c in CLOSE and stack is not None:
+            stack = stack[1]
+    return stack[0] if stack is not None else None
 
 
 def js_in_object(code, i, col=0, depth=0):
@@ -297,9 +342,22 @@ def js_in_object(code, i, col=0, depth=0):
         return False
     if JS_KEY_ONLY.match(before):
         return depth < 8 and js_in_object(code, k, at, depth + 1)
-    if before.strip() == ":":
-        return True
-    return bool(re.search(r"(?:[=(,\[{?]|\|\||&&|\breturn|\bexport\s+default)$", before)) and not before.endswith("=>")
+    if not (before.strip() == ":" or re.search(r"(?:[=(,\[{?]|\|\||&&|\breturn|\bexport\s+default)$", before)) \
+            or before.endswith("=>"):
+        return False
+    # Braces at the top level whose statement is a type or an interface hold its members, as after the > = of
+    # generics split over lines, or the ? of a conditional type.
+    return js_opener(code, k, at) is not None or not JS_TYPE_STATEMENT.match(js_statement(code, k))
+
+
+def js_statement(code, k):
+    """The first line of the top-level statement that line k is part of: the nearest line at or above it
+    that starts at the margin with something other than a closing bracket or an operator."""
+    for n in range(k, max(-1, k - 200), -1):
+        line = code[n]
+        if line.strip() and not line[0].isspace() and line[0] not in ">)]}?:|&=.,":
+            return line
+    return ""
 
 
 def js_after_type(code, i, j):
@@ -307,8 +365,12 @@ def js_after_type(code, i, j):
     just after its =. None if the type ends some other way, as a declaration with no value does: with a ;,
     or at the end of a line it doesn't go on from."""
     depth = 0
+    counts = angle_counts(code)
     for k in range(i, min(len(code), i + 40)):
         line = code[k]
+        if k > i and 0 < depth and counts[k][1] < depth:  # Inside the type's brackets throughout.
+            depth += counts[k][0] - counts[k][1]
+            continue
         for col in range(j if k == i else 0, len(line)):
             c = line[col]
             if line.startswith("=>", col) or line[col - 1:col + 1] == "=>":  # A function type's arrow.
@@ -321,7 +383,7 @@ def js_after_type(code, i, j):
                     return None
             elif depth == 0 and c in ";,=":
                 return (k, col + 1) if c == "=" and line[col + 1:col + 2] != "=" else None
-        if depth == 0 and line[j if k == i else 0:].strip() and not TYPE_GOES_ON.search(line):
+        if depth == 0 and line[j if k == i else 0:].strip() and not TYPE_GOES_ON.search(line.rstrip()[-12:]):
             following = next((n for n in range(k + 1, min(len(code), k + 20)) if code[n].strip()), None)
             if following is None or not re.match(r"\s*(?:[|&.]|=(?![=>]))", code[following]):
                 return None
@@ -330,7 +392,8 @@ def js_after_type(code, i, j):
 
 def js_expression(code, i, j):
     """Where the body starts of the function written out from its keyword at code[i][j] on, or None."""
-    at = js_next(code, i, JS_EXPRESSION.match(code[i], j).end())
+    keyword = JS_EXPRESSION.match(code[i], j)
+    at = js_next(code, i, keyword.end()) if keyword else None
     return js_signature(code, at[0], at[1], "{", call=False) if at and code[at[0]][at[1]] in "(<" else None
 
 
@@ -363,8 +426,8 @@ def js_function(code, i):
     method by a body after its parameters, and a name given a value when that value is a function."""
     match = JS_FUNCTION.match(code[i])
     if match:
-        body = js_expression(code, i, code[i].rfind("function", 0, match.start(1)))
-        return (match.group(1), body) if body else None
+        body = js_expression(code, i, match.start(1))
+        return (match.group(2), body) if body else None
     match = JS_METHOD.match(code[i])
     if match:
         body = js_signature(code, i, match.end(), "{")
@@ -425,10 +488,10 @@ OPEN, CLOSE = "([{", ")]}"
 REFERENCE = {"file": (220, 440), "function": (45, 75)}
 PERCENTS = (70, 80, 90)
 BIG = set(["80th", "90th"] + [">%d" % strong for _, strong in REFERENCE.values()])
-# An operator that an expression goes on after, at the end of a line, or before, at the start of the next
-# (goes_on). Not a ++ or a --; and a *, /, % or > only after a space, unlike a JSX tag's > or a regular
-# expression's closing /.
-GOES_ON = re.compile(r"(?:=>?|\|\||&&|\?\?|[?:<]|(?<![+-])[+-]|\s[*/%>])\s*$")
+# An operator that an expression goes on after, at the end of a line (read from its last three characters),
+# or before, at the start of the next (goes_on). Not a ++ or a --; and a *, /, % or > only after a space,
+# unlike a JSX tag's > or a regular expression's closing /.
+GOES_ON = re.compile(r"(?:=>?|\|\||&&|\?\?|[?:<]|(?<![+-])[+-]|\s[*/%>])$")
 GOES_ON_NEXT = re.compile(r"\s*(?:\|\||&&|\?\?|\?(?!\.)|:|\.(?!\.)|[+-](?![+-])|[|&*%])")
 # A JavaScript regular expression: from / to /, past escapes and the / in a class such as [/].
 REGEX = re.compile(r"/(?:\\.|\[(?:\\.|[^\]\\])*\]|[^/\\\[])+/")
@@ -444,8 +507,11 @@ def skeleton(lines, comments, quotes, attributes=False):
     char_quote = quotes == "char"
     out, began_inside = [], []
     state = None  # Inside: a block comment ("*/"), or a string (its closing quote).
+    # In JavaScript, a template literal's ${...} is code, up to the } that matches its {, and can hold strings
+    # and templates of its own: per ${ still open, how many braces are open inside it.
+    templates = []
     for line in lines:
-        began_inside.append(state is not None)
+        began_inside.append(state is not None or bool(templates))  # A template's ${...} is inside it too.
         code = []
         i = 0
         while i < len(line):
@@ -457,6 +523,10 @@ def skeleton(lines, comments, quotes, attributes=False):
             elif state:
                 if line[i] == "\\":
                     i += 2
+                elif state == "`" and quotes == "regex" and line.startswith("${", i):
+                    code.append("ss")  # The template's own brackets aren't the code's.
+                    templates.append(0)
+                    i, state = i + 2, None
                 elif line.startswith(state, i):
                     code.append(state)
                     i, state = i + len(state), None
@@ -485,6 +555,14 @@ def skeleton(lines, comments, quotes, attributes=False):
                 state = line[i]
                 code.append(state)
                 i += 1
+            elif templates and line[i] == "}" and not templates[-1]:  # The end of a ${...}: back in its template.
+                code.append("s")
+                templates.pop()
+                i, state = i + 1, "`"
+            elif templates and line[i] in "{}":
+                templates[-1] += 1 if line[i] == "{" else -1
+                code.append(line[i])
+                i += 1
             else:
                 code.append(line[i])
                 i += 1
@@ -495,10 +573,16 @@ def skeleton(lines, comments, quotes, attributes=False):
 
 
 def regex_may_start(code, out):
-    """Whether a / in JavaScript, after the line's code so far (or the last line's), opens a regular
-    expression rather than dividing: it comes after an operator or an opening bracket, or return."""
-    before = "".join(code).rstrip() or next((line.rstrip() for line in reversed(out) if line.strip()), "")
-    return not before or before[-1] in "(,=:[!&|?{};" or before.endswith("return")
+    """Whether a / in JavaScript, after the line's code so far (code, as pieces) or else the last line's,
+    opens a regular expression rather than dividing: it comes after an operator or an opening bracket, or
+    the word return. Only the last few characters are read, so a long line stays quick."""
+    before = ""
+    for piece in reversed(code):
+        before = piece + before
+        if len(before.strip()) > len("return"):
+            break
+    before = before.rstrip() or next((line.rstrip() for line in reversed(out) if line.strip()), "")
+    return not before or before[-1] in "(,=:[!&|?{};" or bool(re.search(r"(?<![\w$])return$", before))
 
 
 def indent_of(line):
@@ -557,38 +641,51 @@ def body_by_indent(lines, code, skip, start, with_end):
 def body_by_brackets(code, inside, start, column=0):
     """The last line of a function's body, by matching brackets from code[start][column] on, where its
     definition starts or, if it's known, its body; None if no body follows, as for a declaration, or if
-    its brackets never close."""
-    depth = 0
-    body = None  # "{" for a block; "=" for an expression, such as an arrow function's.
-    arrow = False  # An arrow ends the line, so the next line says which kind of body it is.
+    its brackets never close. A block ends where its brace closes; an expression, such as an arrow
+    function's, at the end of a line outside brackets that it doesn't go on from (goes_on)."""
+    depth = carried = 0
+    expression = False
+    arrow = False  # An arrow ended the last line, so this one says which kind of body it is.
+    brackets = brackets_of(code)
+    closes = brackets["closes"]
     for i in range(start, len(code)):
-        line = code[i][column:] if i == start else code[i]
-        if arrow and body is None and line.strip():
-            body = "{" if line.strip().startswith("{") else "="
-        for j, c in enumerate(line):
-            if body is None and depth == 0:
-                if c == "{":
-                    body = "{"
+        offset = column if i == start else 0
+        line = code[i][offset:]
+        if arrow and line.strip():
+            expression, arrow = not line.strip().startswith("{"), False
+        scan = line
+        if expression:  # An expression from this line's start: only its brackets matter.
+            depth += brackets["net"][i]
+            scan = ""
+        for j, c in enumerate(scan):
+            if not expression and depth == 0:
+                if c == "{":  # A block: it ends where its brace closes.
+                    end = closes.get((i, j + offset))
+                    return end[0] if end else None
                 elif line.startswith("=>", j):
                     rest = line[j + 2:].strip()
-                    if rest:
-                        body = "{" if rest.startswith("{") else "="
-                    arrow = not rest
+                    expression, arrow = bool(rest) and not rest.startswith("{"), not rest
                 elif c == "=" and ")" in line[:j] and line[j - 1:j] not in "=!<>" and line[j + 1:j + 2] not in "=>":
-                    body = "="  # Kotlin's fun f() = ..., C++'s = default.
+                    expression = True  # Kotlin's fun f() = ..., C++'s = default.
                 elif c == ";":
                     return None
             if c in OPEN:
                 depth += 1
             elif c in CLOSE:
                 depth -= 1
-                if depth == 0 and body == "{" and c == "}":
-                    return i
-                if depth < 0 and body is None:  # The block around it closed first: a declaration, such as a protocol's.
+                if depth < 0 and not expression:  # The block around it closed first: a declaration, as a protocol's.
                     return None
-        if body == "=" and depth <= 0 and line.strip() and not goes_on(code, inside, i):
-            return i
-        if body is None and i - start > 30:
+        if expression and depth <= 0 and line.strip():
+            if not goes_on(code, inside, i):
+                return i
+            # Fifty lines in a row that only go on by their operators, outside brackets, aren't one
+            # expression: stop, so a file of such lines isn't read again for each of them.
+            carried += 1
+            if carried > 50:
+                return i
+        elif depth > 0:
+            carried = 0
+        if not expression and i - start > 30:
             return None
     return None
 
@@ -598,7 +695,7 @@ def goes_on(code, inside, i):
     operator, as in Kotlin's fun f() = and an arrow function that returns another; or inside a string, such
     as a template literal; or the next line starts with an operator, as a ternary or a chain of calls split
     over lines does."""
-    if GOES_ON.search(code[i]) or (i + 1 < len(inside) and inside[i + 1]):
+    if GOES_ON.search(code[i].rstrip()[-3:]) or (i + 1 < len(inside) and inside[i + 1]):
         return True
     following = next((line for line in code[i + 1:i + 20] if line.strip()), "")
     return bool(GOES_ON_NEXT.match(following))
@@ -629,7 +726,8 @@ def by_pattern(pattern):
 
     def find(code, i):
         match = pattern.match(code[i])
-        return (next(g for g in match.groups() if g), (i, 0)) if match else None
+        name = next((g for g in match.groups() if g), None) if match else None
+        return (name, (i, 0)) if name else None
     return find
 
 
@@ -758,15 +856,26 @@ def main():
     doubts = scoping.doubtful_tests(tests, paths, args.test)
     paths = [p for p in paths if p not in tests]
 
-    measured = {}
+    measured, failed, unreadable = {}, [], []
     for path in sorted(set(paths + shows)):
         full = os.path.join(repo, path)
         if not os.path.isfile(full):
             continue
-        data = open(full, "rb").read()
+        try:
+            data = open(full, "rb").read()
+        except OSError:
+            unreadable.append(path)
+            continue
         if b"\0" in data[:8000]:  # Binary, by git's own test.
             continue
-        measured[path] = functions(path, data.decode("utf-8", errors="replace"))
+        text = data.decode("utf-8", errors="replace")
+        try:
+            measured[path] = functions(path, text)
+        except Exception:
+            # The last line of defence: one file this doesn't foresee never stops a run. It's measured as its
+            # non-blank lines, and the output names it, so the bug shows and can be reported.
+            measured[path] = (sum(1 for line in text.split("\n") if line.strip()), None, None)
+            failed.append(path)
     in_paths = set(paths)
 
     by_language = defaultdict(lambda: ([], []))  # Per language, its files' lengths and its functions'.
@@ -775,7 +884,8 @@ def main():
         if path not in in_paths:
             continue
         if language is None:
-            no_rule[os.path.splitext(path)[1] or os.path.basename(path)] += 1
+            if path not in failed:
+                no_rule[os.path.splitext(path)[1] or os.path.basename(path)] += 1
             continue
         files, funcs = by_language[language]
         files.append((lines, path))
@@ -827,6 +937,16 @@ def main():
         print("Lines only, with no rule to find functions: %d file%s (%s)." % (
             sum(no_rule.values()), "" if sum(no_rule.values()) == 1 else "s",
             ", ".join("%s %d" % kv for kv in no_rule.most_common(8))))
+    if failed:
+        print("Finding the functions failed in %s, so %s measured as non-blank lines only, out of the percentiles: "
+              "%s. That's a bug in measure.py, and the %s would help fix it." % (
+                  "1 file" if len(failed) == 1 else "%d files" % len(failed),
+                  "it's" if len(failed) == 1 else "they're", ", ".join(failed),
+                  "file" if len(failed) == 1 else "files"))
+    if unreadable:
+        print("Couldn't read %s, so %s left out: %s." % (
+            "1 file" if len(unreadable) == 1 else "%d files" % len(unreadable),
+            "it's" if len(unreadable) == 1 else "they're", ", ".join(unreadable)))
     print()
 
     def file_band(language, lines):
@@ -837,10 +957,17 @@ def main():
 
     if shows:
         for path in shows:
+            if path in unreadable:
+                print("%s: couldn't read it.\n" % path)
+                continue
             if path not in measured:
                 print("%s: not a text file in the working tree.\n" % path)
                 continue
             lines, found, language = measured[path]
+            if path in failed:
+                print("%s: %d non-blank lines. Finding its functions failed, so it's measured as lines only; "
+                      "that's a bug in measure.py, and this file would help fix it.\n" % (path, lines))
+                continue
             if language is None:
                 print("%s: %d code lines; no rule to find functions in this language.\n" % (path, lines))
                 continue
