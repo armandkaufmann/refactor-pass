@@ -6,6 +6,7 @@ aside by name or folder so that a spec beside its source doesn't swamp the
 counts.
 """
 
+import argparse
 import fnmatch
 import os
 import posixpath
@@ -14,12 +15,16 @@ import subprocess
 import sys
 
 # Never worth a refactor, whatever their churn: lock files, generated or
-# minified files, and the sidecars engines write beside each asset (Godot's
-# .uid and .import, Unity's .meta).
+# minified files, drawings kept as text (SVG images and icon fonts), and the
+# sidecars engines write beside each asset (Godot's .uid and .import, Unity's
+# .meta).
 DEFAULT_IGNORE = [
     "*.lock", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "go.sum",
-    "*.min.js", "*.min.css", "*.map", "*.snap", "*.uid", "*.import", "*.meta",
+    "*.min.js", "*.min.css", "*.map", "*.snap", "*.svg", "*.uid", "*.import", "*.meta",
 ]
+# The modes git gives a symbolic link and a submodule, which are left out: a link's file is counted where
+# it lives, and a submodule is another repo.
+NOT_FILES = ("120000", "160000")
 # Test files, named as the common frameworks name them (matched with case),
 # and anything inside a folder with one of TEST_FOLDERS' names (in any case).
 TEST_NAMES = [
@@ -52,6 +57,31 @@ def run(repo, *args):
     system's code page, so they're read as UTF-8."""
     result = subprocess.run(["git", "-C", repo] + list(args), capture_output=True)
     return result.stdout.decode("utf-8", errors="replace") if result.returncode == 0 else None
+
+
+def toplevel(start):
+    """The top of the repo that start, the folder -C names, is in; or stop with a plain message."""
+    if not os.path.isdir(start):
+        sys.exit("No such folder: %s" % start)
+    top = (run(start, "rev-parse", "--show-toplevel") or "").strip()
+    if not top:
+        if (run(start, "rev-parse", "--is-bare-repository") or "").strip() == "true":
+            sys.exit("%s is a bare repo, with no working tree to read; run this in a clone of it." % start)
+        sys.exit("Not a git repo: %s" % start)
+    return top
+
+
+def count(least):
+    """An argparse type: a whole number, least or more."""
+    def parse(text):
+        try:
+            value = int(text)
+        except ValueError:
+            raise argparse.ArgumentTypeError("%r isn't a whole number" % text)
+        if value < least:
+            raise argparse.ArgumentTypeError("must be %d or more, not %d" % (least, value))
+        return value
+    return parse
 
 
 def in_scope(path, scopes):
@@ -128,9 +158,16 @@ def owns(test, path, stems):
 
 
 def tracked_files(repo, rev=None):
-    """The files git tracks: at rev, or else in the index."""
-    command = ["ls-tree", "-r", "-z", "--name-only", rev] if rev else ["ls-files", "-z"]
-    return [p for p in (run(repo, *command) or "").split("\0") if p]
+    """The files git tracks: at rev, or else in the index; not symbolic links or submodules."""
+    # Each entry is "<mode> <type> <object>\t<path>" from ls-tree, "<mode> <object> <stage>\t<path>" from
+    # ls-files, where a file in a merge conflict has an entry per stage.
+    command = ["ls-tree", "-r", "-z", rev] if rev else ["ls-files", "-s", "-z"]
+    files = []
+    for entry in (run(repo, *command) or "").split("\0"):
+        info, _, path = entry.partition("\t")
+        if path and info.split(" ")[0] not in NOT_FILES:
+            files.append(path)
+    return list(dict.fromkeys(files))
 
 
 def own_folders(tracked, scopes):

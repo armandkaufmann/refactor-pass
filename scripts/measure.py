@@ -11,46 +11,59 @@ and 45 for a function (the catalogue's reference points, in its Measuring
 section), so that a codebase of small files flags none of them. The 80th
 and 90th bands are big; the 70th is worth a closer look. The file or
 function a percentile falls in is in its band, since part of its lines are
-past it; in a small codebase that's often the biggest few. Then, per file,
-longest first:
+past it; in a small codebase that's often the biggest few.
 
-  lines     its code lines: blank lines and lines that are only a comment
-            are left out
-  band      its band among the language's files, or - below the 70th
+When one file holds a tenth of a language's file lines and is half as long
+again as any other, the percentiles lean on it: it's its own 90th, and
+every cut falls in it, so nothing shorter reaches a band. Then that
+language's files are put in bands by the reference points instead: >220 for
+over 220 code lines, worth a closer look, and >440 for over 440, big. The
+same goes for functions, with >45 and >75. The output says when.
+
+Then, per file, longest first:
+
+  lines     its code lines: blank lines, lines that are only a comment and
+            Python's docstrings are left out
+  band      its band among the language's files, or - in none
   funcs     the functions found in it
   longest   its longest function, in code lines; its name and line follow
             the file's path
-  long      how many of its functions are in the 80th or 90th band
+  long      how many of its functions are big: in the 80th or 90th band,
+            or >75 where the reference points judge
   deepest   its deepest nesting inside a function, by indentation: 1 is a
             block inside the function's body, such as an if, and 2 a block
             inside that. Indentation tracks the classical complexity
             metrics closely (Hindle et al., 2008)
 
---show FILE lists that file's functions instead, with each one's line,
-length, deepest nesting and band.
+--show FILE lists that file's functions instead: each one's first and last
+line, its code lines, deepest nesting and band. git log -L FIRST,LAST:FILE
+then lists the commits that changed that function.
 
 Functions are found by each language's definition keyword (def, func, fn,
-fun, function, and Swift's init, deinit and subscript) or, for C, C++, Java
-and C#, by their shape: a type, a name, parentheses, then a body. A function
-runs to the end of its body, found by indentation (Python, GDScript, Ruby)
-or by matching brackets (the rest). Files in other languages get lines only,
-and the output says which.
+fun, function, and Swift's init, deinit and subscript); in JavaScript and
+TypeScript also as methods and as arrow functions or function expressions
+given a name; and for C, C++, Java and C#, by their shape: a type, a name,
+parentheses, then a body. A signature may run over several lines. A
+function runs to the end of its body, found by indentation (Python,
+GDScript, Ruby) or by matching brackets (the rest). Files in other languages
+get lines only, and the output says which.
 
 It points at code to read; it doesn't judge it. What it gets wrong:
   - a nested function counts in its own length and in its parent's;
   - anonymous functions and lambdas aren't functions of their own: their
     lines count in the function around them, or in none at the top level;
-  - shapes miss some methods (a parameter list holding parentheses) and can
-    catch a macro or a call split over lines;
-  - a brace in a regular expression or a heredoc can end a function early
-    or late;
+  - a function that doesn't start a line, such as a method in an object
+    literal written on one line, isn't found;
+  - shapes can catch a macro, and in TypeScript a type's member typed as a
+    function and ended with a comma, not a semicolon, counts as a function
+    of one line;
+  - a brace in a heredoc, or in a JavaScript regular expression that follows
+    a word, an arrow or a closing bracket, can put a function's end in the
+    wrong place or lose the function;
   - a line inside a multi-line string or a block comment's text can count
     as code or not, depending on how it starts;
   - nesting by indentation counts a continuation line (a call or literal
-    split over lines) as deeper, except inside brackets left open;
-  - in a small codebase one long file or function can hold a tenth of the
-    lines and so be its own 90th; the output says when, and then the
-    catalogue's reference points are a better guide than the bands.
+    split over lines) as deeper, except inside brackets left open.
 
 Usage:
   measure.py [options] [SCOPE ...]
@@ -84,27 +97,229 @@ MODIFIERS = r"(?:(?:public|private|protected|internal|static|final|abstract|sync
             r"sealed|async|extern|inline|unsafe|partial|new|const|constexpr|explicit|friend|default|open)\s+)*"
 NOT_A_TYPE = r"(?!(?:return|if|for|foreach|while|switch|catch|else|do|new|throw|case|delete|await|using|lock|goto|" \
              r"sizeof|typeof|nameof|yield|import|package|namespace)\b)"
-JS = (r"^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s*\*?\s*(\w+)"
-      r"|^\s*(?:export\s+)?(?:(?:const|let|var|public|private|protected|static|readonly)\s+)*(\w+)\s*(?::[^=]+)?="
-      r"\s*(?:async\s+)?(?:function\b|\([^()]*\)\s*(?::[^=]+)?=>|\w+\s*=>)"
-      r"|^\s*(?:(?:public|private|protected|static|async|readonly|override|abstract|get|set)\s+)*\*?\s*"
-      r"(?!(?:if|for|while|switch|catch|function|return|with)\b)(\w+)\s*(?:<[^>]*>)?\([^()]*\)\s*(?::\s*[^{;]+)?\{\s*$"
-      r"|^\s*(\w+)\s*:\s*(?:async\s+)?(?:function\b|\([^()]*\)\s*=>|\w+\s*=>)")
-C_SHAPE = (r"^\s*" + NOT_A_TYPE + MODIFIERS + r"(?:[\w<>\[\],.?*&:]+\s+)+[*&]*([A-Za-z_~][\w~]*(?:::~?\w+)*)"
-           r"\s*\([^;]*$")
+# A type is words and the punctuation of generics, arrays and pointers, or a tuple such as C#'s (int, string).
+C_HEAD = (r"^\s*" + NOT_A_TYPE + MODIFIERS + r"(?:(?:[\w<>\[\],.?*&:]+|\([\w<>\[\],.?\s]+\))\s+)+"
+          r"[*&]*([A-Za-z_~][\w~]*(?:::~?\w+)*)\s*\(")
+C_SHAPE = C_HEAD + r"[^;]*$"
+# C# also writes a method's body as an expression after =>, on its own line with its ;.
+EXPRESSION_BODIED = r"|" + C_HEAD + r"[^;]*\)\s*=>"
+# Java and C# also write a constructor with no modifier, so with nothing before its name.
+CONSTRUCTOR = r"|^\s*([A-Z]\w*)\s*\([^;]*$"
 # C and C++ also put the type on the line above, with the name at the margin.
 C_SHAPES = C_SHAPE + r"|^" + NOT_A_TYPE + r"([A-Za-z_][\w~]*(?:::~?\w+)*)\s*\([^;]*$"
+
+# JavaScript and TypeScript: how a definition's line starts, up to the bracket that opens its parameters
+# (or its type parameters). What follows the parameters then says whether it's a function (js_function).
+# catch can be a method's name too, written with no space before its bracket, unlike the statement's.
+JS_FUNCTION = re.compile(r"^\s*(?:export\s+)?(?:default\s+)?(?:declare\s+)?(?:async\s+)?function\s*\*?\s*([\w$]+)")
+JS_METHOD = re.compile(r"^\s*(?:(?:public|private|protected|static|async|readonly|override|abstract|get|set|declare|"
+                       r"accessor)\s+)*\*?\s*(?!(?:if|for|while|switch|function|return|with|else|do|typeof|void|"
+                       r"await|yield|new|case|import|super|in|of|instanceof)\b|catch\b(?!\())"
+                       r"(#?[\w$]+|\[[^\]]*\])\s*\??\s*(?=[(<])")
+# A name given a value: a variable or a class's property, typed or not; or an object literal's key.
+JS_ASSIGNED = re.compile(r"^\s*(?:export\s+)?(?:(?:const|let|var|public|private|protected|static|readonly|declare|"
+                         r"override|accessor)\s+)*(#?[\w$]+)\s*!?\s*(?::(?:[^=]|=>)+)?=(?![=>])\s*")
+JS_KEY = re.compile(r"^\s*([\w$]+|\[[^\]]*\])\s*:\s*")
+# A declaration typed over several lines, whose = comes after its type (js_after_type).
+JS_TYPED = re.compile(r"^\s*(?:export\s+)?(?:(?:const|let|var|public|private|protected|static|readonly|declare|"
+                      r"override|accessor)\s+)+(#?[\w$]+)\s*[?!]?\s*:\s*")
+# What's assigned: a function written out, an arrow with one bare parameter, or a function wrapped in
+# a call, such as React.memo(function Card(...) {...}), whose body starts at its keyword.
+JS_FUNCTION_VALUE = re.compile(r"(?:async\s+)?(?:function\b|[\w$]+\s*=>)")
+JS_WRAPPED = re.compile(r"[\w.$]+\s*(?:<[^<>()]*>)?\(\s*(?=function\s*\*?\s*[\w$]+\s*[(<])")
+
+
+def js_close(code, i, j, limit):
+    """Where the bracket at code[i][j] closes: its line and the column after it, or None if it doesn't
+    within limit lines. At a <, angle brackets count too, but not an arrow's >."""
+    angle = code[i][j] == "<"
+    depth = 0
+    for k in range(i, min(len(code), i + limit)):
+        line = code[k]
+        for col in range(j if k == i else 0, len(line)):
+            c = line[col]
+            if c in OPEN or (angle and c == "<"):
+                depth += 1
+            elif c in CLOSE or (angle and c == ">" and line[col - 1:col] != "="):
+                depth -= 1
+                if depth <= 0:
+                    return k, col + 1
+    return None
+
+
+def js_next(code, i, j, limit=3):
+    """The line and column of the first character from code[i][j] on that isn't a space, or None."""
+    for k in range(i, min(len(code), i + limit)):
+        line = code[k]
+        start = j if k == i else 0
+        rest = len(line[start:]) - len(line[start:].lstrip())
+        if line[start:].strip():
+            return k, start + rest
+    return None
+
+
+def js_tail(code, k, col, want):
+    """Where a function's body starts, if the parameter list that closed at code[k][col] is a function's:
+    after an optional return type, the { of a method's body, or the => of an arrow function. None if
+    something else comes first: a ; ends a declaration, and a , or a closing bracket an argument or a
+    parameter typed as a function. A { just after the type's :, a | or an & or the word is opens an
+    object type, not the body."""
+    typed, depth, previous, word, gap = False, 0, "", "", False
+    for i in range(k, min(len(code), k + 15)):
+        line = code[i]
+        gap = True
+        for j in range(col if i == k else 0, len(line)):
+            c = line[j]
+            if c.isspace():
+                gap = True
+                continue
+            if not typed:
+                if c != ":":
+                    return (i, j) if line.startswith(want, j) else None
+                typed = True
+            elif depth == 0 and line.startswith(want, j) and not (c == "{" and (previous in ":|&" or word == "is")):
+                return i, j
+            elif line.startswith("=>", j) or line[j - 1:j + 1] == "=>":  # A function type's arrow.
+                pass
+            elif c in "([{<":
+                depth += 1
+            elif c in ")]}>":
+                depth -= 1
+                if depth < 0:
+                    return None
+            elif depth == 0 and c in ";,=":
+                return None
+            # The word just before, which a space may separate from what follows.
+            letter = c.isalnum() or c in "_$"
+            word = (word + c if word and not gap else c) if letter else ""
+            previous, gap = c, False
+    return None
+
+
+def js_signature(code, i, j, want):
+    """Where the body starts of a function whose parameters open at code[i][j], or its type parameters
+    at a <; None if they aren't a function's. They have to close within a few lines, and a body or an
+    arrow follow (js_tail). A list left open at the end of the line must end the way a parameter list
+    split over lines does, so a call with a callback (it(..., () => {) isn't followed to its end."""
+    line = code[i].rstrip()
+    end = js_close(code, i, j, 30)
+    if end is None or end[0] != i:
+        if not (line.endswith(("(", ",", "<", "[", "|", "&")) or
+                (line.endswith("{") and line[:-1].rstrip().endswith(("(", ",", ":")))):
+            return None
+    if code[i][j] == "<":
+        if end is None:
+            return None
+        at = js_next(code, end[0], end[1])
+        if at is None or code[at[0]][at[1]] != "(":
+            return None
+        i, j = at
+        end = js_close(code, i, j, 30)
+    return js_tail(code, end[0], end[1], want) if end else None
+
+
+def js_in_braces(code, i):
+    """Whether line i starts in braces, or in no brackets, as an object literal's key or a class's property
+    does; not in parentheses or square brackets, as a parameter or a tuple's member does."""
+    depth = 0
+    for k in range(i - 1, max(-1, i - 200), -1):
+        for c in reversed(code[k]):
+            if c in CLOSE:
+                depth += 1
+            elif c in OPEN:
+                depth -= 1
+                if depth < 0:
+                    return c == "{"
+    return True
+
+
+def js_after_type(code, i, j):
+    """Where the value starts that follows a type running from code[i][j] on, over several lines if need be:
+    just after its =. None if the type ends some other way, as a declaration with no value does."""
+    depth = 0
+    for k in range(i, min(len(code), i + 40)):
+        line = code[k]
+        for col in range(j if k == i else 0, len(line)):
+            c = line[col]
+            if line.startswith("=>", col) or line[col - 1:col + 1] == "=>":  # A function type's arrow.
+                continue
+            if c in "([{<":
+                depth += 1
+            elif c in ")]}>":
+                depth -= 1
+                if depth < 0:
+                    return None
+            elif depth == 0 and c in ";,=":
+                return (k, col + 1) if c == "=" and line[col + 1:col + 2] != "=" else None
+    return None
+
+
+def js_value(code, i, j):
+    """Where the body starts, if the value given from code[i][j] on (or from the next line) is a
+    function; else None."""
+    at = js_next(code, i, j)
+    if at is None:
+        return None
+    k, j = at
+    value = code[k][j:]
+    if JS_FUNCTION_VALUE.match(value):
+        return i, 0
+    wrapped = JS_WRAPPED.match(value)
+    if wrapped:
+        return k, j + wrapped.end()
+    if re.match(r"async\b", value):
+        at = js_next(code, k, j + len("async"))
+        if at is None:
+            return None
+        k, j = at
+    return js_signature(code, k, j, "=>") if code[k][j] in "(<" else None
+
+
+def js_function(code, i):
+    """The name of the function a JavaScript or TypeScript definition starts at line i, and where its body
+    is looked for from, as a line and a column; or None. A function declaration is one by its keyword, a
+    method by a body after its parameters, and a name given a value when that value is a function."""
+    match = JS_FUNCTION.match(code[i])
+    if match:
+        at = js_next(code, i, match.end())
+        body = js_signature(code, at[0], at[1], "{") if at and code[at[0]][at[1]] in "(<" else None
+        return match.group(1), body or (i, 0)
+    match = JS_METHOD.match(code[i])
+    if match:
+        body = js_signature(code, i, match.end(), "{")
+        return (match.group(1), body) if body else None
+    match = JS_ASSIGNED.match(code[i])
+    body = js_value(code, i, match.end()) if match else None
+    if body:
+        return match.group(1), body
+    match = JS_TYPED.match(code[i])
+    at = js_after_type(code, i, match.end()) if match else None
+    body = js_value(code, at[0], at[1]) if at else None
+    if body and js_in_braces(code, i):  # Not a parameter's default value.
+        return match.group(1), body
+    # A key or a property typed as a function, with no value, is a type: an interface's member ends with a
+    # ;, and a parameter or a tuple's member isn't in braces.
+    match = JS_KEY.match(code[i])
+    if match and not code[i].rstrip().endswith(";"):
+        body = js_value(code, i, match.end())
+        if body and not code[body[0]][body[1]:].rstrip().endswith(";") and js_in_braces(code, i):
+            return match.group(1), body
+    return None
+
+
 # Per language: its extensions, how a definition's line looks (the name is
-# whichever group matched), how its body ends, its comment markers, and its
-# quotes: "char" when ' quotes one character (so a lone ' is something else,
-# such as a Rust lifetime), "spans" when a quoted string can run over lines.
+# whichever group matched; or, for JavaScript and TypeScript, a function that
+# reads the lines), how its body ends, its comment markers, and its quotes:
+# "char" when ' quotes one character (so a lone ' is something else, such as
+# a Rust lifetime), "spans" when a quoted string can run over lines, "regex"
+# when a / can open a regular expression.
 LANGUAGES = [
     ("Python", ".py", r"^\s*(?:async\s+)?def\s+(\w+)", "indent", "#", ""),
     ("GDScript", ".gd", r"^\s*(?:static\s+)?func\s+(\w+)", "indent", "#", ""),
     ("Ruby", ".rb", r"^\s*def\s+(?:self\.)?([\w?!=]+)", "end", "#", "spans"),
-    ("JavaScript", ".js .jsx .mjs .cjs", JS, "brackets", "// /*", ""),
-    ("TypeScript", ".ts .tsx .mts .cts", JS, "brackets", "// /*", ""),
-    ("Vue", ".vue .svelte", JS, "brackets", "// /*", ""),
+    ("JavaScript", ".js .jsx .mjs .cjs", js_function, "brackets", "// /*", "regex"),
+    ("TypeScript", ".ts .tsx .mts .cts", js_function, "brackets", "// /*", "regex"),
+    ("Vue", ".vue .svelte", js_function, "brackets", "// /*", "regex"),
     ("PHP", ".php", r"^\s*(?:(?:abstract|final|public|private|protected|static)\s+)*function\s+&?\s*(\w+)",
      "brackets", "// /* #", "spans"),
     ("Go", ".go", r"^func\s+(?:\([^)]*\)\s*)?(\w+)", "brackets", "// /*", "char"),
@@ -116,22 +331,33 @@ LANGUAGES = [
     ("Swift", ".swift", r"^\s*(?:(?:public|private|fileprivate|internal|open|static|class|override|final|mutating|"
      r"nonmutating|convenience|required|nonisolated|dynamic|@\w+(?:\([^()]*\))?)\s+)*"
      r"(?:func\s+(\w+)|(init)[?!]?\s*[(<]|(deinit)\b|(subscript)\s*[(<])", "brackets", "// /*", ""),
-    ("Java", ".java", C_SHAPE, "brackets", "// /*", "char"),
-    ("C#", ".cs", C_SHAPE, "brackets", "// /*", "char"),
+    ("Java", ".java", C_SHAPE + CONSTRUCTOR, "brackets", "// /*", "char"),
+    ("C#", ".cs", C_SHAPE + CONSTRUCTOR + EXPRESSION_BODIED, "brackets", "// /*", "char"),
     ("C", ".c .h", C_SHAPES, "brackets", "// /*", "char"),
     ("C++", ".cpp .cc .cxx .hpp .hh", C_SHAPES, "brackets", "// /*", "char"),
 ]
 BY_EXTENSION = dict((ext, lang) for lang in LANGUAGES for ext in lang[1].split())
 OPEN, CLOSE = "([{", ")]}"
-# The floors, in code lines: the "Look closer" reference points in the catalogue's Measuring section
-# (smells.md). Nothing at or below them is in a band, however the codebase compares.
-FLOOR = {"file": 220, "function": 45}
+# The reference points in the catalogue's Measuring section (smells.md), in code lines: over the first is
+# worth a closer look, over the second big. The first is the floor for the bands too: nothing at or below it
+# is in one, however the codebase compares.
+REFERENCE = {"file": (220, 440), "function": (45, 75)}
 PERCENTS = (70, 80, 90)
+BIG = set(["80th", "90th"] + [">%d" % strong for _, strong in REFERENCE.values()])
+# An operator that an expression goes on after, at the end of a line, or before, at the start of the next
+# (goes_on). Not a ++ or a --.
+GOES_ON = re.compile(r"(?:=>?|\|\||&&|\?\?|[?:]|(?<![+-])[+-])\s*$")
+GOES_ON_NEXT = re.compile(r"\s*(?:\|\||&&|\?\?|\?(?!\.)|:|\.(?!\.)|[+-](?![+-]))")
+# A JavaScript regular expression: from / to /, past escapes and the / in a class such as [/].
+REGEX = re.compile(r"/(?:\\.|\[(?:\\.|[^\]\\])*\]|[^/\\\[])+/")
+# A Python statement that is only a string, as a docstring is: documentation, so not a code line.
+DOCSTRING = re.compile(r"""\s*[rRuUbBfF]{0,2}("{3}|'{3}|"|')""")
 
 
-def skeleton(lines, comments, quotes):
+def skeleton(lines, comments, quotes, attributes=False):
     """Each line with its comments taken out and its strings' insides turned to "s", so brackets
-    and code lines can be counted; and whether the line began inside a string or comment."""
+    and code lines can be counted; and whether the line began inside a string or comment. With
+    attributes, #[ opens an attribute, as in PHP 8, not a comment."""
     markers = comments.split()
     char_quote = quotes == "char"
     out, began_inside = [], []
@@ -158,12 +384,17 @@ def skeleton(lines, comments, quotes):
             elif "/*" in markers and line.startswith("/*", i):
                 state = "*/"
                 i += 2
-            elif any(line.startswith(m, i) for m in markers if m != "/*"):
+            elif any(line.startswith(m, i) for m in markers if m != "/*") and not (
+                    attributes and line.startswith("#[", i)):
                 break
             elif line.startswith('"""', i) or line.startswith("'''", i):
                 state = line[i:i + 3]
                 code.append(state)
                 i += 3
+            elif line[i] == "/" and quotes == "regex" and REGEX.match(line, i) and regex_may_start(code, out):
+                literal = REGEX.match(line, i).group(0)  # A regular expression, which can hold quotes and brackets.
+                code.append("/" + "s" * (len(literal) - 2) + "/")
+                i += len(literal)
             elif line[i] == "'" and char_quote:
                 literal = re.match(r"'(?:\\.|[^\\'])'", line[i:])  # A character, or else a Rust lifetime.
                 code.append("s" if literal else " ")
@@ -179,6 +410,13 @@ def skeleton(lines, comments, quotes):
             state = None  # Most languages end a one-quote string at the line's end.
         out.append("".join(code))
     return out, began_inside
+
+
+def regex_may_start(code, out):
+    """Whether a / in JavaScript, after the line's code so far (or the last line's), opens a regular
+    expression rather than dividing: it comes after an operator or an opening bracket, or return."""
+    before = "".join(code).rstrip() or next((line.rstrip() for line in reversed(out) if line.strip()), "")
+    return not before or before[-1] in "(,=:[!&|?{};" or before.endswith("return")
 
 
 def indent_of(line):
@@ -203,12 +441,28 @@ def indent_unit(lines, code, starts):
     return steps.most_common(1)[0][0] if steps else 4
 
 
-def body_by_indent(lines, code, inside, start, with_end):
-    """The last line of the function defined at start, by indentation."""
+def signature_end(code, start):
+    """The line where the definition at start closes the brackets it opens: its own, or the last of a
+    signature split over lines. If they don't close within 50 lines, its own."""
+    depth = 0
+    for i in range(start, min(len(code), start + 50)):
+        depth += sum(code[i].count(c) for c in OPEN) - sum(code[i].count(c) for c in CLOSE)
+        if depth <= 0:
+            return i
+    return start
+
+
+def body_by_indent(lines, code, skip, start, with_end):
+    """The last line of the function defined at start, by indentation. Its body starts after its
+    signature, whose last line a formatter puts at the definition's own indentation, as in ) -> int:.
+    A line in skip continues a string or open brackets, so its indentation says nothing."""
     width = indent_of(lines[start])
-    last = start
-    for i in range(start + 1, len(lines)):
-        if not code[i].strip() or inside[i]:
+    last = signature_end(code, start)
+    for i in range(last + 1, len(lines)):
+        if not code[i].strip():
+            continue
+        if skip[i]:
+            last = i
             continue
         if indent_of(lines[i]) <= width:
             if with_end and code[i].strip() == "end":
@@ -218,14 +472,15 @@ def body_by_indent(lines, code, inside, start, with_end):
     return last
 
 
-def body_by_brackets(code, start):
-    """The last line of the function defined at start, by matching brackets; None if no body follows,
-    as for a declaration, or if its brackets never close."""
+def body_by_brackets(code, inside, start, column=0):
+    """The last line of a function's body, by matching brackets from code[start][column] on, where its
+    definition starts or, if it's known, its body; None if no body follows, as for a declaration, or if
+    its brackets never close."""
     depth = 0
     body = None  # "{" for a block; "=" for an expression, such as an arrow function's.
     arrow = False  # An arrow ends the line, so the next line says which kind of body it is.
     for i in range(start, len(code)):
-        line = code[i]
+        line = code[i][column:] if i == start else code[i]
         if arrow and body is None and line.strip():
             body = "{" if line.strip().startswith("{") else "="
         for j, c in enumerate(line):
@@ -249,11 +504,54 @@ def body_by_brackets(code, start):
                     return i
                 if depth < 0 and body is None:  # The block around it closed first: a declaration, such as a protocol's.
                     return None
-        if body == "=" and depth <= 0:
+        if body == "=" and depth <= 0 and line.strip() and not goes_on(code, inside, i):
             return i
-        if body is None and i - start > 20:
+        if body is None and i - start > 30:
             return None
     return None
+
+
+def goes_on(code, inside, i):
+    """Whether an expression goes on after line i, which ends outside any brackets: the line ends with an
+    operator, as in Kotlin's fun f() = and an arrow function that returns another; or inside a string, such
+    as a template literal; or the next line starts with an operator, as a ternary or a chain of calls split
+    over lines does."""
+    if GOES_ON.search(code[i]) or (i + 1 < len(inside) and inside[i + 1]):
+        return True
+    following = next((line for line in code[i + 1:i + 20] if line.strip()), "")
+    return bool(GOES_ON_NEXT.match(following))
+
+
+def docstrings(code, inside, continued):
+    """The lines of Python's statements that are only a string, as a docstring is: one that starts a
+    line outside any brackets, and has nothing after its closing quote."""
+    found = []
+    for i, line in enumerate(code):
+        match = None if inside[i] or continued[i] else DOCSTRING.match(line)
+        if not match or (i and code[i - 1].rstrip().endswith("\\")):
+            continue
+        # The string's insides are s by now, so the first quote of its kind left closes it.
+        quote, end, rest = match.group(1), i, line[match.end():]
+        while quote not in rest and end + 1 < len(code) and inside[end + 1]:
+            end += 1
+            rest = code[end]
+        if quote in rest and not rest.split(quote, 1)[1].strip():
+            found.extend(range(i, end + 1))
+    return found
+
+
+def by_pattern(pattern):
+    """A language's way of finding its definitions from a regular expression: the name is whichever
+    group matched, and the body is looked for from the start of the line."""
+    pattern = re.compile(pattern)
+
+    def find(code, i):
+        match = pattern.match(code[i])
+        return (next(g for g in match.groups() if g), (i, 0)) if match else None
+    return find
+
+
+FIND = dict((lang[0], lang[2] if callable(lang[2]) else by_pattern(lang[2])) for lang in LANGUAGES)
 
 
 def functions(path, text):
@@ -261,12 +559,12 @@ def functions(path, text):
     language = BY_EXTENSION.get(os.path.splitext(path)[1].lower())
     lines = text.split("\n")
     comments = language[4] if language else "# //"
-    code, inside = skeleton(lines, comments, language[5] if language else "")
+    code, inside = skeleton(lines, comments, language[5] if language else "", language and language[0] == "PHP")
     counted = [bool(c.strip()) for c in code]
     if not language:
         return sum(counted), None, None
-    name, _, pattern, ending, _, _ = language
-    pattern = re.compile(pattern)
+    name, _, _, ending, _, _ = language
+    find = FIND[name]
     # A line that starts inside open brackets continues the one before, so it says nothing about
     # nesting. Braces are brackets too where indentation makes the blocks.
     opening = "([{" if ending != "brackets" else "(["
@@ -275,37 +573,53 @@ def functions(path, text):
     for line in code:
         continued.append(depth > 0)
         depth = max(0, depth + sum(line.count(c) for c in opening) - sum(line.count(c) for c in closing))
-    unit = indent_unit(lines, code, [a or b for a, b in zip(inside, continued)])
+    if name == "Python":  # Docstrings are documentation, as comments are.
+        for i in docstrings(code, inside, continued):
+            counted[i] = False
+    skip = [a or b for a, b in zip(inside, continued)]
+    unit = indent_unit(lines, code, skip)
     found = []
-    for start, line in enumerate(code):
-        match = pattern.match(line) if not inside[start] else None
-        if not match:
+    for start in range(len(code)):
+        defined = find(code, start) if not inside[start] else None
+        if not defined:
             continue
         if ending == "brackets":
-            last = body_by_brackets(code, start)
+            last = body_by_brackets(code, inside, *defined[1])
             if last is None:
                 continue
         else:
-            last = body_by_indent(lines, code, inside, start, ending == "end")
+            last = body_by_indent(lines, code, skip, start, ending == "end")
         base = indent_of(lines[start])
         depths = [(indent_of(lines[i]) - base) // unit - 1 for i in range(start + 1, last + 1)
                   if counted[i] and not inside[i] and not continued[i]]
-        found.append((next(g for g in match.groups() if g), start + 1, last + 1, sum(counted[start:last + 1]),
-                      max([0] + depths)))
+        found.append((defined[0], start + 1, last + 1, sum(counted[start:last + 1]), max([0] + depths)))
     return sum(counted), found, name
 
 
 def band(length, cuts, kind):
-    """The highest of the 70th, 80th and 90th percentiles (cuts) that length reaches, past kind's floor,
-    or None. The thing a percentile falls in reaches it, since some of its lines are past it."""
-    if length <= FLOOR[kind]:
+    """The band a thing of this length is in, or None. Against the percentiles (cuts), the highest of the
+    70th, 80th and 90th it reaches past kind's floor; the thing a percentile falls in reaches it, since
+    some of its lines are past it. With no cuts, as when the percentiles lean on one thing, the highest of
+    the reference points it's over, written >45 or >75 for a function."""
+    closer, strong = REFERENCE[kind]
+    if length <= closer:
         return None
+    if cuts is None:
+        return ">%d" % (strong if length > strong else closer)
     reached = [percent for percent, cut in zip(PERCENTS, cuts) if cut and length >= cut]
-    return reached[-1] if reached else None
+    return "%dth" % reached[-1] if reached else None
 
 
-def band_name(percent):
-    return "%dth" % percent if percent else "-"
+def leaning(things, kind):
+    """The thing the percentiles lean on, if any, as (its name, its share of the lines in percent): one past
+    kind's floor that holds a tenth of the lines and is half as long again as any other, so that it's its
+    own 90th and every cut falls in it. A few things of one length lean on none of them."""
+    ranked = sorted(things, reverse=True)
+    total = sum(n for n, _ in things)
+    if len(ranked) > 1 and ranked[0][0] > REFERENCE[kind][0] and ranked[0][0] * 10 >= total \
+            and ranked[0][0] * 2 >= ranked[1][0] * 3:
+        return ranked[0][1], 100 * ranked[0][0] // total
+    return None
 
 
 def weighted(lengths, percents=PERCENTS):
@@ -343,14 +657,13 @@ def main():
                         help="globs naming files that only look like tests, matched as --test's are, such as "
                              "'app/ABTest.php' or 'docs/spec/*': they're measured like the rest")
     parser.add_argument("--keep-tests", action="store_true", help="measure test files like the rest")
-    parser.add_argument("--top", type=int, default=25, help="files to print (default 25)")
+    parser.add_argument("--top", type=scoping.count(0), default=25, help="files to print (default 25)")
     parser.add_argument("--show", action="append", default=[], metavar="FILE",
-                        help="list this file's functions, instead of the table of files")
+                        help="list this file's functions, with the first and last line of each for git log -L, "
+                             "instead of the table of files")
     args = parser.parse_args()
 
-    repo = (scoping.run(args.repo, "rev-parse", "--show-toplevel") or "").strip()
-    if not repo:
-        sys.exit("Not a git repo: %s" % args.repo)
+    repo = scoping.toplevel(args.repo)
     tracked = scoping.tracked_files(repo)
     if not tracked:
         sys.exit("%s tracks no files yet, so there's nothing to measure." % os.path.basename(repo))
@@ -385,24 +698,29 @@ def main():
         files, funcs = by_language[language]
         files.append((lines, path))
         funcs.extend((f[3], "%s:%d %s" % (path, f[1], f[0])) for f in found)
-    # Per language, the percentiles of its files' lengths and its functions'.
-    cuts = dict((language, (weighted([n for n, _ in files]), weighted([n for n, _ in funcs])))
-                for language, (files, funcs) in by_language.items())
-
-    def lopsided(language, kind, things):
-        """A note when one file or function holds a tenth of the lines, and so is its own 90th."""
-        total = sum(n for n, _ in things)
-        if len(things) > 1 and max(things)[0] * 10 >= total:
-            return ("%s: %s holds %d%% of the %s lines, so the percentiles lean on it; judge by the reference "
-                    "points in the catalogue's Measuring section too." % (language, max(things)[1],
-                                                                         100 * max(things)[0] // total, kind))
+    # Per language, the percentiles of its files' lengths and its functions'; and the cuts the bands use,
+    # which are None where the percentiles lean on one file or function, so the reference points judge.
+    cuts, judged, notes = {}, {}, defaultdict(list)
+    for language, (files, funcs) in by_language.items():
+        cuts[language] = (weighted([n for n, _ in files]), weighted([n for n, _ in funcs]))
+        judged[language] = []
+        for kind, things, percentiles in (("file", files, cuts[language][0]), ("function", funcs, cuts[language][1])):
+            lean = leaning(things, kind)
+            judged[language].append(None if lean else percentiles)
+            if lean:
+                closer, strong = REFERENCE[kind]
+                notes[language].append(
+                    "%s %ss: %s holds %d%% of the lines and is half as long again as any other, so the percentiles "
+                    "lean on it. These are put in bands by the catalogue's reference points instead: >%d is over "
+                    "%d code lines, worth a closer look; >%d is over %d, big."
+                    % ((language, kind) + lean + (closer, closer, strong, strong)))
 
     print("%s, scope: %s" % (os.path.basename(repo), " ".join(args.scope) or "(everything)"))
-    print("Lines are code lines: blank lines and lines that are only a comment are left out.")
+    print("Lines are code lines: blank lines, lines that are only a comment and Python's docstrings are left out.")
     print("Weighted by lines: 90% of the code is in files, or functions, no longer than the 90th.")
     print("Bands: a file or function at least as long as a percentile, and over the floor of %d lines for a file "
           "and %d for a function, is in its band. The 80th and 90th are big; the 70th, worth a closer look."
-          % (FLOOR["file"], FLOOR["function"]))
+          % (REFERENCE["file"][0], REFERENCE["function"][0]))
     if not args.keep_tests:
         print("Test files: %s." % ("%d set aside from the percentiles and the table" % len(tests)
                                    if tests else "none in the scope"))
@@ -417,13 +735,11 @@ def main():
     print("%-11s %6s %6s   %-17s   %-17s" % ("", "files", "funcs", "   file lines", " function lines"))
     print("%-11s %6s %6s   %5s %5s %5s   %5s %5s %5s" % ("language", "", "", "70th", "80th", "90th",
                                                          "70th", "80th", "90th"))
-    notes = []
     for language, (files, funcs) in sorted(by_language.items(), key=lambda kv: -sum(n for n, _ in kv[1][0])):
         print("%-11s %6d %6d   %5d %5d %5d   %5d %5d %5d" % tuple(
             [language, len(files), len(funcs)] + cuts[language][0] + cuts[language][1]))
-        notes += [lopsided(language, "file", files), lopsided(language, "function", funcs)]
-    for note in notes:
-        if note:
+    for language in sorted(by_language, key=lambda name: -sum(n for n, _ in by_language[name][0])):
+        for note in notes[language]:
             print(note)
     if no_rule:
         print("Lines only, with no rule to find functions: %d file%s (%s)." % (
@@ -432,10 +748,10 @@ def main():
     print()
 
     def file_band(language, lines):
-        return band(lines, cuts[language][0], "file") if language in cuts else None
+        return band(lines, judged[language][0], "file") if language in judged else None
 
     def function_band(language, length):
-        return band(length, cuts[language][1], "function") if language in cuts else None
+        return band(length, judged[language][1], "function") if language in judged else None
 
     if shows:
         for path in shows:
@@ -446,14 +762,20 @@ def main():
             if language is None:
                 print("%s: %d code lines; no rule to find functions in this language.\n" % (path, lines))
                 continue
+            leans = language in judged and judged[language][1] is None
             print("%s: %s, %d code lines, band %s, %d functions (%s)" % (
-                path, language, lines, band_name(file_band(language, lines)), len(found),
-                "%s functions: 70th %d, 80th %d, 90th %d lines" % ((language,) + tuple(cuts[language][1]))
+                path, language, lines, file_band(language, lines) or "-", len(found),
+                "%s functions: 70th %d, 80th %d, 90th %d lines%s" % (
+                    (language,) + tuple(cuts[language][1]) + (
+                        "; they lean on one function, so bands are by the reference points" if leans else "",))
                 if language in cuts else "no %s file in the scope, so no percentiles to compare with" % language))
-            print("%6s %6s %8s %5s  function" % ("line", "lines", "deepest", "band"))
-            for name, first, last, length, deepest in found:
-                print("%6d %6d %8d %5s  %s" % (first, length, deepest,
-                                               band_name(function_band(language, length)), name))
+            # The first and last lines, as git log -L FIRST,LAST:FILE takes them.
+            spans = ["%d-%d" % (f[1], f[2]) for f in found]
+            width = max([len("first-last")] + [len(s) for s in spans])
+            print("%*s %6s %8s %5s  function" % (width, "first-last", "lines", "deepest", "band"))
+            for span, (name, first, last, length, deepest) in zip(spans, found):
+                print("%*s %6d %8d %5s  %s" % (width, span, length, deepest,
+                                               function_band(language, length) or "-", name))
             print()
         return
 
@@ -466,8 +788,8 @@ def main():
             continue
         longest = max(found, key=lambda f: f[3]) if found else None
         print("%6d %5s %6d %8s %5d %8d  %s%s" % (
-            lines, band_name(file_band(language, lines)), len(found), longest[3] if longest else "-",
-            sum(1 for f in found if (function_band(language, f[3]) or 0) >= 80), max([0] + [f[4] for f in found]),
+            lines, file_band(language, lines) or "-", len(found), longest[3] if longest else "-",
+            sum(1 for f in found if function_band(language, f[3]) in BIG), max([0] + [f[4] for f in found]),
             path, " (%s:%d)" % (longest[0], longest[1]) if longest else ""))
     if len(rows) > args.top:
         print("  ... %d more files" % (len(rows) - args.top))

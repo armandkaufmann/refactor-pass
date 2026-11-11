@@ -112,8 +112,12 @@ Don't make the 90th the only line. Weighted by lines, the code past it is a
 tenth of the whole, so in a small codebase that's a file or two, and the
 next biggest can sit just under it. For the same reason, the file a
 percentile falls in reaches it, since some of its lines are past it. Where
-one file holds a tenth of a language's lines it's its own 90th, and the
-reference points below are the better guide.
+one file holds a tenth of a language's lines and is half as long again as
+any other, the percentiles lean on it: it's its own 90th, every cut falls
+in it, and nothing shorter reaches a band. Then judge that language's files
+by the reference points below instead: over 220 lines is worth a closer
+look, over 440 big. Where one function stands out among its language's
+functions that way, judge them by over 45 and over 75.
 
 Reference points, mostly from Java benchmarks, for a floor or a small
 codebase:
@@ -148,14 +152,17 @@ python3 <this skill's directory>/scripts/measure.py -C <repo> <scope ...> [--sho
 Give it the heatmap's scope; it sets test files aside as the heatmap does,
 so they stay out of the percentiles. It gives each language's 70th, 80th
 and 90th percentiles of file and function length, weighted by lines as
-Alves et al. do, then each file's code lines (blank and comment-only lines
-left out) and band, functions, longest function and deepest nesting. The
-bands apply the rule above, floor included. Nesting is
-measured by indentation, which tracks the classical complexity metrics
-closely (Hindle et al.) and is free in any language. `--show` lists one
-file's functions. It finds functions by each language's keyword or shape, so it
-misses some and miscounts a few; its `--help` says how. Read a function
-before calling it long.
+Alves et al. do, then each file's code lines (blank lines, comment-only
+lines and Python's docstrings left out) and band, functions, longest
+function and deepest nesting. The bands apply the rules above, floor
+included; where the percentiles lean on one file or function, they're the
+reference points, shown as `>220` and `>440` for a file, `>45` and `>75`
+for a function. Nesting is measured by indentation, which tracks the
+classical complexity metrics closely (Hindle et al.) and is free in any
+language. `--show` lists one file's functions, each with its first and last
+line. It finds functions by each language's keyword or shape, so it misses
+some and miscounts a few; its `--help` says how. Read a function before
+calling it long.
 
 The rest takes plain commands:
 
@@ -165,8 +172,13 @@ The rest takes plain commands:
 - **cohesion (LCOM4):** list the fields each method uses, link methods that
   share a field or call each other, and count the islands. One island is
   cohesive. Two or more are classes waiting to get out;
-- **one function's history:** `git log -L :<function>:<file>` lists the
-  commits that changed just that function;
+- **one function's history:** `git log -L <first>,<last>:<file>`, with the
+  lines `measure.py --show` gives, lists the commits that changed those
+  lines. `git log -L :<function>:<file>` finds a function by its name only
+  where git's diff driver can: by default, a definition that starts its
+  line, so not an indented method, unless the repo's `.gitattributes` gives
+  the language a driver (`*.py diff=python`). Otherwise it stops with "no
+  match";
 - **length, without the script:** `wc -l`, and `grep -n` with the
   language's function keyword for an outline, or your shell's equivalents.
   A function's length is then the gap to the next definition.
@@ -186,7 +198,8 @@ and you read it before saying anything.
 - **Count:** length, branches, deepest nesting and variables, against the
   codebase's bands (see [Measuring](#measuring)). Also: blocks with
   a comment saying what they do, loops doing two things, and how often
-  `git log -L` shows the function changing.
+  `git log -L <first>,<last>:<file>` shows the function changing (see
+  [Measuring](#measuring)).
 - **Not a smell when:** it reads top to bottom. "The key here is not function
   length but the semantic distance between what the method does and how it
   does it." A flat sequence of steps, a dispatcher of one line per case, code
@@ -327,8 +340,9 @@ far more reliably than structure.
   instrument."
 - **Count:** read the file's commit messages in the window (the heatmap's
   `--show`) and group them by the feature each is about. Many groups mean
-  many reasons to change. Within the file, `git log -L` per function shows
-  whether separate groups of functions change for separate reasons.
+  many reasons to change. Within the file, `git log -L <first>,<last>:<file>`
+  per function, with the lines from `measure.py --show`, shows whether
+  separate groups of functions change for separate reasons.
 - **Not a smell when:** the file is a list by design (a registry, a
   changelog) where each change is one entry; or it only wires things
   together. Fowler notes it usually shows only after a few variations,
@@ -791,7 +805,8 @@ exception (Ottenhof et al., 2026).
   - files and functions whose window commits are nearly all additions:
     lines added far above lines removed (`--show` and the heatmap's churn);
   - new branches or cases added to the same function in commit after commit
-    (`git log -L :<function>:<file>`);
+    (`git log -L <first>,<last>:<file>`, with the lines from
+    `measure.py --show`);
   - no commit in the window that moved or extracted code out of it.
 - **Not a smell when:** the file is a list by design, such as a table of
   definitions; or it's a new feature still being written.

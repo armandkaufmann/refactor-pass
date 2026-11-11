@@ -21,7 +21,9 @@ don't run the app, its tests or its scripts. Only read files and search them
 (read-only commands such as searches, line counts, git log and git show are
 fine, and so is `python3 <absolute path to this skill's scripts/measure.py>
 -C <repo> <scope> --show <file>`, which lists a file's functions with their
-lengths, nesting and bands).
+first and last lines, lengths, nesting and bands;
+`git log -L <first>,<last>:<file>` then lists the commits that changed one
+of them).
 
 **Judge by the catalogue.** Read <absolute path to this skill's
 references/smells.md> first. Each smell there has five parts: what it felt
@@ -47,12 +49,13 @@ where the next change will hurt. Find out why changes keep landing here.
 
 **The size of the codebase.** <measure.py's percentiles for this language:
 file and function length at the 70th, 80th and 90th, and any note that
-they lean on one file.> Call something big when it reaches the 80th and is
-past the floor, over 45 code lines for a function and 220 for a file;
-worth a closer look at the 70th. measure.py's bands apply that rule. Where
-the percentiles lean on one file, use the reference points in smells.md's
-Measuring section too. Lengths are code lines, without blank and
-comment-only lines.
+they lean on one file or function.> Call something big when it reaches the
+80th and is past the floor, over 45 code lines for a function and 220 for a
+file; worth a closer look at the 70th. measure.py's bands apply that rule.
+Where the percentiles lean on one file or function, its bands for that
+language are smells.md's reference points instead: `>75` (a function) or
+`>440` (a file) is big, `>45` or `>220` worth a closer look. Lengths are
+code lines, without blank lines, comment-only lines or Python's docstrings.
 
 **Your scope:** <the files or directories>.
 

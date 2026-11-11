@@ -105,7 +105,9 @@ python3 scripts/heatmap.py -C ~/code/my-app src tests
 - `scripts/heatmap.py`: where a repo's changes keep landing, from git
   history; with `--checklists`, where the checklists are.
 - `scripts/measure.py`: how long a codebase's files and functions are,
-  against the codebase itself.
+  against the codebase itself. It finds functions in Python, JavaScript,
+  TypeScript, Vue, Svelte, PHP, Go, Ruby, Java, C#, C, C++, Kotlin, Swift,
+  Rust and GDScript; other files get their lines only.
 - `scripts/check_page.py`: checks a checklist page after an edit.
 
 `scripts/scoping.py` is the module the first two share, for which files

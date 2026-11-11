@@ -120,12 +120,14 @@ python3 <this skill's directory>/scripts/heatmap.py -C <repo> <scope ...>
 - **Measure the hot files** against the codebase itself, within one
   language. `python3 <this skill's directory>/scripts/measure.py -C <repo>
   <scope ...>` puts each file in a band by its language's 70th, 80th and
-  90th percentiles, and `--show <file>` each of its functions. Big is the
-  80th or 90th band (the bands apply the catalogue's floor too); the 70th
-  is worth a closer look. Where it says the percentiles lean on one file,
-  judge by the reference points in [Measuring](references/smells.md#measuring)
-  too, which also says how to count the rest (branches, parameters,
-  cohesion), or to use the project's linter.
+  90th percentiles, and `--show <file>` each of its functions, with their
+  first and last lines. Big is the 80th or 90th band (past the catalogue's
+  floor); the 70th is worth a closer look. Where the percentiles lean on
+  one big file or function, it says so and bands by the catalogue's
+  reference points instead: `>75` or `>440` is big, `>45` or `>220` worth
+  a closer look. [Measuring](references/smells.md#measuring) says how to
+  count the rest (branches, parameters, cohesion, a function's history),
+  or to use the project's linter.
 - **Read the top two or three core files yourself.** Numbers point; reading
   decides.
 - **Review the other hot areas.** If you can run sub-agents, give two or
