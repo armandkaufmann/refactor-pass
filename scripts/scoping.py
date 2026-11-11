@@ -1,7 +1,7 @@
 """Which of a repo's files a refactor pass counts, shared by heatmap.py and measure.py.
 
-The scope (folders or globs), the files never worth a refactor, and the
-tests, which are set
+The scope (folders or globs), the files never worth a refactor, copies of
+this skill kept inside the repo, and the tests, which are set
 aside by name or folder so that a spec beside its source doesn't swamp the
 counts.
 """
@@ -37,6 +37,14 @@ TESTS_PROJECT = re.compile(r"(?:[._-](?:[Tt]ests?|[Ss]pecs?)|[a-z0-9](?:Tests?|S
 # The parts a feature test drives, which it names without the part's suffix: ShowDashboardTest.php
 # tests ShowDashboardController.php.
 ENTRY_POINTS = ("controller", "handler", "command")
+
+
+def safe_output():
+    """Never fail on printing a name the console can't show, as on Windows with output piped in its
+    own code page: the character becomes a ?."""
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure") and (stream.encoding or "").lower().replace("-", "") != "utf8":
+            stream.reconfigure(errors="replace")
 
 
 def run(repo, *args):
@@ -122,23 +130,45 @@ def owns(test, path, stems):
 def tracked_files(repo, rev=None):
     """The files git tracks: at rev, or else in the index."""
     command = ["ls-tree", "-r", "-z", "--name-only", rev] if rev else ["ls-files", "-z"]
-    out = subprocess.run(["git", "-C", repo] + command, capture_output=True).stdout
-    return [p for p in out.decode("utf-8", errors="replace").split("\0") if p]
+    return [p for p in (run(repo, *command) or "").split("\0") if p]
+
+
+def own_folders(tracked, scopes):
+    """The folders that hold a copy of this skill inside the repo, as a project keeps it (such as
+    .agents/skills/refactor-pass), known by its files; less any that a scope names, or is inside. The
+    skill's own repo, where they're at the top, has none."""
+    marks = ("SKILL.md", "scripts/heatmap.py", "scripts/scoping.py")
+    paths = set(tracked)
+    folders = sorted(p[:-len("/SKILL.md")] for p in paths if p.endswith("/SKILL.md")
+                     and all(p[:-len("SKILL.md")] + m in paths for m in marks[1:]))
+    return [f for f in folders if not any(s == f or s.startswith(f + "/") for s in scopes)]
+
+
+def leave_own_out(paths, tracked, scopes):
+    """The paths without the copies of this skill in the repo, and the folders that held some of them."""
+    folders = own_folders(tracked, scopes)
+    kept = [p for p in paths if not any(p.startswith(f + "/") for f in folders)]
+    return kept, [f for f in folders if any(p.startswith(f + "/") for p in paths)]
 
 
 def prefix(start):
     """The folder -C names, from the repo's top, as git rev-parse --show-prefix gives it ("" at the top)."""
-    return subprocess.run(["git", "-C", start, "rev-parse", "--show-prefix"],
-                          capture_output=True, text=True).stdout.strip()
+    return (run(start, "rev-parse", "--show-prefix") or "").strip()
 
 
 def ways_to_read(start, repo, given):
     """The paths from the repo's top that given could mean, likeliest first. It may be written
-    ./x or x/, as an absolute path, or from the folder -C names when that's inside the repo."""
+    ./x or x/, as an absolute path, or from the folder -C names when that's inside the repo.
+    Paths are compared as git writes them, with forward slashes, on any system."""
     if os.path.isabs(given):
-        return [os.path.normpath(os.path.relpath(os.path.realpath(given), os.path.realpath(repo)))]
+        try:
+            inside = os.path.relpath(os.path.realpath(given), os.path.realpath(repo))
+        except ValueError:  # On Windows, another drive: outside the repo.
+            inside = os.path.join(os.pardir, os.path.basename(given))
+        return [posixpath.normpath(inside.replace(os.sep, "/"))]
+    given = given.replace(os.sep, "/")
     under = prefix(start)
-    return [os.path.normpath(way) for way in ([os.path.join(under, given)] if under else []) + [given]]
+    return [posixpath.normpath(way) for way in ([posixpath.join(under, given)] if under else []) + [given]]
 
 
 def show_path(start, repo, given, tracked):

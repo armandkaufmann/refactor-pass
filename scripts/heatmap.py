@@ -21,7 +21,8 @@ of recent commits:
 
 Files are listed by commits times size, so the top ones are both busy and
 big. A small file changed often, like a config, and a big one rarely
-changed both come lower.
+changed both come lower. Dates are the local date where this runs, as the
+checklist page's own dates are.
 
 Test files are set aside, so a spec beside its source doesn't top the list:
 those named as the common frameworks name them (Board.spec.ts, test_x.py,
@@ -60,8 +61,10 @@ pass's own work, which would make the files it just refactored look hot).
 A recorded commit that isn't reachable from HEAD, as after a squash merge or
 a rebase, gets a warning. A left out commit counts toward nothing but its
 renames, and growth, being two sizes, includes what it did. Binary files are
-left out. In a shallow clone, the commits where its history stops look as if
-they add every file, so they are left out too, and the output says so. A window left empty, as with --since a pass's base just
+left out, and so is any copy of this skill a project keeps in the repo,
+unless a scope names its folder. In a shallow clone, the commits where its
+history stops look as if they add every file, so they are left out too, and
+the output says so. A window left empty, as with --since a pass's base just
 after the pass, is a result, not an error: the output says what was left
 out, and --page leaves the page as it was.
 
@@ -101,7 +104,7 @@ import subprocess
 import sys
 import time
 from collections import Counter, defaultdict
-from datetime import datetime, timezone
+from datetime import datetime
 from itertools import combinations
 
 # The scope, the files left out and the tests, read the same way as measure.py reads them. No
@@ -174,13 +177,12 @@ def window_revs(repo, since, count):
 
 def ignore_revs(repo):
     """The commits the repo asks blame to skip: bulk reformats and the like."""
-    configured = subprocess.run(["git", "-C", repo, "config", "blame.ignoreRevsFile"],
-                                capture_output=True, text=True).stdout.strip()
+    configured = (scoping.run(repo, "config", "blame.ignoreRevsFile") or "").strip()
     shas = set()
     for name in [configured, ".git-blame-ignore-revs"]:
         path = os.path.join(repo, name) if name else ""
         if path and os.path.isfile(path):
-            for line in open(path, errors="replace"):
+            for line in open(path, encoding="utf-8", errors="replace"):
                 line = line.split("#", 1)[0].strip()
                 if SHA.fullmatch(line):
                     shas.add(line)
@@ -363,9 +365,9 @@ def line_counts(repo, rev, paths):
 
 
 def describe(commit):
+    """A commit's short hash, its local date (as the checklist page's dates are) and its subject."""
     sha, stamp, subject = commit[:3]
-    when = datetime.fromtimestamp(stamp, timezone.utc).strftime("%Y-%m-%d")
-    return {"sha": sha[:9], "date": when, "subject": subject}
+    return {"sha": sha[:9], "date": datetime.fromtimestamp(stamp).strftime("%Y-%m-%d"), "subject": subject}
 
 
 def page_json(value):
@@ -417,6 +419,7 @@ def write_page(path, heatmap, project):
 
 
 def main():
+    scoping.safe_output()
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0],
                                      formatter_class=argparse.RawDescriptionHelpFormatter,
                                      epilog=__doc__.split("\n\n", 1)[1])
@@ -484,6 +487,7 @@ def main():
     head = git(repo, "rev-parse", "--short=9", "HEAD").strip()
     tracked = scoping.tracked_files(repo, "HEAD")
     args.scope = scoping.resolve(args.repo, repo, args.scope, tracked)
+    own = scoping.own_folders(tracked, args.scope)  # Copies of this skill kept in the repo.
     revs, since_rev = window_revs(repo, args.since, args.commits)
     edge = shallow_edge(repo)
     everything = read_log(repo, revs)
@@ -561,6 +565,7 @@ def main():
     files = defaultdict(lambda: {"commits": 0, "recent": 0, "added": 0, "removed": 0})
     sets = []  # Per commit, the files it changed.
     logs = defaultdict(list)  # Per file (in scope or not), the commits that changed it.
+    own_left_out = set()
     for commit in everything:
         sha, changes = commit[0], commit[3]
         touched = set()
@@ -574,6 +579,10 @@ def main():
             if not logs[name] or logs[name][-1] is not commit:
                 logs[name].append(commit)
             if not scoping.in_scope(name, args.scope) or scoping.ignored(name, patterns):
+                continue
+            mine = [f for f in own if name.startswith(f + "/")]
+            if mine:
+                own_left_out.update(mine)
                 continue
             stats = files[name]
             if "binary" not in stats:  # Its newest change says whether it's binary now, and when it was.
@@ -763,6 +772,9 @@ def main():
         print("Set aside as tests, but maybe not: %s%s. If one isn't a test, --not-test GLOB counts it." % (
             "; ".join("%s (%s)" % d for d in doubts[:5]), "; and %d more" % (len(doubts) - 5)
             if len(doubts) > 5 else ""))
+    if own_left_out:
+        print("This skill's own files, in %s, are left out; a scope naming that folder counts them."
+              % " and ".join(f + "/" for f in sorted(own_left_out)))
     for note in [shallow, where]:
         if note:
             print(note)

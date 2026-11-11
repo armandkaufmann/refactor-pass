@@ -59,8 +59,9 @@ SCOPE is a folder or a glob, as for heatmap.py; with none, every file git
 tracks. Use the same scope as the heatmap. Test files are set aside as the
 heatmap sets them aside, by name or folder, so they stay out of the
 percentiles, and the output names any set aside in doubt; --test and
---not-test correct it, and --keep-tests measures them all. Reads the working
-tree's tracked files only.
+--not-test correct it, and --keep-tests measures them all. Any copy of this
+skill a project keeps in the repo is left out, unless a scope names its
+folder. Reads the working tree's tracked files only.
 
 Examples:
   measure.py src tests
@@ -70,7 +71,6 @@ Examples:
 import argparse
 import os
 import re
-import subprocess
 import sys
 from collections import Counter, defaultdict
 
@@ -326,6 +326,7 @@ def weighted(lengths, percents=PERCENTS):
 
 
 def main():
+    scoping.safe_output()
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0],
                                      formatter_class=argparse.RawDescriptionHelpFormatter,
                                      epilog=__doc__.split("\n\n", 1)[1])
@@ -347,17 +348,17 @@ def main():
                         help="list this file's functions, instead of the table of files")
     args = parser.parse_args()
 
-    result = subprocess.run(["git", "-C", args.repo, "rev-parse", "--show-toplevel"], capture_output=True, text=True)
-    if result.returncode != 0:
+    repo = (scoping.run(args.repo, "rev-parse", "--show-toplevel") or "").strip()
+    if not repo:
         sys.exit("Not a git repo: %s" % args.repo)
-    repo = result.stdout.strip()
     tracked = scoping.tracked_files(repo)
     if not tracked:
         sys.exit("%s tracks no files yet, so there's nothing to measure." % os.path.basename(repo))
     args.scope = scoping.resolve(args.repo, repo, args.scope, tracked)
     patterns = scoping.DEFAULT_IGNORE + args.ignore
     shows = [scoping.show_path(args.repo, repo, p, tracked) for p in args.show]
-    paths = [p for p in tracked if scoping.in_scope(p, args.scope) and not scoping.ignored(p, patterns)]
+    in_scope = [p for p in tracked if scoping.in_scope(p, args.scope) and not scoping.ignored(p, patterns)]
+    paths, own = scoping.leave_own_out(in_scope, tracked, args.scope)
     tests = set() if args.keep_tests else set(p for p in paths if scoping.is_test(p, args.test, args.not_test))
     doubts = scoping.doubtful_tests(tests, paths, args.test)
     paths = [p for p in paths if p not in tests]
@@ -409,6 +410,9 @@ def main():
         print("Set aside as tests, but maybe not: %s%s. If one isn't a test, --not-test GLOB measures it." % (
             "; ".join("%s (%s)" % d for d in doubts[:5]), "; and %d more" % (len(doubts) - 5)
             if len(doubts) > 5 else ""))
+    if own:
+        print("This skill's own files, in %s, are left out; a scope naming that folder measures them."
+              % " and ".join(f + "/" for f in own))
     print()
     print("%-11s %6s %6s   %-17s   %-17s" % ("", "files", "funcs", "   file lines", " function lines"))
     print("%-11s %6s %6s   %5s %5s %5s   %5s %5s %5s" % ("language", "", "", "70th", "80th", "90th",

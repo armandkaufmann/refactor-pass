@@ -195,6 +195,11 @@ def check(text):
 
 
 def main():
+    # Never fail on printing a value the console can't show, as on Windows with output piped in its own code
+    # page: the character becomes a ?.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure") and (stream.encoding or "").lower().replace("-", "") != "utf8":
+            stream.reconfigure(errors="replace")
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0],
                                      formatter_class=argparse.RawDescriptionHelpFormatter,
                                      epilog=__doc__.split("\n\n", 1)[1])

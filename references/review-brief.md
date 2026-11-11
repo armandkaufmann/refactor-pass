@@ -18,10 +18,10 @@ work easier, and just as much, what looks bad but isn't worth touching.
 
 This is READ-ONLY. Don't edit, create or delete any file in the repo, and
 don't run the app, its tests or its scripts. Only read files and search them
-(read-only commands such as grep, wc, sed -n and git log are fine, and so is
-`python3 <absolute path to this skill's scripts/measure.py> -C <repo>
-<scope> --show <file>`, which lists a file's functions with their lengths
-and nesting).
+(read-only commands such as searches, line counts, git log and git show are
+fine, and so is `python3 <absolute path to this skill's scripts/measure.py>
+-C <repo> <scope> --show <file>`, which lists a file's functions with their
+lengths, nesting and bands).
 
 **Judge by the catalogue.** Read <absolute path to this skill's
 references/smells.md> first. Each smell there has five parts: what it felt

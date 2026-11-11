@@ -52,14 +52,32 @@ With Claude Code, which looks in its own folder:
 git clone https://github.com/armandkaufmann/refactor-pass ~/.claude/skills/refactor-pass
 ```
 
-For one project, clone it into that project's `.agents/skills/refactor-pass`,
-or `.claude/skills/refactor-pass` for Claude Code. With any other agent,
-clone it anywhere and ask the agent to read `SKILL.md` and follow it ("Read
-~/refactor-pass/SKILL.md and do a refactor pass"); point it there again
-when you carry on in a new session.
+For one project, so that everyone who clones it has the skill, commit a
+copy of it in the project's `.agents/skills/refactor-pass`, or
+`.claude/skills/refactor-pass` for Claude Code. A plain clone there won't
+do: git records a repo inside a repo as a pointer, and the project's clones
+get an empty folder. So clone it, then delete the `.git` folder the clone
+made (in PowerShell, `Remove-Item -Recurse -Force` instead of `rm -rf`):
 
-It needs git (2.31 or later) and Python 3. The scripts use the standard
-library only; they were tested on Python 3.9.
+```bash
+git clone --depth 1 https://github.com/armandkaufmann/refactor-pass .agents/skills/refactor-pass
+rm -rf .agents/skills/refactor-pass/.git
+```
+
+To update it, delete the folder and do the same again. A git submodule
+would keep the link to this repo, but a clone, and the fresh worktree many
+agents work in, starts with the folder empty until someone runs
+`git submodule update --init`, so a copy is the safer choice. The scripts
+leave the copy's own files out of what they count.
+
+With any other agent, clone it anywhere and ask the agent to read
+`SKILL.md` and follow it ("Read ~/refactor-pass/SKILL.md and do a refactor
+pass"); point it there again when you carry on in a new session.
+
+It needs git (2.31 or later) and Python 3.7 or later, with the standard
+library only. The scripts were tested with Python 3.9 and 3.14 on macOS;
+they're written to work on Windows too, where the command may be `python`
+or `py` rather than `python3`, but haven't been tested there.
 
 ## Use
 
@@ -77,7 +95,7 @@ Or call it by name: `/refactor-pass` in Claude Code, Cursor or Copilot CLI,
 
 ## The scripts on their own
 
-They need no agent, only Python 3 and git, and each runs with `--help` for
+They need no agent, only Python and git, and each runs with `--help` for
 its options:
 
 ```bash

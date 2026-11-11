@@ -51,7 +51,8 @@ its answer can be "no". Either way, first run step 1's script with
 python3 <this skill's directory>/scripts/heatmap.py -C <repo> <scope ...>
 ```
 
-`<this skill's directory>` is the folder that holds this SKILL.md.
+`<this skill's directory>` is the folder that holds this SKILL.md. Where
+`python3` isn't the command, as often on Windows, use `python` or `py`.
 
 - **Scope**: the source folders and the tests' folders, such as `src tests`
   or `app`, not docs or assets. Read the project's README, a directory

@@ -168,8 +168,8 @@ The rest takes plain commands:
 - **one function's history:** `git log -L :<function>:<file>` lists the
   commits that changed just that function;
 - **length, without the script:** `wc -l`, and `grep -n` with the
-  language's function keyword for an outline. A function's length is then
-  the gap to the next definition.
+  language's function keyword for an outline, or your shell's equivalents.
+  A function's length is then the gap to the next definition.
 
 These are cheap and rough, which is fine: they point you at code to read,
 and you read it before saying anything.
