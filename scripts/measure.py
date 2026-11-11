@@ -623,8 +623,10 @@ def js_in_class(code, i):
 LANGUAGES = [
     ("Python", ".py", r"^\s*(?:async\s+)?def\s+(\w+)", "indent", "#", ""),
     ("GDScript", ".gd", r"^\s*(?:static\s+)?func\s+(\w+)", "indent", "#", "spans"),
-    # A def after a word, as private def, with a receiver (self., @@cache.) and an operator's name ([], <<).
-    ("Ruby", ".rb", r"^\s*(?:[a-z_]\w*\s+)*def\s+(?:(?:self|@@?\w+|[A-Za-z_][\w:]*)\s*\.\s*)?([A-Za-z_]\w*[?!=]?|"
+    # A def after a word, as private def, with a receiver (self., @@cache.) and an operator's name ([], <<). A
+    # name can hold any character past ASCII (def ❤).
+    ("Ruby", ".rb", r"^\s*(?:[a-z_]\w*\s+)*def\s+(?:(?:self|@@?\w+|[A-Za-z_][\w:]*)\s*\.\s*)?"
+     r"((?:[^\W\d]|[^\x00-\x7f])(?:\w|[^\x00-\x7f])*[?!=]?|"
      r"\[\]=?|<=>|===?|=~|!=|!~|<<|>>|<=|>=|\*\*|[+\-~!]@?|[*/%<>^&|`])", "end", "#", "ruby"),
     ("JavaScript", ".js .jsx .mjs .cjs", js_function, "brackets", "// /*", "regex"),
     ("TypeScript", ".ts .tsx .mts .cts", js_function, "brackets", "// /*", "regex"),
