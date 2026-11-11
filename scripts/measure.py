@@ -571,8 +571,12 @@ LANGUAGES = [
      r"inline|operator|infix|tailrec|external|actual|expect)\s+|@[\w.:]+(?:\((?:[^()]|\([^()]*\))*\))?\s*)*"
      r"fun\s+(?!interface\b)(?:<[^>]*>\s*)?(?:[\w.]+(?:<[^()=]*>)?\??\.)?(\w+|`[^`]+`)", "brackets", "// /*",
      "char"),
-    ("Swift", ".swift", r"^\s*(?:(?:public|private|fileprivate|internal|open|static|class|override|final|mutating|"
-     r"nonmutating|convenience|required|nonisolated|dynamic|@\w+(?:\([^()]*\))?)\s+)*"
+    # Swift's declaration modifiers, some with a word in brackets (private(set), nonisolated(unsafe)), and its
+    # attributes (@MainActor, @available(...)).
+    ("Swift", ".swift", r"^\s*(?:(?:(?:open|public|package|internal|fileprivate|private|static|class|override|final|"
+     r"required|convenience|mutating|nonmutating|consuming|borrowing|__consuming|nonisolated|isolated|"
+     r"distributed|dynamic|optional|prefix|postfix|infix|lazy|weak|unowned)(?:\(\w+\))?|"
+     r"@\w+(?:\((?:[^()]|\([^()]*\))*\))?)\s+)*"
      r"(?:func\s+(\w+|`[^`]+`|[^\s\w(`]+(?=\s*[(<]))|(init)[?!]?\s*[(<]|(deinit)\b|(subscript)\s*[(<])",
      "brackets", "// /*", ""),
     ("Java", ".java", C_SHAPE + CONSTRUCTOR, "brackets", "// /*", "char"),
