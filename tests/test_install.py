@@ -7,6 +7,7 @@ always a local repo, given with --source.
 import hashlib
 import json
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -38,8 +39,10 @@ def tree(folder):
 
 
 def skill_files():
-    """The skill's files as this checkout has them."""
-    return dict((path, data) for path, data in tree(support.SKILL).items() if "__pycache__" not in path)
+    """The skill's files as a commit holds them: this checkout's, with CRLF line ends read as LF, as a checkout
+    with core.autocrlf (Git for Windows's default) writes them; a release's blobs have LF."""
+    return dict((path, data.replace(b"\r\n", b"\n")) for path, data in tree(support.SKILL).items()
+                if "__pycache__" not in path)
 
 
 def source_repo(name, versions, tagged=True):
@@ -341,8 +344,8 @@ class Refusals(unittest.TestCase):
         skills = support.new_folder("skills")
         copy = os.path.join(skills, "refactor-pass")
         os.makedirs(copy)
-        with open(os.path.join(copy, "SKILL.md"), "w") as f:
-            f.write("---\nname: refactor-pass\n---\nmine\n")
+        with open(os.path.join(copy, "SKILL.md"), "wb") as f:
+            f.write(b"---\nname: refactor-pass\n---\nmine\n")
         before = tree(copy)
         for args in ([], ["--force"]):
             with self.subTest(args=args):
@@ -354,8 +357,8 @@ class Refusals(unittest.TestCase):
         skills = support.new_folder("skills")
         copy = os.path.join(skills, "refactor-pass")
         support.git(skills, "init", "-q", "refactor-pass")
-        with open(os.path.join(copy, RECORD), "w") as f:
-            f.write('{"files": {}}\n')
+        with open(os.path.join(copy, RECORD), "wb") as f:
+            f.write(b'{"files": {}}\n')
         before = tree(copy)
         for command in (["install"], ["update", "--force"], ["uninstall", "--force"]):
             with self.subTest(command=command):
@@ -376,8 +379,8 @@ class Refusals(unittest.TestCase):
                     with open(os.path.join(copy, "SKILL.md"), "ab") as f:
                         f.write(b"\nmy notes\n")
                 else:
-                    with open(os.path.join(copy, "references", "mine.md"), "w") as f:
-                        f.write("mine\n")
+                    with open(os.path.join(copy, "references", "mine.md"), "wb") as f:
+                        f.write(b"mine\n")
                 before = tree(copy)
                 says = "edited since it was installed" if change == "edit" else "holding files it didn't install"
                 for command in ("install", "update", "uninstall") if change == "edit" else ("update",):
@@ -404,8 +407,8 @@ class Refusals(unittest.TestCase):
 
     def test_uninstall_removes_only_what_it_installed(self):
         skills, copy = self.installed()
-        with open(os.path.join(copy, "references", "mine.md"), "w") as f:
-            f.write("mine\n")
+        with open(os.path.join(copy, "references", "mine.md"), "wb") as f:  # Bytes, the same on every system.
+            f.write(b"mine\n")
         run = install("uninstall", "--dir", skills, "--force")
         self.assertEqual(run.code, 0, run)
         self.assertIn("removed, but for the files it didn't install: references/mine.md", run.out)
@@ -469,8 +472,8 @@ class Untrusted(unittest.TestCase):
                 self.assertQuietRefusal(run, "this installer can't act on")
                 self.assertTrue(os.path.isfile(os.path.join(copy, "SKILL.md")))
         skills, copy = Refusals.installed(self)
-        with open(os.path.join(copy, RECORD), "w") as f:
-            f.write("{not json")
+        with open(os.path.join(copy, RECORD), "wb") as f:
+            f.write(b"{not json")
         self.assertQuietRefusal(install("check", "--dir", skills), "(it isn't JSON)")
 
     def test_a_source_never_reaches_git_as_an_option(self):
@@ -501,8 +504,8 @@ class Untrusted(unittest.TestCase):
 
     def test_a_link_or_a_submodule_in_the_source(self):
         secret = os.path.join(support.new_folder("secret"), "secret.txt")
-        with open(secret, "w") as f:
-            f.write("my secret\n")
+        with open(secret, "wb") as f:
+            f.write(b"my secret\n")
         for name, entry in (("link", support.Link(secret)), ("submodule", support.Gitlink("1" * 40))):
             with self.subTest(entry=name):
                 repo = support.Repo("bad-" + name)
@@ -525,7 +528,7 @@ class Untrusted(unittest.TestCase):
             with open(full, "rb") as f:
                 text = f.read()
             with open(full, "wb") as f:
-                f.write(text.replace(b"\n", b"\r\n"))
+                f.write(re.sub(b"(?<!\r)\n", b"\r\n", text))  # As a checkout with core.autocrlf writes it.
         checked = install("check", "--dir", skills)
         self.assertEqual(checked.code, 0, checked)
         self.assertNotIn("edited", checked.out)
