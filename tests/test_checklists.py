@@ -298,8 +298,46 @@ class VendoredCopy(unittest.TestCase):
         self.assertEqual(scoping.own_folders(tracked, [self.copy.rstrip("/")]), [])
         kept, folders = scoping.leave_own_out(tracked, tracked, [])
         self.assertEqual((kept, folders), (["src/app.py"], [self.copy.rstrip("/")]))
-        # The skill's own repo, where its files are at the top, keeps them all.
+        # The skill's own repo keeps them all, with its files at the top or in skills/refactor-pass.
         self.assertEqual(scoping.own_folders(SKILL_FILES, []), [])
+        source = ["skills/refactor-pass/" + p for p in SKILL_FILES if not p.startswith("tests/")]
+        self.assertEqual(scoping.own_folders(source + ["README.md", "tests/support.py"], []), [])
+        # A copy there that an installer made, as its record says, is a copy; so is one anywhere else.
+        recorded = source + ["skills/refactor-pass/.install.json"]
+        self.assertEqual(scoping.own_folders(recorded, []), ["skills/refactor-pass"])
+        vendored = ["vendor/" + p for p in source] + [self.copy + ".install.json"]
+        self.assertEqual(scoping.own_folders(vendored, []), ["vendor/skills/refactor-pass"])
+
+
+class SourceRepo(unittest.TestCase):
+    """The skill's own repo, with the skill in skills/refactor-pass: its files are its code, so they count;
+    the same folder with an installer's record in it is a copy, left out."""
+
+    def build(self, name, extra):
+        repo = support.Repo(name)
+        files = dict(("skills/refactor-pass/" + path, lines(20)) for path in SKILL_FILES
+                     if not path.startswith("tests/"))
+        files.update(extra)
+        files["tests/support.py"] = lines(20)
+        repo.commit("2026-01-01", "Start", files)
+        repo.commit("2026-01-02", "Grow", dict((path, lines(25)) for path in files))
+        repo.done()
+        return repo.path
+
+    def test_the_source_counts(self):
+        repo = self.build("source", {})
+        for script in ("heatmap.py", "measure.py"):
+            with self.subTest(script=script):
+                result = support.run(script, "-C", repo)
+                self.assertEqual(result.code, 0, result)
+                self.assertNotIn("This skill's own files", result.out)
+                self.assertIn("skills/refactor-pass/scripts/heatmap.py", result.out)
+
+    def test_an_installed_copy_there_is_left_out(self):
+        repo = self.build("installed", {"skills/refactor-pass/.install.json": "{}\n"})
+        result = support.run("heatmap.py", "-C", repo)
+        self.assertIn("This skill's own files, in skills/refactor-pass/, are left out", result.out)
+        self.assertNotIn("skills/refactor-pass/scripts/heatmap.py", result.out)
 
 
 if __name__ == "__main__":

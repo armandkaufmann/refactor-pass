@@ -170,14 +170,21 @@ def tracked_files(repo, rev=None):
     return list(dict.fromkeys(files))
 
 
+# Where the skill's own repo keeps it, and the record an installer writes into each copy it makes.
+SOURCE = "skills/refactor-pass"
+RECORD = ".install.json"
+
+
 def own_folders(tracked, scopes):
     """The folders that hold a copy of this skill inside the repo, as a project keeps it (such as
-    .agents/skills/refactor-pass), known by its files; less any that a scope names, or is inside. The
-    skill's own repo, where they're at the top, has none."""
+    .agents/skills/refactor-pass), known by its files; less any that a scope names, or is inside. Not the
+    skill's source: its own repo keeps it in skills/refactor-pass at the top, where an agent's copy never
+    is, unless an installer put one there, as its record says. (A copy put there by hand would count.)"""
     marks = ("SKILL.md", "scripts/heatmap.py", "scripts/scoping.py")
     paths = set(tracked)
     folders = sorted(p[:-len("/SKILL.md")] for p in paths if p.endswith("/SKILL.md")
                      and all(p[:-len("SKILL.md")] + m in paths for m in marks[1:]))
+    folders = [f for f in folders if f != SOURCE or f + "/" + RECORD in paths]
     return [f for f in folders if not any(s == f or s.startswith(f + "/") for s in scopes)]
 
 
