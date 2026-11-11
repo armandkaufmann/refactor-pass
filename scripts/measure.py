@@ -515,8 +515,10 @@ LANGUAGES = [
     ("Go", ".go", r"^func\s+(?:\([^)]*\)\s*)?(\w+)", "brackets", "// /*", "char"),
     ("Rust", ".rs", r"^\s*(?:pub(?:\([\w:]+\))?\s+)?(?:(?:const|async|unsafe|extern\s+\"\w+\")\s+)*fn\s+(\w+)",
      "brackets", "// /*", "char"),
+    # Not a fun interface, which is an interface.
     ("Kotlin", ".kt .kts", r"^\s*(?:(?:public|private|protected|internal|override|open|abstract|final|suspend|"
-     r"inline|operator|infix|tailrec|external)\s+)*fun\s+(?:<[^>]*>\s*)?(?:[\w.]+\.)?(\w+)", "brackets", "// /*",
+     r"inline|operator|infix|tailrec|external)\s+)*fun\s+(?!interface\b)(?:<[^>]*>\s*)?(?:[\w.]+\.)?(\w+)",
+     "brackets", "// /*",
      "char"),
     ("Swift", ".swift", r"^\s*(?:(?:public|private|fileprivate|internal|open|static|class|override|final|mutating|"
      r"nonmutating|convenience|required|nonisolated|dynamic|@\w+(?:\([^()]*\))?)\s+)*"
@@ -535,10 +537,11 @@ REFERENCE = {"file": (220, 440), "function": (45, 75)}
 PERCENTS = (70, 80, 90)
 BIG = set(["80th", "90th"] + [">%d" % strong for _, strong in REFERENCE.values()])
 # An operator that an expression goes on after, at the end of a line (read from its last three characters),
-# or before, at the start of the next (goes_on). Not a ++ or a --; and a *, /, % or > only after a space,
-# unlike a JSX tag's > or a regular expression's closing /. At the start of a line, a > goes on as a
-# comparison does, or closes a type's < left open, as in x as Array<...> split over lines.
-GOES_ON = re.compile(r"(?:=>?|\|\||&&|\?\?|[?:<]|(?<![+-])[+-]|\s[*/%>])$")
+# or before, at the start of the next (goes_on). Not a ++ or a --; and a *, /, %, > or ? only after a space,
+# unlike a JSX tag's >, a regular expression's closing / or a nullable type's ? (as T?). At the start of a
+# line, a > goes on as a comparison does, or closes a type's < left open, as in x as Array<...> split over
+# lines.
+GOES_ON = re.compile(r"(?:=>?|\|\||&&|\?\?|[:<]|(?<![+-])[+-]|\s[*/%>?])$")
 GOES_ON_NEXT = re.compile(r"\s*(?:\|\||&&|\?\?|\?(?!\.)|:|\.(?!\.)|[+-](?![+-])|[|&*%>])")
 # The words after which a / opens a regular expression, since only an expression can follow them; as whole
 # words, not a member's name such as x.in.
@@ -949,6 +952,16 @@ def body_by_indent(lines, code, inside, open_brackets, start, with_end):
     return last
 
 
+# How a signature goes on past the end of a line, as a return type or a constraint split over lines, at the
+# end of that line or at the start of the next (past any preprocessor's lines); or the body's { on a line of
+# its own, or a macro in capitals that annotates it (EXCLUSIVE_LOCKS_REQUIRED(mu), SPDLOG_NOEXCEPT), indented
+# further than the definition: one at its indentation is a definition of its own, as a macro that makes one.
+SIGNATURE_GOES_ON = re.compile(r"(?:[|&:.,<(\[{=]|->|=>|\b(?:where|extends|implements|requires))$")
+SIGNATURE_NEXT = re.compile(r"\s*(?:[{:=,.?|&>)\]]|->|=>|(?:where|throws|rethrows|async|noexcept|requires|"
+                            r"extends|implements|try)\b)")
+SIGNATURE_MACRO = re.compile(r"\s*[A-Z][A-Z0-9_]{2,}\b")
+
+
 def body_by_brackets(code, inside, start, column=0):
     """The last line of a function's body, by matching brackets from code[start][column] on, where its
     definition starts or, if it's known, its body; None if no body follows, as for a declaration, or if
@@ -957,6 +970,7 @@ def body_by_brackets(code, inside, start, column=0):
     depth = carried = 0
     expression = False
     arrow = False  # An arrow ended the last line, so this one says which kind of body it is.
+    signed = False  # A parameter list has closed, so a body or the rest of the signature comes next.
     brackets = brackets_of(code)
     closes = brackets["closes"]
     for i in range(start, len(code)):
@@ -976,7 +990,8 @@ def body_by_brackets(code, inside, start, column=0):
                 elif line.startswith("=>", j):
                     rest = line[j + 2:].strip()
                     expression, arrow = bool(rest) and not rest.startswith("{"), not rest
-                elif c == "=" and ")" in line[:j] and line[j - 1:j] not in "=!<>" and line[j + 1:j + 2] not in "=>":
+                elif c == "=" and ")" in line[:j] and line[j - 1:j] not in "=!<>" and \
+                        (line[j + 1:j + 2] or " ") not in "=>":
                     expression = True  # Kotlin's fun f() = ..., C++'s = default.
                 elif c == ";":
                     return None
@@ -986,6 +1001,15 @@ def body_by_brackets(code, inside, start, column=0):
                 depth -= 1
                 if depth < 0 and not expression:  # The block around it closed first: a declaration, as a protocol's.
                     return None
+                signed = signed or (depth == 0 and c == ")")
+        if signed and not expression and not arrow and depth == 0 and not column and line.strip() and \
+                not line.lstrip().startswith("#") and not SIGNATURE_GOES_ON.search(line.rstrip()[-12:]):
+            # A body's { follows its signature on the same line or the next, unless the next goes on with it
+            # (where, throws, ->, :...); else it's a declaration with none, as an interface's method.
+            following = next((n for n in code[i + 1:i + 20] if n.strip() and not n.lstrip().startswith("#")), "")
+            deeper = len(following) - len(following.lstrip()) > len(code[start]) - len(code[start].lstrip())
+            if not SIGNATURE_NEXT.match(following) and not (deeper and SIGNATURE_MACRO.match(following)):
+                return None
         if expression and depth <= 0 and line.strip():
             if not goes_on(code, inside, i):
                 return i
