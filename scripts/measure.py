@@ -118,46 +118,105 @@ import scoping  # noqa: E402
 MODIFIERS = r"(?:(?:public|private|protected|internal|static|final|abstract|synchronized|native|virtual|override|" \
             r"sealed|async|extern|inline|unsafe|partial|new|const|constexpr|explicit|friend|default|open|" \
             r"extern\s+\"s*\")\s+)*"
-NOT_A_TYPE = r"(?!(?:return|if|for|foreach|while|switch|catch|else|do|new|throw|case|delete|await|using|lock|goto|" \
-             r"sizeof|typeof|nameof|yield|import|package|namespace)\b)"
-# Nor is a name: a keyword a statement opens with before its (, as in a labelled one (again: switch (c) {), but
-# not a word C# alone keeps, as lock, a method's name elsewhere.
-NOT_A_NAME = r"(?!(?:return|if|for|foreach|while|switch|catch|else|do|new|throw|case|delete|await|goto|sizeof|" \
-             r"typeof)\b)"
+# Per language of the C family: the words a statement starts with, so that a line starting with one holds no
+# definition (not one that's also a method's modifier, as Java's synchronized; C#'s new starts more lines of
+# expressions, as new Options(...) { ... }, than of definitions); and the words it reserves, which never name
+# a function. Any other word can: delete names a method in Java, C and C#, await in C#, foreach in Java and C.
+C_STATEMENTS = {
+    "C": "return|if|for|while|switch|else|do|case|goto|sizeof",
+    "C++": "return|if|for|while|switch|catch|else|do|new|throw|case|delete|goto|sizeof|try|using|namespace|"
+           "co_await|co_return|co_yield",
+    "Java": "return|if|for|while|switch|catch|else|do|new|throw|case|try|assert|yield|import|package",
+    "C#": "return|if|for|foreach|while|switch|catch|else|do|new|throw|case|using|lock|goto|sizeof|typeof|nameof|"
+          "yield|await|fixed|checked|unchecked|namespace",
+}
+C_RESERVED = {
+    "C": "auto|break|case|char|const|continue|default|do|double|else|enum|extern|float|for|goto|if|inline|int|"
+         "long|register|restrict|return|short|signed|sizeof|static|struct|switch|typedef|union|unsigned|void|"
+         "volatile|while|alignas|alignof|bool|constexpr|false|nullptr|static_assert|thread_local|true|typeof|"
+         "typeof_unqual|_Alignas|_Alignof|_Atomic|_BitInt|_Bool|_Complex|_Generic|_Imaginary|_Noreturn|"
+         "_Static_assert|_Thread_local",
+    "C++": "alignas|alignof|and|and_eq|asm|auto|bitand|bitor|bool|break|case|catch|char|char8_t|char16_t|"
+           "char32_t|class|compl|concept|const|consteval|constexpr|constinit|const_cast|continue|co_await|"
+           "co_return|co_yield|decltype|default|delete|do|double|dynamic_cast|else|enum|explicit|export|extern|"
+           "false|float|for|friend|goto|if|inline|int|long|mutable|namespace|new|noexcept|not|not_eq|nullptr|"
+           "operator|or|or_eq|private|protected|public|register|reinterpret_cast|requires|return|short|signed|"
+           "sizeof|static|static_assert|static_cast|struct|switch|template|this|thread_local|throw|true|try|"
+           "typedef|typeid|typename|union|unsigned|using|virtual|void|volatile|wchar_t|while|xor|xor_eq",
+    "Java": "abstract|assert|boolean|break|byte|case|catch|char|class|const|continue|default|do|double|else|enum|"
+            "extends|final|finally|float|for|goto|if|implements|import|instanceof|int|interface|long|native|new|"
+            "package|private|protected|public|return|short|static|strictfp|super|switch|synchronized|this|throw|"
+            "throws|transient|try|void|volatile|while|true|false|null|_",
+    "C#": "abstract|as|base|bool|break|byte|case|catch|char|checked|class|const|continue|decimal|default|"
+          "delegate|do|double|else|enum|event|explicit|extern|false|finally|fixed|float|for|foreach|goto|if|"
+          "implicit|in|int|interface|internal|is|lock|long|namespace|new|null|object|operator|out|override|params|"
+          "private|protected|public|readonly|ref|return|sbyte|sealed|short|sizeof|stackalloc|static|string|struct|"
+          "switch|this|throw|true|try|typeof|uint|ulong|unchecked|unsafe|ushort|using|virtual|void|volatile|while",
+}
+
+
+def not_a_type(language):
+    return r"(?!(?:%s)\b)" % C_STATEMENTS[language]
+
+
+def not_a_name(language):
+    return r"(?!(?:%s)(?![\w$]))" % C_RESERVED[language]
+
+
 # A type is words and the punctuation of generics, arrays and pointers, or a tuple such as C#'s (int, string).
 # A line that starts with a : (not C++'s ::) or a , goes on from the one before, as a constructor's initializers
 # do, or C#'s : base(...).
-# The name isn't a keyword either, as in a labelled statement (again: switch (c) {), and doesn't follow class,
-# record or the like, as C#'s class Name(int id) and Java's record Point(int x) do (C's struct x *f() can).
-# Each part of a name can take type arguments, as C#'s Get<T>( and C++'s SkipList<Key, Cmp>::Insert( do; and in
-# C# a part is an interface's, as in IDisposable.Dispose(.
+# The name isn't a reserved word either, as in a labelled statement (again: switch (c) {), and doesn't follow
+# class, record or the like, as C#'s class Name(int id) and Java's record Point(int x) do (C's struct x *f()
+# can). Each part of a name can take type arguments, as C#'s Get<T>( and C++'s SkipList<Key, Cmp>::Insert( do;
+# and in C# a part is an interface's, as in IDisposable.Dispose(. Java's names can hold a $, and C#'s start
+# with an @ that makes a reserved word a name.
 TYPE_ARGUMENTS = r"(?:<[^<>;(){}=]*(?:<[^<>;(){}=]*>[^<>;(){}=]*)*>)?"
+TYPE_WORD = r"(?:[\w<>\[\],.?*&:]+|\([\w<>\[\],.?\s]+\))"
 # Before it all, Java's annotations (@Test, @SuppressWarnings("x")) and C#'s attributes ([InlineData(1)]).
 ANNOTATIONS = r"(?:@[\w.]+(?:\((?:[^()]|\([^()]*\))*\))?\s+|\[(?:[^\[\]()]|\((?:[^()]|\([^()]*\))*\))*\]\s*)*"
 # C++'s template <...> before a definition on its line, whatever its parameters hold (= false, enable_if(...)).
 TEMPLATE = r"(?:template\s*<[^;{}]*?>\s*)?"
-C_NAME = r"[\w~]*" + TYPE_ARGUMENTS + r"(?:(?:::~?|\.)\w+" + TYPE_ARGUMENTS + r")*"
-C_HEAD = (r"^\s*(?!:(?!:)|,)" + TEMPLATE + ANNOTATIONS + NOT_A_TYPE + MODIFIERS +
-          r"(?:(?:[\w<>\[\],.?*&:]+|\([\w<>\[\],.?\s]+\))\s+)+"
-          r"[*&]*" + NOT_A_NAME + r"(?<!\bclass )(?<!\bstruct )(?<!\brecord )(?<!\binterface )(?<!\benum )"
-          r"(?<!\bunion )"
-          r"([A-Za-z_~]" + C_NAME + r")\s*\(")
 # After the name and its (: no ; before a body's {, which may hold the whole body, as in int f() { return 1; }.
 SIGNATURE_REST = r"[^;{]*(?:\{.*)?$"
-C_SHAPE = C_HEAD + SIGNATURE_REST
-# C# also writes a method's body as an expression after =>, on its own line with its ;.
-EXPRESSION_BODIED = r"|" + C_HEAD + r"[^;]*\)\s*=>"
+
+
+def c_name(language):
+    letter = r"[\w$~]" if language == "Java" else r"[\w~]"
+    first = (r"@?" if language == "C#" else "") + r"(?!\d)" + letter
+    return first + letter + "*" + TYPE_ARGUMENTS + r"(?:(?:::~?|\.)" + letter + "+" + TYPE_ARGUMENTS + r")*"
+
+
+def c_head(language):
+    return (r"^\s*(?!:(?!:)|,)" + TEMPLATE + ANNOTATIONS + not_a_type(language) + MODIFIERS + r"(?:" + TYPE_WORD +
+            r"\s+)+[*&]*" + not_a_name(language) + r"(?<!\bclass )(?<!\bstruct )(?<!\brecord )(?<!\binterface )"
+            r"(?<!\benum )(?<!\bunion )(" + c_name(language) + r")\s*\(")
+
+
 # Java and C# also write a constructor with no modifier, so with nothing before its name.
 CONSTRUCTOR = r"|^\s*" + ANNOTATIONS + r"([A-Z]\w*)\s*\(" + SIGNATURE_REST
+# C# also writes a method's body as an expression after =>, on its own line with its ;; and an operator, whose
+# name is operator and what follows it (operator ==, implicit operator Money).
+CS_SHAPES = (r"^\s*" + ANNOTATIONS + MODIFIERS + r"(?:" + TYPE_WORD + r"\s+)*(operator\s*(?:[^\w\s(]+|true\b|"
+             r"false\b|[\w.]+" + TYPE_ARGUMENTS + r"\??))\s*\((?:" + SIGNATURE_REST + r"|[^;]*\)\s*=>)|" +
+             c_head("C#") + SIGNATURE_REST + CONSTRUCTOR + "|" + c_head("C#") + r"[^;]*\)\s*=>")
+JAVA_SHAPES = c_head("Java") + SIGNATURE_REST + CONSTRUCTOR
+
+
 # C and C++ also put the type on the line above, with the name at the margin.
-C_SHAPES = C_SHAPE + r"|^" + NOT_A_NAME + r"([A-Za-z_]" + C_NAME + r")\s*\(" + SIGNATURE_REST
+def c_shapes(language):
+    return (c_head(language) + SIGNATURE_REST + r"|^" + not_a_name(language) + r"(" + c_name(language) +
+            r")\s*\(" + SIGNATURE_REST)
+
+
 # C++ also writes an operator (bool operator==(...), operator int(), auto operator()(...)), whose name is
 # operator and what follows it, and a constructor or a destructor in its class with no type (Stats() {,
 # virtual ~Rep() {), whose name isn't in capitals, as a macro that annotates a signature is.
 CPP_SHAPES = (r"^\s*" + TEMPLATE + MODIFIERS + r"(?:(?:[\w<>\[\],.*&:]+)\s+)*[*&]*(?:\w+" + TYPE_ARGUMENTS + r"::)*"
               r"(operator\s*(?:\(\)|[^\w\s(][^\s(]*|[A-Za-z_][\w\s:<>*&]*?))\s*\(" + SIGNATURE_REST + "|" +
-              C_SHAPES + r"|^\s*" + TEMPLATE + r"(?:(?:explicit|inline|constexpr|virtual)\s+)*" + NOT_A_TYPE +
-              r"(?![A-Z][A-Z0-9_]*\s*\()(~?[A-Za-z_]\w*)\s*\(" + SIGNATURE_REST)
+              c_shapes("C++") + r"|^\s*" + TEMPLATE + r"(?:(?:explicit|inline|constexpr|virtual)\s+)*" +
+              not_a_type("C++") + not_a_name("C++") + r"(?![A-Z][A-Z0-9_]*\s*\()(~?[A-Za-z_]\w*)\s*\(" +
+              SIGNATURE_REST)
 # A .h file is C's header or C++'s: C++'s when its code holds what C has none of, as a class, a namespace, a
 # template, an access label or std::.
 CPP_IN_HEADER = re.compile(r"^\s*(?:template\s*<|namespace(?:\s+[\w:]+)?\s*\{|(?:public|private|protected)\s*:|"
@@ -173,6 +232,10 @@ JS_METHOD = re.compile(r"^\s*(?:(?:public|private|protected|static|async|readonl
                        r"accessor)\s+)*\*?\s*(?!(?:if|for|while|switch|function|return|with|else|do|typeof|void|"
                        r"await|yield|new|case|import|super|instanceof)(?![\w$])|catch(?![\w$(])|async\s)"
                        r"(#?[\w$]+|\[[^\]]*\])\??\s*(?=[(<])")
+# Directly in a class's body, where no statement can be, any word names a method, as an iterator's return() and
+# throw() do; and in an object literal when no space comes before its bracket, unlike a statement's.
+JS_ANY_METHOD = re.compile(r"^\s*(?:(?:public|private|protected|static|async|readonly|override|abstract|get|set|"
+                           r"declare|accessor)\s+)*\*?\s*([\w$]+)\??\s*(?=[(<])")
 # A name given a value: a variable or a class's property, typed or not; or an object literal's key.
 JS_ASSIGNED = re.compile(r"^\s*(?:export\s+)?(?:(?:const|let|var|public|private|protected|static|readonly|declare|"
                          r"override|accessor)\s+)*(#?[\w$]+)\s*!?\s*(?::(?:[^=]|=>)+)?=(?![=>])\s*")
@@ -490,6 +553,10 @@ def js_function(code, i):
         body = js_expression(code, i, match.start(1))
         return (match.group(2), body) if body else None
     match = JS_METHOD.match(code[i])
+    if not match:
+        match = JS_ANY_METHOD.match(code[i])
+        match = match if match and (js_in_class(code, i) or (
+            code[i][match.end(1):match.end(1) + 1] in "(<" and js_in_object(code, i))) else None
     if match:
         body = js_signature(code, i, match.end(), "{") if not (match.group(1) == "catch" and js_after_try(code, i)) \
             else None
@@ -563,8 +630,9 @@ LANGUAGES = [
     ("PHP", ".php", r"^\s*(?:(?:abstract|final|public|private|protected|static)\s+)*function\s+&?\s*(\w+)",
      "brackets", "// /* #", "spans"),
     ("Go", ".go", r"^func\s+(?:\([^)]*\)\s*)?(\w+)", "brackets", "// /*", "char"),
-    ("Rust", ".rs", r"^\s*(?:pub(?:\([\w:]+\))?\s+)?(?:(?:const|async|unsafe|extern\s+\"\w+\")\s+)*fn\s+(\w+)",
-     "brackets", "// /*", "char"),
+    # pub(crate) and pub(in path), and a raw name such as r#match, named match.
+    ("Rust", ".rs", r"^\s*(?:pub(?:\([\w:\s]+\))?\s+)?(?:(?:default|const|async|unsafe|safe|extern\s+\"\w+\")\s+)*"
+     r"fn\s+(?:r#)?(\w+)", "brackets", "// /*", "char"),
     # After annotations (@Test) and modifiers, not a fun interface, which is an interface; maybe with a receiver
     # (Map<K, V>.f) and a name in backquotes (`returns 200`).
     ("Kotlin", ".kt .kts", r"^\s*(?:(?:public|private|protected|internal|override|open|abstract|final|suspend|"
@@ -579,9 +647,9 @@ LANGUAGES = [
      r"@\w+(?:\((?:[^()]|\([^()]*\))*\))?)\s+)*"
      r"(?:func\s+(\w+|`[^`]+`|[^\s\w(`]+(?=\s*[(<]))|(init)[?!]?\s*[(<]|(deinit)\b|(subscript)\s*[(<])",
      "brackets", "// /*", ""),
-    ("Java", ".java", C_SHAPE + CONSTRUCTOR, "brackets", "// /*", "char"),
-    ("C#", ".cs", C_SHAPE + CONSTRUCTOR + EXPRESSION_BODIED, "brackets", "// /*", "char"),
-    ("C", ".c .h", C_SHAPES, "brackets", "// /*", "char"),
+    ("Java", ".java", JAVA_SHAPES, "brackets", "// /*", "char"),
+    ("C#", ".cs", CS_SHAPES, "brackets", "// /*", "char"),
+    ("C", ".c .h", c_shapes("C"), "brackets", "// /*", "char"),
     ("C++", ".cpp .cc .cxx .hpp .hh", CPP_SHAPES, "brackets", "// /*", "char"),
 ]
 BY_EXTENSION = dict((ext, lang) for lang in LANGUAGES for ext in lang[1].split())
@@ -1166,11 +1234,11 @@ def by_pattern(pattern, listed=False):
     return find
 
 
-def c_function(pattern):
+def c_function(pattern, language):
     """C's and C++'s way of finding definitions: by their shapes, and also a name alone at the margin whose
     parameters open the next line, as dtoa.c writes them (jvp_strtod, then (struct ...) below)."""
     find = by_pattern(pattern, listed=True)
-    alone = re.compile(r"^" + NOT_A_TYPE + r"([A-Za-z_]\w*)\s*$")
+    alone = re.compile(r"^" + not_a_name(language) + r"((?!\d)\w+)\s*$")
 
     def find_c(code, i):
         found = find(code, i)
@@ -1184,7 +1252,7 @@ def c_function(pattern):
 
 
 FIND = dict((lang[0], lang[2] if callable(lang[2]) else by_pattern(lang[2])) for lang in LANGUAGES)
-FIND["C"], FIND["C++"] = c_function(C_SHAPES), c_function(CPP_SHAPES)
+FIND["C"], FIND["C++"] = c_function(c_shapes("C"), "C"), c_function(CPP_SHAPES, "C++")
 FIND["Java"], FIND["C#"] = [by_pattern(dict((lang[0], lang[2]) for lang in LANGUAGES)[name], listed=True)
                             for name in ("Java", "C#")]
 
