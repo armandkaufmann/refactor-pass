@@ -5,8 +5,12 @@ For every file still in the repo at HEAD and inside the scope, over a window
 of recent commits:
 
   commits   how many of the window's commits changed it
-  recent    how many of those were in the window's newer half. About half
-            its commits means it's as busy as ever; few means it has cooled
+  recent    how many of those were in the window's newer half, which is
+            half the commits, not half the time. About half its commits
+            means it's as busy as ever; few means it has cooled
+  last      the date of its latest commit. Read it with recent and the
+            window's dates: a file changed in a burst just as the newer
+            half began counts every commit as recent, yet has gone quiet
   churn     lines added plus lines removed
   rel       churn relative to its size now: 2.0 means twice its lines were
             written or rewritten in the window. Relative churn predicts
@@ -22,21 +26,28 @@ changed both come lower.
 Test files are set aside, so a spec beside its source doesn't top the list:
 those named as the common frameworks name them (Board.spec.ts, test_x.py,
 x_test.go, XTest.php, XTests.cs...) and anything in a folder named test,
-tests, __tests__, spec or the like. --test adds a pattern; --keep-tests
-counts them like the rest.
+tests, __tests__, spec or the like. --test adds a pattern, --not-test keeps
+a file that only looks like a test, and --keep-tests counts them all like
+the rest. The output names any set aside in doubt: a name such as
+ABTest.php in no folder of tests, or a spec folder in which no file is
+named like a test.
 
 Then the files that keep changing in the same commits, with two measures:
 of the quieter file's commits, the share that changed both (how likely the
 busier file changes when the quieter one does), and code-maat's degree,
 shared commits over the two files' average. Files that all pair with each
 other are one row, a group, when the commits that changed all of them meet
-the same thresholds; its measures count those commits. Commits that changed
-more than --max-files files, tests aside, are left out of these, and the
-count says how many; in a repo that squash-merges, that can be most of them.
+the same thresholds; its measures count those commits. Groups that share
+two files or more are listed together, as one area that keeps changing,
+though no commit need have changed all of its files. Commits that
+changed more than --max-files files are left out of these, and the count
+says how many; in a repo that squash-merges, that can be most of them.
 
 Last, the tests that change together with several production files besides
-their own (the file of the same name, less the test's marker): each is tied
-to their internals, or follows files that already change together.
+their own: the file of the same name less the test's marker or, when there
+is none, the controller, handler or command of that name, as a feature test
+names it (ShowDashboardTest.php and ShowDashboardController.php). Each is
+tied to their internals, or follows files that already change together.
 
 --show FILE prints a file's commits in the window instead, to read the
 reasons it keeps changing.
@@ -426,6 +437,9 @@ def main():
                         help="more globs naming test files, matched with case against the name or the path "
                              "(added to the defaults: %s, and folders named %s)"
                              % (", ".join(scoping.TEST_NAMES), ", ".join(scoping.TEST_FOLDERS)))
+    parser.add_argument("--not-test", action="append", default=[], metavar="GLOB",
+                        help="globs naming files that only look like tests, matched as --test's are, such as "
+                             "'app/ABTest.php' or 'docs/spec/*': they count like the rest")
     parser.add_argument("--keep-tests", action="store_true",
                         help="count test files like the rest, in the table and the pairs")
     parser.add_argument("--top", type=int, default=25, help="files to print, and to put on --page (default 25)")
@@ -445,8 +459,9 @@ def main():
     parser.add_argument("--keep-pass-commits", action="store_true",
                         help="count the commits recorded on the checklists too")
     parser.add_argument("--max-files", type=int, default=25,
-                        help="commits changing more files than this, tests aside, are left out of the pairs, since "
-                             "a sweeping rename or reformat pairs everything with everything (default 25)")
+                        help="commits changing more files than this (tests aside, unless kept) are left out of the "
+                             "pairs, since a sweeping rename or reformat pairs everything with everything "
+                             "(default 25)")
     parser.add_argument("--page", metavar="PATH",
                         help="also put the heatmap into this checklist page (a relative path is from the repo's "
                              "top, or the main checkout's from a linked worktree), making it from the skill's "
@@ -561,8 +576,9 @@ def main():
             if not scoping.in_scope(name, args.scope) or scoping.ignored(name, patterns):
                 continue
             stats = files[name]
-            if "binary" not in stats:  # Its newest change says whether it's binary now.
+            if "binary" not in stats:  # Its newest change says whether it's binary now, and when it was.
                 stats["binary"] = added is None
+                stats["last"] = describe(commit)["date"]
             if name not in touched:
                 stats["commits"] += 1
                 stats["recent"] += sha in newer
@@ -582,7 +598,7 @@ def main():
     for path, stats in files.items():
         if path not in sizes or stats["binary"]:  # Gone at HEAD, or binary.
             continue
-        row = {"path": path, "commits": stats["commits"], "recent": stats["recent"],
+        row = {"path": path, "commits": stats["commits"], "recent": stats["recent"], "last": stats["last"],
                "churn": stats["added"] + stats["removed"], "added": stats["added"], "removed": stats["removed"],
                "size": sizes[path], "rel": round((stats["added"] + stats["removed"]) / max(sizes[path], 1), 2),
                "size_before": before.get(path, 0), "growth": sizes[path] - before.get(path, 0)}
@@ -590,9 +606,15 @@ def main():
     rows.sort(key=lambda r: (-r["commits"] * r["size"], -r["commits"], -r["churn"], r["path"]))
     by_path = dict((r["path"], r) for r in rows)
     # Tests have their history read like the rest, but stay out of the table and the pairs.
-    tests = set() if args.keep_tests else set(r["path"] for r in rows if scoping.is_test(r["path"], args.test))
+    tests = set() if args.keep_tests else set(r["path"] for r in rows
+                                              if scoping.is_test(r["path"], args.test, args.not_test))
     rows = [r for r in rows if r["path"] not in tests]
     alive = set(r["path"] for r in rows)
+    in_scope = [p for p in tracked if scoping.in_scope(p, args.scope) and not scoping.ignored(p, patterns)]
+    doubts = scoping.doubtful_tests(tests, in_scope, args.test)
+    # Each production file's name, so a test's own file is found even where it isn't in the window.
+    stems = set(scoping.flat(scoping.stem(p, False)) for p in in_scope
+                if not scoping.is_test(p, args.test, args.not_test))
 
     shared, with_tests = Counter(), Counter()
     seen_in = defaultdict(set)  # Per file, the commits counted for pairs that changed it.
@@ -651,10 +673,41 @@ def main():
     pairs = [p for p in pairs if (p["a"], p["b"]) not in grouped]
     together = sorted(groups + pairs, key=lambda r: (-r["shared"], -r["degree"], r.get("a") or r["files"][0]))
     together = together[:args.pairs]
+    # Groups that share two files or more are one cluster, listed together at the place of its strongest:
+    # one area that keeps changing, though no commit need have changed all of its files.
+    shown_groups = [r for r in together if "files" in r]
+    root = list(range(len(shown_groups)))
+
+    def top(i):
+        while root[i] != i:
+            i = root[i]
+        return i
+
+    for i, j in combinations(range(len(shown_groups)), 2):
+        if len(set(shown_groups[i]["files"]) & set(shown_groups[j]["files"])) >= 2:
+            root[top(j)] = top(i)
+    members = defaultdict(list)
+    for i, row in enumerate(shown_groups):
+        members[top(i)].append(row)
+    ordered, placed, clusters = [], set(), 0
+    for row in together:
+        if "files" not in row:
+            ordered.append(row)
+            continue
+        mine = members[top(shown_groups.index(row))]
+        if id(mine) in placed:
+            continue
+        placed.add(id(mine))
+        if len(mine) > 1:
+            clusters += 1
+            for member in mine:
+                member["cluster"] = clusters
+        ordered += mine
+    together = ordered
     # Tests that change with several production files besides their own.
     tied = defaultdict(list)
     for (test, path), count in with_tests.items():
-        if scoping.stem(test, True) != scoping.stem(path, False) and measures([test, path], count):
+        if not scoping.owns(test, path, stems) and measures([test, path], count):
             tied[test].append({"path": path, "shared": count})
     tied = [{"test": test, "files": sorted(found, key=lambda f: (-f["shared"], f["path"]))}
             for test, found in tied.items() if len(found) > 1]
@@ -706,22 +759,27 @@ def main():
     if not args.keep_tests:
         print("Test files: %s." % ("%d changed in the window, set aside from the table and the pairs" % len(tests)
                                    if tests else "none in the scope changed in the window"))
+    if doubts:
+        print("Set aside as tests, but maybe not: %s%s. If one isn't a test, --not-test GLOB counts it." % (
+            "; ".join("%s (%s)" % d for d in doubts[:5]), "; and %d more" % (len(doubts) - 5)
+            if len(doubts) > 5 else ""))
     for note in [shallow, where]:
         if note:
             print(note)
     print()
     if rows:
-        print("%7s %6s %7s %5s %7s %7s  file" % ("commits", "recent", "churn", "rel", "size", "growth"))
+        print("%7s %6s %10s %7s %5s %7s %7s  file" % ("commits", "recent", "last", "churn", "rel", "size", "growth"))
     else:
-        print("No file in the scope, tests aside, changed in the window.")
+        print("No file in the scope%s changed in the window." % ("" if args.keep_tests else ", tests aside,"))
     for row in rows[:args.top]:
-        print("%7d %6d %7d %5.1f %7d %+7d  %s" % (row["commits"], row["recent"], row["churn"], row["rel"],
-                                                 row["size"], row["growth"], row["path"]))
+        print("%7d %6d %10s %7d %5.1f %7d %+7d  %s" % (row["commits"], row["recent"], row["last"], row["churn"],
+                                                      row["rel"], row["size"], row["growth"], row["path"]))
     if len(rows) > args.top:
         print("  ... %d more files changed in the window" % (len(rows) - args.top))
     print()
-    print("Changed together (commits of %d files or fewer, tests aside; files with %d+ commits, %d+ shared, "
-          "degree %d%%+):" % (args.max_files, args.min_revs, args.min_shared, args.min_degree))
+    print("Changed together (commits of %d files or fewer%s; files with %d+ commits, %d+ shared, degree %d%%+):"
+          % (args.max_files, "" if args.keep_tests else ", tests aside", args.min_revs, args.min_shared,
+             args.min_degree))
     if groups:
         print("  A row of three or more files is a group: each pair of them qualifies, and the counts are of the "
               "commits that changed them all.")
@@ -730,12 +788,18 @@ def main():
               "count them." % (too_big, len(commits), args.max_files, "is" if too_big == 1 else "are"))
     print("%7s %8s %7s" % ("shared", "quieter", "degree"))
     for row in together:
+        if row.get("cluster") and row is next(r for r in together if r.get("cluster") == row["cluster"]):
+            mine = [r for r in together if r.get("cluster") == row["cluster"]]
+            print("  One area: these %d groups overlap, each sharing two files or more with another, %d files in "
+                  "all, though no commit need have changed them all:" % (
+                      len(mine), len(set(f for r in mine for f in r["files"]))))
         # A group's pairs' own counts, when they differ from the commits that changed them all.
         least, most = row.get("pairs", [row["shared"]] * 2)
         spread = "" if least == most == row["shared"] else \
             " (each pair %d)" % least if least == most else " (each pair %d to %d)" % (least, most)
-        print("%7d %7.0f%% %6.0f%%  %s%s" % (row["shared"], row["of_quieter"] * 100, row["degree"] * 100,
-                                            " + ".join(row.get("files") or [row["a"], row["b"]]), spread))
+        print("%7d %7.0f%% %6.0f%%  %s%s%s" % (row["shared"], row["of_quieter"] * 100, row["degree"] * 100,
+                                              "  " if row.get("cluster") else "",
+                                              " + ".join(row.get("files") or [row["a"], row["b"]]), spread))
     if not together:
         print("  none")
     if tests:

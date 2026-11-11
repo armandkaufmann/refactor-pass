@@ -1,12 +1,14 @@
 """Which of a repo's files a refactor pass counts, shared by heatmap.py and measure.py.
 
 The scope (folders or globs), the files never worth a refactor, and the
-tests, which are set aside by name or folder so that a spec beside its
-source doesn't swamp the counts.
+tests, which are set
+aside by name or folder so that a spec beside its source doesn't swamp the
+counts.
 """
 
 import fnmatch
 import os
+import posixpath
 import re
 import subprocess
 import sys
@@ -28,6 +30,13 @@ TEST_NAMES = [
 TEST_FOLDERS = ["test", "tests", "__tests__", "__mocks__", "spec", "specs", "testdata"]
 # A test file's marker, so that Board.spec.ts, test_board.py and BoardTest.php all test Board.
 MARKER = re.compile(r"^test_|[._](?:test|spec|cy)(?=\.)|(?:Tests?|IT|Spec)(?=\.[^.]+$)")
+# A name that's a test only by a word at its end, such as ABTest.php, which a production class can have too.
+WORD_MARKER = re.compile(r"(?:Tests?|IT|Spec)\.[^.]+$")
+# A folder of tests by the conventions that put a project's name first: MyApp.Tests, MyAppTests, unit-tests.
+TESTS_PROJECT = re.compile(r"(?:[._-](?:[Tt]ests?|[Ss]pecs?)|[a-z0-9](?:Tests?|Specs?))$")
+# The parts a feature test drives, which it names without the part's suffix: ShowDashboardTest.php
+# tests ShowDashboardController.php.
+ENTRY_POINTS = ("controller", "handler", "command")
 
 
 def run(repo, *args):
@@ -52,22 +61,62 @@ def in_scope(path, scopes):
 
 
 def ignored(path, patterns):
-    name = os.path.basename(path)
+    name = posixpath.basename(path)
     return any(fnmatch.fnmatch(name, p) or fnmatch.fnmatch(path, p) for p in patterns)
 
 
-def is_test(path, more=()):
-    """Whether a file is a test: by its name, or by a folder it's in."""
-    parts = path.split("/")
-    if any(part.lower() in TEST_FOLDERS for part in parts[:-1]):
+def named(path, patterns):
+    """Whether a glob, matched with case, names the file or its path."""
+    return any(fnmatch.fnmatchcase(posixpath.basename(path), p) or fnmatch.fnmatchcase(path, p) for p in patterns)
+
+
+def is_test(path, more=(), not_tests=()):
+    """Whether a file is a test: by its name, or by a folder it's in, unless not_tests names it."""
+    if named(path, not_tests):
+        return False
+    if any(part.lower() in TEST_FOLDERS for part in path.split("/")[:-1]):
         return True
-    return any(fnmatch.fnmatchcase(parts[-1], p) or fnmatch.fnmatchcase(path, p) for p in TEST_NAMES + list(more))
+    return named(path, TEST_NAMES + list(more))
+
+
+def doubtful_tests(tests, tracked, more=()):
+    """Of the files set aside as tests, those that may not be, as (what, why), so the eye goes to
+    them: a name that's a test only by a word at its end, in no folder of tests; or a folder of
+    tests by its name in which no file is named like a test, such as a spec folder of specifications."""
+    found, folders = [], {}
+    for path in sorted(tests):
+        parts = path.split("/")
+        by_name = named(path, TEST_NAMES + list(more))
+        test_folders = [i for i, part in enumerate(parts[:-1]) if part.lower() in TEST_FOLDERS]
+        if by_name and not test_folders and WORD_MARKER.search(parts[-1]) \
+                and not any(TESTS_PROJECT.search(part) for part in parts[:-1]):
+            found.append((path, "named like a test, in no folder of tests"))
+        elif not by_name and test_folders and parts[test_folders[0]].lower() not in ("testdata", "__mocks__"):
+            folders.setdefault("/".join(parts[:test_folders[0] + 1]), []).append(path)
+    for folder in sorted(folders):
+        inside = [p for p in tracked if p.startswith(folder + "/")]
+        if not any(named(p, TEST_NAMES + list(more)) for p in inside):
+            found.append((folder + "/", "a folder named like tests, but none of its %d files is" % len(inside)))
+    return found
 
 
 def stem(path, test):
     """A file's name without its extension and, for a test, its marker; in lower case."""
-    name = os.path.basename(path)
+    name = posixpath.basename(path)
     return os.path.splitext(MARKER.sub("", name, count=1) if test else name)[0].lower()
+
+
+def flat(name):
+    """A stem with its separators gone, so game_state, game-state and GameState read alike."""
+    return re.sub(r"[^a-z0-9]", "", name)
+
+
+def owns(test, path, stems):
+    """Whether path is the test's own file: the same name less the test's marker; or, when no file in
+    stems (the production files' flat stems) has that name, the same name and an entry point's suffix,
+    as ShowDashboardTest.php and ShowDashboardController.php."""
+    mine, theirs = flat(stem(test, True)), flat(stem(path, False))
+    return theirs == mine or (mine not in stems and any(theirs == mine + part for part in ENTRY_POINTS))
 
 
 def tracked_files(repo, rev=None):

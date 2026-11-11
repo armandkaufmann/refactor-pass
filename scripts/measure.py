@@ -58,8 +58,9 @@ Usage:
 SCOPE is a folder or a glob, as for heatmap.py; with none, every file git
 tracks. Use the same scope as the heatmap. Test files are set aside as the
 heatmap sets them aside, by name or folder, so they stay out of the
-percentiles; --keep-tests measures them too. Reads the working tree's
-tracked files only.
+percentiles, and the output names any set aside in doubt; --test and
+--not-test correct it, and --keep-tests measures them all. Reads the working
+tree's tracked files only.
 
 Examples:
   measure.py src tests
@@ -337,6 +338,9 @@ def main():
                         help="more globs naming test files, matched with case against the name or the path "
                              "(added to the defaults: %s, and folders named %s)"
                              % (", ".join(scoping.TEST_NAMES), ", ".join(scoping.TEST_FOLDERS)))
+    parser.add_argument("--not-test", action="append", default=[], metavar="GLOB",
+                        help="globs naming files that only look like tests, matched as --test's are, such as "
+                             "'app/ABTest.php' or 'docs/spec/*': they're measured like the rest")
     parser.add_argument("--keep-tests", action="store_true", help="measure test files like the rest")
     parser.add_argument("--top", type=int, default=25, help="files to print (default 25)")
     parser.add_argument("--show", action="append", default=[], metavar="FILE",
@@ -354,7 +358,8 @@ def main():
     patterns = scoping.DEFAULT_IGNORE + args.ignore
     shows = [scoping.show_path(args.repo, repo, p, tracked) for p in args.show]
     paths = [p for p in tracked if scoping.in_scope(p, args.scope) and not scoping.ignored(p, patterns)]
-    tests = set() if args.keep_tests else set(p for p in paths if scoping.is_test(p, args.test))
+    tests = set() if args.keep_tests else set(p for p in paths if scoping.is_test(p, args.test, args.not_test))
+    doubts = scoping.doubtful_tests(tests, paths, args.test)
     paths = [p for p in paths if p not in tests]
 
     measured = {}
@@ -400,6 +405,10 @@ def main():
     if not args.keep_tests:
         print("Test files: %s." % ("%d set aside from the percentiles and the table" % len(tests)
                                    if tests else "none in the scope"))
+    if doubts:
+        print("Set aside as tests, but maybe not: %s%s. If one isn't a test, --not-test GLOB measures it." % (
+            "; ".join("%s (%s)" % d for d in doubts[:5]), "; and %d more" % (len(doubts) - 5)
+            if len(doubts) > 5 else ""))
     print()
     print("%-11s %6s %6s   %-17s   %-17s" % ("", "files", "funcs", "   file lines", " function lines"))
     print("%-11s %6s %6s   %5s %5s %5s   %5s %5s %5s" % ("language", "", "", "70th", "80th", "90th",

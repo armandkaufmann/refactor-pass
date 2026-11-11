@@ -166,6 +166,7 @@ details { display: grid; gap: 10px; }
 summary { cursor: pointer; color: var(--muted); font-size: var(--step--1); }
 .pairs { margin: 0; padding-left: 1.1rem; display: grid; gap: 4px; }
 .pairs li::marker { color: var(--muted); }
+.pairs .pairs { margin-top: 4px; }
 
 /* Sections and items */
 section { display: grid; gap: 16px; }
@@ -271,7 +272,7 @@ ol.items, ul.items { list-style: none; margin: 0; padding: 0; display: grid; gap
     </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>File</th><th class="num">Lines</th><th class="num">Commits</th><th class="num">Newer half</th><th class="num">Growth</th><th class="bar-col" style="width:30%">Commits, newer half solid</th></tr></thead>
+        <thead><tr><th>File</th><th class="num">Lines</th><th class="num">Commits</th><th class="num">Newer half</th><th class="num" id="last-head">Last changed</th><th class="num">Growth</th><th class="bar-col" style="width:30%">Commits, newer half solid</th></tr></thead>
         <tbody id="files-top"></tbody>
       </table>
     </div>
@@ -458,15 +459,19 @@ function renderHeatmap(heat) {
     [w.excluded_bots, "by bots"],
   ].filter(x => x[0]).map(x => `${number(x[0])} ${x[1]}`);
   const since = w.since ? ` (since ${esc(w.since)})` : "";
+  // A heatmap from before "last" was recorded has no such column.
+  const hasLast = heat.files.some(f => f.last);
+  $("last-head").hidden = !hasLast;
   let text = `${number(w.commits)} commits in <code>${esc(heat.scope.join(" "))}</code>, ${day(w.oldest.date)} to ${day(w.newest.date)}${since}, at ${short(heat.head)}. ` +
-    `The newer half starts ${day(w.newer_half_from)}. Files are ordered by commits times lines.`;
+    `The newer half of the commits starts ${day(w.newer_half_from)}${hasLast ? "; a file last changed early in it has gone quiet, however many of its commits fall there" : ""}. Files are ordered by commits times lines.`;
   if (leftOut.length) text += ` Left out: ${leftOut.join(", ")}.`;
   if (w.tests_aside) text += ` ${number(w.tests_aside)} test files changed too, and are set aside from the table and the pairs.`;
   if (w.shallow) text += " The clone is shallow, so its history stops just before the oldest commit here.";
   $("window").innerHTML = text;
   const most = Math.max(1, ...heat.files.map(f => f.commits));
-  const row = f => `<tr><td class="path">${path(f.path)}</td><td class="num">${number(f.size)}</td><td class="num">${f.commits}</td><td class="num">${f.recent}</td><td class="num">${f.growth > 0 ? "+" : ""}${number(f.growth)}</td>` +
-    `<td class="bar-col"><div class="bar" role="img" aria-label="${f.commits} commits, ${f.recent} in the newer half"><span class="all" style="width:${100 * f.commits / most}%"></span><span class="recent" style="width:${100 * f.recent / most}%"></span></div></td></tr>`;
+  const lastCell = f => hasLast ? `<td class="num">${day(f.last)}</td>` : "";
+  const row = f => `<tr><td class="path">${path(f.path)}</td><td class="num">${number(f.size)}</td><td class="num">${f.commits}</td><td class="num">${f.recent}</td>${lastCell(f)}<td class="num">${f.growth > 0 ? "+" : ""}${number(f.growth)}</td>` +
+    `<td class="bar-col"><div class="bar" role="img" aria-label="${f.commits} commits, ${f.recent} in the newer half${f.last ? `, the last on ${day(f.last)}` : ""}"><span class="all" style="width:${100 * f.commits / most}%"></span><span class="recent" style="width:${100 * f.recent / most}%"></span></div></td></tr>`;
   $("files-top").innerHTML = heat.files.slice(0, HEATMAP_ROWS_SHOWN).map(row).join("");
   const rest = heat.files.slice(HEATMAP_ROWS_SHOWN);
   if (rest.length) {
@@ -477,14 +482,25 @@ function renderHeatmap(heat) {
   // Pairs, and groups of files that all pair with each other, strongest first.
   const names = paths => paths.map(path).join(", ").replace(/, (?=[^,]*$)/, " and ");
   const together = list(heat.groups).concat(list(heat.pairs)).sort((x, y) => y.shared - x.shared || y.degree - x.degree);
-  if (together.length) {
-    $("pairs").innerHTML = together.map(p => {
-      const degree = `degree ${Math.round(p.degree * 100)}%`;
-      if (!p.files) return `<li>${names([p.a, p.b])}: ${p.shared} commits together, ${degree}</li>`;
-      const [least, most] = p.pairs || [p.shared, p.shared];
-      const spread = least === most && most === p.shared ? "" : `; each pair ${least}${least === most ? "" : ` to ${most}`}`;
-      return `<li>${names(p.files)}: ${p.shared} commits changed all ${p.files.length}${spread}, ${degree}</li>`;
-    }).join("");
+  const describe = p => {
+    const degree = `degree ${Math.round(p.degree * 100)}%`;
+    if (!p.files) return `<li>${names([p.a, p.b])}: ${p.shared} commits together, ${degree}</li>`;
+    const [least, most] = p.pairs || [p.shared, p.shared];
+    const spread = least === most && most === p.shared ? "" : `; each pair ${least}${least === most ? "" : ` to ${most}`}`;
+    return `<li>${names(p.files)}: ${p.shared} commits changed all ${p.files.length}${spread}, ${degree}</li>`;
+  };
+  // Groups that share two files or more are one cluster, listed together at the place of its strongest.
+  const rows = [], placed = new Set();
+  for (const p of together) {
+    if (!p.cluster) { rows.push(describe(p)); continue; }
+    if (placed.has(p.cluster)) continue;
+    placed.add(p.cluster);
+    const mine = together.filter(q => q.cluster === p.cluster);
+    const files = new Set([].concat(...mine.map(q => q.files)));
+    rows.push(`<li>One area: these ${mine.length} groups overlap, each sharing two files or more with another, ${files.size} files in all, though no commit need have changed them all:<ul class="pairs">${mine.map(describe).join("")}</ul></li>`);
+  }
+  if (rows.length) {
+    $("pairs").innerHTML = rows.join("");
     $("pairs-wrap").hidden = false;
   }
   if (w.too_big_for_pairs) {

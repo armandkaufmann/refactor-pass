@@ -54,12 +54,13 @@ python3 <this skill's directory>/scripts/heatmap.py -C <repo> <scope ...>
 `<this skill's directory>` is the folder that holds this SKILL.md.
 
 - **Scope**: the source folders and the tests' folders, such as `src tests`
-  or `app`, not docs or assets; read the project's layout (README, any
-  agent's instructions, such as `AGENTS.md` or `CLAUDE.md`, a directory
-  listing) to decide. Test files, known by name (`Board.spec.ts`,
-  `test_x.py`, `XTest.php`...) or folder, stay out of the table and pairs,
-  and are listed apart when they change with several files. Add
-  `--test GLOB` for other test names, `--ignore GLOB` for generated files.
+  or `app`, not docs or assets. Read the project's README, a directory
+  listing and any agent instructions (`AGENTS.md`, `CLAUDE.md`) to decide.
+  Test files, known by name (`Board.spec.ts`, `test_x.py`, `XTest.php`...)
+  or folder, stay out of the table and pairs, and are listed apart when
+  they change with several files. Add `--test GLOB` for other test names,
+  `--not-test GLOB` for a file that only looks like one (the heatmap names
+  any it doubts), and `--ignore GLOB` for generated files.
 - **Window**: by default the last 200 commits. `--since` sets it instead
   when the user names a starting point ("since v2.0", "since we added
   billing", "the last three months"): a tag, branch or commit, or a date.
@@ -80,8 +81,11 @@ python3 <this skill's directory>/scripts/heatmap.py -C <repo> <scope ...>
   first: it's ordered by commits times size. Many commits on a small file is
   often fine, like a config edited for each feature. A big file nobody
   touches is cheap to leave alone.
-- **Still hot?** A file with few `recent` commits (in the window's newer
-  half) has cooled, and one that shrank may already have been dealt with.
+- **Still hot?** `recent` counts its commits in the window's newer half
+  (half the commits, not half the time), and `last` is the date of its
+  latest. Read both against the window's dates: eight `recent` commits, all
+  on the day the newer half starts, are a burst that has cooled. A file
+  that shrank may already have been dealt with.
 - **`rel`** is lines changed over the file's size. Relative churn predicts
   defects far better than absolute churn. Well above 1 means the file was
   rewritten or grew in the window. Read it with **growth**: a file that only
@@ -90,7 +94,8 @@ python3 <this skill's directory>/scripts/heatmap.py -C <repo> <scope ...>
   born in the window has growth equal to its size.
 - **Pairs** are files that keep changing in the same commits. A **group**
   is three or more that all pair with each other, counted by the commits
-  that changed them all.
+  that changed them all; groups that overlap are listed together as one
+  area.
   - Files from different layers that pair strongly, or a group across
     layers, usually mean one feature spread across them (Shotgun Surgery).
   - Check whether one of a pair imports the other. Files that always change
