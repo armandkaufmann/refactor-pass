@@ -47,18 +47,20 @@ a name, assigned to a member (named by its last name: send for res.send =
 function ..., exports for module.exports = ...) or exported as the default
 (named default); and for C, C++, Java and C#, by their shape: a type, a
 name, parentheses, then a body, after any annotations (@Test, [Fact]);
-and in C++ also a constructor, a destructor or an operator with no type.
-A name may carry type arguments (C#'s Get<T>, C++'s List<T>::Add, named
-Get and List::Add), a name in backquotes is a name in Kotlin and Swift,
-and a .h file is C++ when it holds a class, a namespace or a template. A
-signature may run over several lines, and a body may sit on its
-signature's line. Each language's strings
-are read as it writes them (Ruby's regular expressions, % literals and
-heredocs, C#'s @"...", Rust's r#"..."#, C++'s R"(...)"), and C's, C++'s,
-C#'s and Swift's #if as their preprocessor does. A function runs to the end
-of its body, found by indentation (Python, GDScript, Ruby) or by matching
-brackets (the rest). Files in other languages get lines only, and the
-output says which.
+and in C++ and C# also an operator, and in C++ a constructor or a
+destructor with no type. A name is any the language allows, a word it
+doesn't reserve (delete in Java), and may carry type arguments (C#'s
+Get<T>, C++'s List<T>::Add, named Get and List::Add); a name in
+backquotes is a name in Kotlin and Swift; and a .h file is C++ when it
+holds a class, a namespace or a template. A signature may run over
+several lines, and a body may sit on its signature's line. Each
+language's strings are read as it writes them (Ruby's regular
+expressions, % literals and heredocs, C#'s @"...", Rust's r#"..."#, C++'s
+R"(...)"), with the code in an interpolation's hole (Swift's \\(...),
+Kotlin's ${...}, C#'s $"{...}"), and C's, C++'s, C#'s and Swift's #if as
+their preprocessor does. A function runs to the end of its body, found by
+indentation (Python, GDScript, Ruby) or by matching brackets (the rest).
+Files in other languages get lines only, and the output says which.
 
 It points at code to read; it doesn't judge it. What it gets wrong:
   - a nested function counts in its own length and in its parent's;
