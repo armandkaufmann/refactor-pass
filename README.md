@@ -147,11 +147,11 @@ an older commit's, set `REFACTOR_PASS_SCRIPTS` to its `scripts/` folder.
 Outside that run, `tests/tools/` holds three checks to run by hand:
 
 - `compare_parsers.py` compares the functions `measure.py` finds with
-  real parsers' (Python's `ast`, TypeScript's compiler, PHP's tokenizer and
-  Go's parser) on 21 public repos pinned to exact commits, and fails where
-  one falls below its recorded floors. It fetches each at its commit, or
-  uses clones on disk (`--repos-dir`), and skips a language whose parser
-  isn't installed.
+  real parsers' (Python's `ast`, TypeScript's compiler, PHP's tokenizer,
+  Go's parser, Ruby's own, `swiftc` and `clang`) on 40 public repos pinned
+  to exact commits, and fails where one falls below its recorded floors.
+  It fetches each at its commit, or uses clones on disk (`--repos-dir`),
+  and skips a language whose parser isn't installed.
 - `render_pages.py` renders checklist pages in headless Chrome and checks
   that each shows what its data holds.
 - `stress.py` runs a longer fuzz, the extreme inputs at full size, and

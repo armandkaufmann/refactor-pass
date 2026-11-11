@@ -2,9 +2,13 @@
 default run, and fail where a set falls below its recorded floors.
 
 For each set, the truth comes from a real parser: Python's ast (Python 3.8 or later), TypeScript's compiler
-through Node for JavaScript and TypeScript (parsers/ts_truth.js), PHP's tokenizer (parsers/php_truth.php)
-and Go's parser (parsers/go_truth.go). A function is found when measure.py reports one starting on the same
-line. Four measures, each with a floor recorded from the numbers of the day it was set, a hair under them:
+through Node for JavaScript and TypeScript (parsers/ts_truth.js), PHP's tokenizer (parsers/php_truth.php),
+Go's parser (parsers/go_truth.go), Ruby's (RubyVM::AbstractSyntaxTree, Ruby 2.6 or later; parsers/
+rb_truth.rb), swiftc's parse for Swift, and clang's syntax tree for C and C++, with the system's headers
+left out. clang reads one platform's #if branches and can't expand a test framework's macros without its
+headers, so for C and C++ measure.py finds many functions clang doesn't have: their ceiling is high. A
+function is found when measure.py reports one starting on the same line. Four measures, each with a floor
+recorded from the numbers of the day it was set, a hair under them:
 
   found     the share of the parser's functions measure.py finds
   long      the share of those over 45 lines it finds
@@ -27,6 +31,7 @@ import ast
 import fnmatch
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -42,11 +47,12 @@ PARSERS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "parsers")
 class Set(object):
     """A repo pinned to a commit: its language, the folders read, the files left out, and the floors."""
 
-    def __init__(self, name, language, url, sha, folders, floors, folder=None, leave_out=()):
+    def __init__(self, name, language, url, sha, folders, floors, folder=None, leave_out=(), includes=()):
         self.name, self.language, self.url, self.sha, self.folders = name, language, url, sha, folders
         self.floors = dict(zip(("found", "long", "ends", "extras"), floors))
         self.folder = folder or name
         self.leave_out = leave_out
+        self.includes = includes  # For C and C++: the repo's folders of headers, for clang.
 
 
 # The floors: found %, long found %, ends right %, and the most extras. Recorded on 2026-11-11 from that day's
@@ -96,6 +102,48 @@ SETS = [
         ["src"], (99.7, 99.5, 99.8, 81)),
     Set("gin", "Go", "https://github.com/gin-gonic/gin", "0f09c3a9b4626d9fe9979cf4d0521d6ae32ab646",
         ["."], (99.8, 99.5, 99.7, 2)),
+    Set("sinatra", "Ruby", "https://github.com/sinatra/sinatra", "cb22afd7902b566b6eaba6c4ea89739494a65d12",
+        ["."], (99.4, 99.5, 99.8, 2)),
+    Set("rack", "Ruby", "https://github.com/rack/rack", "da90464e3fa93e3cb49dc2d4ede798e6c6b70b4f",
+        ["."], (99.0, 99.5, 99.6, 2)),
+    Set("devise", "Ruby", "https://github.com/heartcombo/devise", "05811fb8366edd08874111d0f6fb44543e1c91ef",
+        ["."], (99.0, 99.5, 99.8, 2)),
+    Set("jekyll", "Ruby", "https://github.com/jekyll/jekyll", "97c3bdc822df9d5bea4c269b29a28de5a5e29d70",
+        ["."], (99.8, 99.5, 99.8, 2)),
+    Set("rake", "Ruby", "https://github.com/ruby/rake", "3f29d39daa688eb51cd975c06b1501320f10b911",
+        ["."], (99.8, 99.5, 99.8, 2)),
+    Set("thor", "Ruby", "https://github.com/rails/thor", "cb11e8e87b3cfe6bc9f6d4b092897f0dfda2476d",
+        ["."], (99.8, 99.5, 99.8, 2)),
+    Set("puma", "Ruby", "https://github.com/puma/puma", "9915a4c2d022f47024ccfbfcd7d227c122210422",
+        ["."], (99.8, 99.5, 99.7, 2)),
+    Set("rspec-core", "Ruby", "https://github.com/rspec/rspec-core", "aec5f49485d97908183dbe790a7fefb8baaa8091",
+        ["."], (99.3, 99.5, 99.8, 2)),
+    Set("faraday", "Ruby", "https://github.com/lostisland/faraday", "98d96ed5f2e6309196872c6c4bf1be7224baf773",
+        ["."], (99.8, 99.5, 99.8, 2)),
+    Set("Alamofire", "Swift", "https://github.com/Alamofire/Alamofire", "b3e74e8301cc53c8f82afb9db141d52952876e69",
+        ["."], (99.8, 99.5, 99.8, 2)),
+    Set("swift-argument-parser", "Swift", "https://github.com/apple/swift-argument-parser",
+        "38ca4eceb349155836701b88da3e0986eb9d1e1c", ["."], (99.0, 99.5, 99.8, 2)),
+    Set("Kingfisher", "Swift", "https://github.com/onevcat/Kingfisher", "503d8e875623dcc3c1482370c4cd54579b9fa5ce",
+        ["."], (99.8, 99.5, 99.8, 2)),
+    Set("SnapKit", "Swift", "https://github.com/SnapKit/SnapKit", "250529bec615066185ff328984855101820fcbee",
+        ["."], (99.8, 99.5, 99.8, 2)),
+    # For C and C++, the extras are mostly code clang doesn't read: another platform's #if branches, and test
+    # macros (TEST_CASE) it can't expand without the framework's headers. jq's misses are mostly functions its
+    # macros make (libm.h), which measure.py's help lists.
+    Set("jq", "C", "https://github.com/jqlang/jq", "5c001b18d7237cce1fdba63608732163f978dd23",
+        ["src"], (90.6, 94.3, 99.8, 69), includes=(".", "src")),
+    Set("lua", "C", "https://github.com/lua/lua", "8cb93bada561977eb370819e39d7d644e5fd0a3f",
+        ["."], (99.7, 99.5, 99.8, 137), includes=(".",)),
+    Set("redis", "C", "https://github.com/redis/redis", "0cfe837207b3236360ef57780f59843940f926d2",
+        ["src"], (99.7, 99.5, 99.8, 475),
+        includes=("src", "deps/hiredis", "deps/lua/src", "deps/linenoise", "deps/hdr_histogram", "deps/fpconv")),
+    Set("leveldb", "C++", "https://github.com/google/leveldb", "bb74ef739973a70ca9f0d90788a1da89b788c0ad",
+        ["."], (99.7, 99.5, 99.8, 35), includes=(".", "include")),
+    Set("fmt", "C++", "https://github.com/fmtlib/fmt", "e7e6e3f71033fbfc71eba1709789328bcb0ceb28",
+        ["src", "test", "include"], (98.5, 99.5, 99.8, 803), includes=("include", "test")),
+    Set("spdlog", "C++", "https://github.com/gabime/spdlog", "6d9805df3f588402b17073dcd13eb569ceda864d",
+        ["src", "tests", "include"], (99.8, 99.5, 99.8, 423), includes=("include",)),
 ]
 
 
@@ -167,6 +215,129 @@ def python_truth(repo, folders):
     return out
 
 
+def files_under(repo, folders, extensions):
+    """The files with one of the extensions under the folders, as paths from the repo's top, sorted."""
+    found = []
+    for sub in folders:
+        for folder, dirs, names in os.walk(os.path.join(repo, sub)):
+            dirs[:] = sorted(d for d in dirs if d not in (".git", "node_modules"))
+            for name in sorted(names):
+                path = os.path.join(folder, name)
+                if name.endswith(extensions) and os.path.isfile(path) and not os.path.islink(path):
+                    found.append(os.path.relpath(path, repo).replace(os.sep, "/"))
+    return found
+
+
+SWIFT_DECL = re.compile(r"(\s*)\((func_decl|constructor_decl|destructor_decl|subscript_decl) "
+                        r".*?range=\[.*?:(\d+):\d+ - line:(\d+):\d+\](?: \"([^\"]*)\")?")
+
+
+def swift_truth(repo, folders):
+    """Swift's functions, operators, initializers, deinitializers and subscripts with a body, from swiftc's
+    parse of each file (-dump-parse: parsed, not compiled), with the lines its ranges give; not a defer's
+    block, which it lists as a function. Its parse leaves out what's inside #if ... #endif, so each file is
+    parsed from a copy, in a temporary folder, with those lines blank: every branch is read, on its own lines."""
+    if not shutil.which("swiftc"):
+        raise LookupError("swiftc isn't installed")
+    out = {}
+    folder = tempfile.mkdtemp(prefix="refactor-pass-swift-")
+    try:
+        for path in files_under(repo, folders, (".swift",)):
+            with open(os.path.join(repo, path), "rb") as f:
+                text = f.read().decode("utf-8", errors="replace")
+            copy = os.path.join(folder, "file.swift")
+            with open(copy, "w", encoding="utf-8") as f:
+                f.write("\n".join("" if re.match(r"\s*#(?:if|elseif|else|endif)\b", line) else line
+                                  for line in text.split("\n")))
+            out[path] = swift_functions(run(["swiftc", "-dump-parse", copy]).stdout)
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
+    return out
+
+
+def swift_functions(stdout):
+    """The functions in swiftc's dump of one file."""
+    dump = stdout.decode("utf-8", errors="replace").split("\n")
+    rows = []
+    for k, line in enumerate(dump):
+        decl = SWIFT_DECL.match(line)
+        if not decl:
+            continue
+        indent, kind = len(decl.group(1)), decl.group(2)
+        body = False
+        for inner in dump[k + 1:]:
+            depth = len(inner) - len(inner.lstrip())
+            if depth <= indent:
+                break
+            if inner.lstrip().startswith("(brace_stmt") and (depth == indent + 2 or kind == "subscript_decl"):
+                body = True
+                break
+        name = (decl.group(5) or kind.split("_")[0]).split("(")[0]
+        if body and not name.startswith("$"):
+            rows.append([{"constructor": "init", "destructor": "deinit"}.get(name, name), int(decl.group(3)),
+                         int(decl.group(4))])
+    return rows
+
+
+CLANG_FUNCTIONS = ("FunctionDecl", "CXXMethodDecl", "CXXConstructorDecl", "CXXDestructorDecl", "CXXConversionDecl")
+
+
+def clang_truth(repo, folders, language, includes):
+    """C's or C++'s function definitions, from clang's syntax tree of each source file (-fsyntax-only:
+    parsed, not compiled), at the line of the function's name: in the source file, and in the headers under
+    the set's folders that it includes, once each whichever files include them. The system's headers are
+    left out (-nostdinc), which keeps the tree small; the repo's own are read from the include folders. A
+    line the tree doesn't repeat is the last one it gave, so the locations are read in order."""
+    compiler = "clang" if language == "C" else "clang++"
+    if not shutil.which(compiler):
+        raise LookupError("%s isn't installed" % compiler)
+    extensions = (".c",) if language == "C" else (".cc", ".cpp", ".cxx")
+    flags = ["-fsyntax-only", "-w", "-ferror-limit=0", "-nostdinc"] + ["-I" + os.path.join(repo, i) for i in includes]
+    flags += ["-std=c++17"] if language == "C++" else []
+    top = os.path.realpath(repo)
+    under = tuple(os.path.join(os.path.realpath(os.path.join(repo, f)), "") for f in folders)
+    out = {}
+    for path in files_under(repo, folders, extensions):
+        full = os.path.join(repo, path)
+        out.setdefault(path, {})
+        result = run([compiler] + flags + ["-Xclang", "-ast-dump=json", full])
+        try:
+            tree = json.loads(result.stdout.decode("utf-8", errors="replace") or "{}")
+        except ValueError:
+            continue
+        state = {"file": None, "line": None}
+
+        def where(location):
+            if not isinstance(location, dict):
+                return None
+            if "spellingLoc" in location:
+                where(location["spellingLoc"])
+                return where(location["expansionLoc"])
+            state["file"] = location.get("file", state["file"])
+            state["line"] = location.get("line", state["line"])
+            return (state["file"], state["line"]) if "offset" in location else None
+
+        def walk(node):
+            name_at = where(node.get("loc"))
+            span = node.get("range") or {}
+            where(span.get("begin"))
+            end = where(span.get("end"))
+            if node.get("kind") == "LambdaExpr":
+                return
+            written = not (node.get("isImplicit") or node.get("explicitlyDefaulted") or node.get("explicitlyDeleted"))
+            if node.get("kind") in CLANG_FUNCTIONS and written and name_at and end and \
+                    any(c.get("kind") == "CompoundStmt" for c in node.get("inner", [])):
+                at = os.path.realpath(name_at[0]) if name_at[0] else ""
+                if at.startswith(under) and not os.path.islink(name_at[0]):
+                    rows = out.setdefault(os.path.relpath(at, top).replace(os.sep, "/"), {})
+                    rows[name_at[1]] = [node.get("name"), name_at[1], end[1]]
+            for child in node.get("inner", []):
+                walk(child)
+
+        walk(tree)
+    return dict((path, [rows[line] for line in sorted(rows)]) for path, rows in out.items())
+
+
 def tool_truth(command):
     result = run(command)
     if result.returncode != 0:
@@ -194,6 +365,15 @@ def truth(one, repo, typescript):
         if not shutil.which("go"):
             raise LookupError("go isn't installed")
         found = tool_truth(["go", "run", os.path.join(PARSERS, "go_truth.go"), repo])
+    elif one.language == "Ruby":
+        ruby = shutil.which("ruby")
+        if not ruby or run([ruby, "-e", "exit(defined?(RubyVM::AbstractSyntaxTree) ? 0 : 1)"]).returncode != 0:
+            raise LookupError("no Ruby 2.6 or later is installed, whose RubyVM::AbstractSyntaxTree gives the truth")
+        found = tool_truth([ruby, os.path.join(PARSERS, "rb_truth.rb"), repo] + one.folders)
+    elif one.language == "Swift":
+        found = swift_truth(repo, one.folders)
+    elif one.language in ("C", "C++"):
+        found = clang_truth(repo, one.folders, one.language, one.includes)
     else:
         raise LookupError("no parser for %s" % one.language)
     found = dict((path.replace(os.sep, "/"), rows) for path, rows in found.items())
