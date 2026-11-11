@@ -220,7 +220,7 @@ class NothingAboutTheSuite(unittest.TestCase):
         readme = read(os.path.join(ROOT, "README.md"))
         install = readme[readme.index("For one project"):readme.index("With any other agent")]
         removal = re.search(r"(?m)^rm -rf (.*)$", install).group(1).split()
-        wanted = [".git", "tests"]
+        wanted = [".git", ".github", "tests"]
         self.assertEqual(sorted(p.rsplit("/", 1)[1] for p in removal), wanted)
         self.assertTrue(all(p.startswith(".agents/skills/refactor-pass/") for p in removal), removal)
         powershell = re.search(r"`Remove-Item -Recurse -Force ([^`]*)`", install).group(1)

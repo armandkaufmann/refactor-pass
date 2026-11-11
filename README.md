@@ -59,15 +59,15 @@ copy of it in the project's `.agents/skills/refactor-pass`, or
 `.claude/skills/refactor-pass` for Claude Code. A plain clone there won't
 do: git records a repo inside a repo as a pointer, and the project's clones
 get an empty folder. So clone it, then delete the `.git` folder the clone
-made, and the `tests` folder, which the skill doesn't need:
+made, and the `tests` and `.github` folders, which the skill doesn't need:
 
 ```bash
 git clone --depth 1 https://github.com/armandkaufmann/refactor-pass .agents/skills/refactor-pass
-rm -rf .agents/skills/refactor-pass/.git .agents/skills/refactor-pass/tests
+rm -rf .agents/skills/refactor-pass/.git .agents/skills/refactor-pass/tests .agents/skills/refactor-pass/.github
 ```
 
 In PowerShell, the second line is
-`Remove-Item -Recurse -Force .agents/skills/refactor-pass/.git, .agents/skills/refactor-pass/tests`.
+`Remove-Item -Recurse -Force .agents/skills/refactor-pass/.git, .agents/skills/refactor-pass/tests, .agents/skills/refactor-pass/.github`.
 
 To update it, delete the folder and do the same again. A git submodule
 would keep the link to this repo, but a clone, and the fresh worktree many
@@ -144,6 +144,8 @@ python3 -B -m unittest discover -s tests -t .
 Run it from the repo's top, or from anywhere with both paths:
 `-s <repo>/tests -t <repo>`. To test another copy of the scripts, such as
 an older commit's, set `REFACTOR_PASS_SCRIPTS` to its `scripts/` folder.
+A GitHub Actions workflow, `.github/workflows/tests.yml`, runs it on Linux,
+macOS and Windows with several versions of Python.
 
 Outside that run, `tests/tools/` holds four checks to run by hand:
 
