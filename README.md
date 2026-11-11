@@ -59,12 +59,15 @@ copy of it in the project's `.agents/skills/refactor-pass`, or
 `.claude/skills/refactor-pass` for Claude Code. A plain clone there won't
 do: git records a repo inside a repo as a pointer, and the project's clones
 get an empty folder. So clone it, then delete the `.git` folder the clone
-made (in PowerShell, `Remove-Item -Recurse -Force` instead of `rm -rf`):
+made, and the `tests` folder, which the skill doesn't need:
 
 ```bash
 git clone --depth 1 https://github.com/armandkaufmann/refactor-pass .agents/skills/refactor-pass
-rm -rf .agents/skills/refactor-pass/.git
+rm -rf .agents/skills/refactor-pass/.git .agents/skills/refactor-pass/tests
 ```
+
+In PowerShell, the second line is
+`Remove-Item -Recurse -Force .agents/skills/refactor-pass/.git, .agents/skills/refactor-pass/tests`.
 
 To update it, delete the folder and do the same again. A git submodule
 would keep the link to this repo, but a clone, and the fresh worktree many
@@ -125,6 +128,34 @@ count and which are tests.
 - `references/sources.md`: the books, studies and articles drawn on.
 - `scripts/`: the scripts above.
 - `assets/page.html`: the template for the checklist page.
+- `tests/`: the scripts' tests, for contributors (see [Tests](#tests)).
+
+## Tests
+
+For contributors; an installed copy doesn't need them. The suite in
+`tests/` uses Python's standard library and git, builds the small repos it
+reads in a temporary folder, and runs in well under a minute:
+
+```bash
+python3 -m unittest discover -s tests -t .
+```
+
+Run it from the repo's top, or from anywhere with both paths:
+`-s <repo>/tests -t <repo>`. To test another copy of the scripts, such as
+an older commit's, set `REFACTOR_PASS_SCRIPTS` to its `scripts/` folder.
+
+Outside that run, `tests/tools/` holds three checks to run by hand:
+
+- `compare_parsers.py` compares the functions `measure.py` finds with
+  real parsers' (Python's `ast`, TypeScript's compiler, PHP's tokenizer and
+  Go's parser) on 21 public repos pinned to exact commits, and fails where
+  one falls below its recorded floors. It fetches each at its commit, or
+  uses clones on disk (`--repos-dir`), and skips a language whose parser
+  isn't installed.
+- `render_pages.py` renders checklist pages in headless Chrome and checks
+  that each shows what its data holds.
+- `stress.py` runs a longer fuzz, the extreme inputs at full size, and
+  every file in the folders it's given.
 
 ## Where the ideas come from
 

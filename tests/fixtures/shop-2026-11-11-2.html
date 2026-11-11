@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Refactor pass</title>
+</head>
+<body>
+<!-- A checklist an agent wrote with an earlier version of the skill, kept for the suite: the data blocks and the comment above them are as written; the page's style and script are left out. -->
+<!-- The data. heatmap.py --page writes the heatmap block, and rewrites it on a
+     refresh; leave it alone. You write the pass block, as SKILL.md steps 5 to 7
+     say, and run scripts/check_page.py on this file after each edit.
+
+     Start each item with its id and status on one line, exactly as below,
+     and its other fields after them, so a status update is a one-line edit;
+     a JSON pretty-printer's layout won't do. Rn and Fn stand for real IDs,
+     such as R1 and F1:
+       {"id": "Rn", "status": "todo", "title": "Name the states of a checkout",
+        "eases": "adding a payment method",
+        "smells": ["Hidden State Machine: 6 flags, 9 places set them (`checkout.py:40`)"],
+        "cost": {"today": "5 files, 2 switches", "after": "1 file"},
+        "plan": ["Pin today's behaviour with tests", "Replace Primitive with Object: one state field"],
+        "files": ["src/checkout.py", "src/payment.py"],
+        "size": "M", "risk": "Medium",
+        "verify": "`make test`; the checkout snapshots",
+        "commits": [], "outcome": ""}
+       {"id": "Fn", "status": "todo", "title": "…", "note": "…", "commits": [], "outcome": ""}
+     L and D items have the same fields as F. An item carried over from an
+     earlier checklist adds "from": "2026-11-03", the date it first appeared.
+     Statuses: todo, doing, waiting (on the user), done, skipped. Size: S, M
+     or L; risk: Low, Medium or High. Dates as 2026-11-03, the local date, as
+     the heatmap's are. In text, `code` shows as code. -->
+<script type="application/json" id="heatmap">
+{
+ "head": "a7345c7c3",
+ "scope": [
+  "shop",
+  "tests"
+ ],
+ "window": {"commits": 39, "newest": {"sha": "a7345c7c3", "date": "2026-11-11", "subject": "Add Apple Pay as a payment kind"}, "oldest": {"sha": "4ff9402b1", "date": "2026-07-05", "subject": "Start the shop: card payments, stock and prices"}, "newer_half_from": "2026-09-23", "excluded": 8, "excluded_asked": 0, "excluded_ignore_revs": 0, "excluded_checklists": 8, "excluded_bots": 0, "too_big_for_pairs": 0, "since": null, "tests_aside": 4, "shallow": false},
+ "options": {"top": 25, "pairs": 15, "max_files": 25, "min_shared": 5, "min_revs": 5, "min_degree": 30},
+ "total_files": 9,
+ "files": [
+  {"path": "shop/orders.py", "commits": 12, "recent": 2, "last": "2026-10-15", "churn": 157, "added": 152, "removed": 5, "size": 76, "rel": 2.07, "size_before": 0, "growth": 76},
+  {"path": "shop/inventory.py", "commits": 22, "recent": 16, "last": "2026-10-30", "churn": 66, "added": 45, "removed": 21, "size": 24, "rel": 2.75, "size_before": 0, "growth": 24},
+  {"path": "shop/legacy_export.py", "commits": 1, "recent": 0, "last": "2026-07-05", "churn": 240, "added": 240, "removed": 0, "size": 240, "rel": 1.0, "size_before": 0, "growth": 240},
+  {"path": "shop/receipts.py", "commits": 10, "recent": 2, "last": "2026-10-15", "churn": 37, "added": 37, "removed": 0, "size": 21, "rel": 1.76, "size_before": 0, "growth": 21},
+  {"path": "shop/payment_kinds.py", "commits": 1, "recent": 1, "last": "2026-11-11", "churn": 1, "added": 1, "removed": 0, "size": 91, "rel": 0.01, "size_before": 0, "growth": 91},
+  {"path": "shop/fees.py", "commits": 8, "recent": 2, "last": "2026-10-15", "churn": 21, "added": 21, "removed": 0, "size": 10, "rel": 2.1, "size_before": 0, "growth": 10},
+  {"path": "shop/admin.py", "commits": 8, "recent": 2, "last": "2026-10-15", "churn": 37, "added": 23, "removed": 14, "size": 7, "rel": 5.29, "size_before": 0, "growth": 7},
+  {"path": "shop/pricing.py", "commits": 4, "recent": 1, "last": "2026-09-28", "churn": 13, "added": 10, "removed": 3, "size": 7, "rel": 1.86, "size_before": 0, "growth": 7},
+  {"path": "shop/__init__.py", "commits": 1, "recent": 0, "last": "2026-07-05", "churn": 0, "added": 0, "removed": 0, "size": 0, "rel": 0.0, "size_before": 0, "growth": 0}
+ ],
+ "groups": [
+  {"files": ["shop/admin.py", "shop/fees.py", "shop/orders.py", "shop/receipts.py"], "pairs": [8, 8], "shared": 8, "of_quieter": 1.0, "degree": 0.84}
+ ],
+ "pairs": [],
+ "tests": [
+  {"test": "tests/test_orders.py", "files": [{"path": "shop/admin.py", "shared": 8}, {"path": "shop/fees.py", "shared": 8}, {"path": "shop/receipts.py", "shared": 8}]}
+ ]
+}
+</script>
+<script type="application/json" id="pass">
+{
+ "project": "shop",
+ "started": "2026-11-11",
+ "base": "a7345c7c3",
+ "updated": "2026-11-11",
+ "summary": "R2 held up: Apple Pay was one line of production code in one file, down from 6 files and 6 places, and the payment code is now small and quiet. The gap is in the tests: R1's per-kind pins are hand-kept tables that don't include Apple Pay, so its fee, receipt, refund and pay function can all change with the 62 tests still passing, and Klarna would land the same way. Order states (R3) and the refund rule (F3, F5) are where Klarna and store credit will actually hurt, depending on how each is meant to work.",
+ "checks": ["`python3 -m unittest discover -s tests -t .` (62 tests, passing at a7345c7c3); no linter or agent instructions in the project"],
+ "earlier": {"checklist": ".refactor-pass/2026-11-11.html", "results": [
+  {"id": "R2", "title": "Give each payment kind one definition", "eases": "adding a payment kind (8 added in 38 commits; Apple Pay, Klarna and store credit are next)", "cost": {"today": "Apple Pay touches 6 files (orders, fees, receipts, admin, tests, README) and 6 places", "after": "1 new definition in 1 file, plus its test"}, "change": "Apple Pay, a7345c7c3 (2026-11-11)", "actual": "4 files: 1 line in `shop/payment_kinds.py` (one `PaymentKind` entry reusing `pay_from_wallet`), a new `test_applepay` in `tests/test_orders.py`, one row in the admin-list test in `tests/test_fees.py`, and 2 lines of `README.md` (the kinds list and the plans)", "note": "Held for production code: exactly 1 place in 1 file, against 6 files and 6 places before. The tests were 2 files, not 1, because the admin-list test is an exact list and fails without the new row; the README's 'Payment kinds so far' line is a hand-kept list. See R1 for what the tests did not catch."},
+  {"id": "R1", "title": "Pin what receipts, fees, refunds and order states do today", "eases": "adding a payment kind (Apple Pay, Klarna, store credit)", "cost": {"today": "a change to a receipt, a fee or a refund is not checked by anything", "after": "every place R2 touches has a test that fails if its output changes"}, "change": "Apple Pay, a7345c7c3 (2026-11-11)", "actual": "the same commit; of the 8 per-kind tables R1 and R2 wrote in 3 test files, Apple Pay was added to 1 (the admin list, the only exact one)", "note": "A partial miss. The pins did their job for R2 (output identical on 108 scenarios), but they are tables of the 8 kinds that existed, and nothing makes a new kind join them. Checked on a scratch copy: Apple Pay's fee rate set to 0.5, its refund to the wallet turned off, and its pay function swapped for `pay_from_code`, and all 62 tests still pass. Carried into R4."}
+ ]},
+ "items": [
+  {"id": "R4", "status": "todo", "title": "Every payment kind pinned, and a kind missing from a pin fails", "eases": "adding a payment kind (Klarna next, then store credit)",
+   "smells": ["Untested Code: Apple Pay's fee, receipt lines, full log, reference and refund-to-wallet are asserted nowhere; its fee rate at 0.5, its refund turned off and its pay function swapped for `pay_from_code` all leave the 62 tests passing (checked on a scratch copy)", "Shotgun Surgery, in the tests: 8 hand-kept per-kind tables in 3 files (`tests/test_fees.py`: the two fee tables at `:12` and `:19`, both driven by the `KINDS` list at `:5`, and the admin list at `:35`; `tests/test_receipts.py:8`; `tests/test_orders.py:93` and `:114`, and the refund lists at `:224` and `:240`); only the admin list (`test_fees.py:35`) fails when a kind is missing, so the other 7 silently skip a new one", "The README recipe's step 2 (`README.md:10`) says 'Add a test to `tests/test_orders.py`', which is what Apple Pay did, and that test reads only the last log line and a two-letter prefix"],
+   "cost": {"today": "Klarna, done properly, means finding 8 tables in 3 test files by hand; forgetting 7 of them fails nothing (as Apple Pay shows)", "after": "the same rows, but each table that lacks Klarna fails with its name, so the test run is the recipe"},
+   "plan": ["Characterization first: add Apple Pay's rows to each table with what it does today (fee 29 on 1000 and 33 on 1140; receipt 'Paid by Apple Pay', 'Fee: 33'; log 'paid by apple pay: 240 (fee 6)'; prefix 'AP'; refund credits the wallet 240), in their own commit", "In each per-kind table, assert its keys equal `set(payment_kinds.BY_KEY)` (one small helper in the tests, not a framework); keep the expected values literal", "Move Apple Pay into the card/PayPal refund list (`test_orders.py:224`) and say which list a new kind joins", "Change the README recipe's step 2 to 'run the tests: each table that lacks the new kind says so'"],
+   "files": ["tests/test_fees.py", "tests/test_receipts.py", "tests/test_orders.py", "README.md"], "size": "S", "risk": "Low",
+   "verify": "`python3 -m unittest discover -s tests -t .` passes on unchanged production code; then, on a scratch copy, the three Apple Pay mutations above each fail at least one test, and a dummy `PaymentKind` added to `KINDS` fails every table",
+   "commits": [], "outcome": ""},
+  {"id": "R3", "status": "todo", "from": "2026-11-11", "title": "Name the states of an order", "eases": "Klarna, if it waits for approval before the order may ship; store credit refunds",
+   "smells": ["Hidden State Machine: five flags in `Order.__init__` (`shop/orders.py:11-15`: paid, shipped, cancelled, refunded, on hold); `ship` tests four at once (`orders.py:38`), `cancel` three (`:50-51`), `refund` three (`:61`), `hold` two (`:73`), `process_order` two (`:22-24`)", "History: three 'Fix:' commits each added an 'and not X' (55688c3, 95e0b77, 44d7912); `orders.py` itself unchanged since 2026-10-15 apart from R2's refactor", "`process_order` lets a refunded order be paid again (`orders.py:24`) without clearing `is_refunded`, a combination nothing names; and F4's on-account kinds log 'awaiting payment' but are set paid, an unnamed 'awaiting' state"],
+   "cost": {"today": "a Klarna order that awaits approval means a sixth flag and re-reading and editing up to 5 conditions in 5 functions (`process_order`, `ship`, `cancel`, `refund`, `hold`); if Klarna pays at checkout like a card, nothing here", "after": "1 new state and its moves in 1 transition table, 1 test"},
+   "plan": ["Decide first: does a Klarna order wait for approval, and are invoice, bank and cash orders really paid when taken (F4)? If neither, skip this item again", "R1's pins on cancel, refund and hold are in place (`tests/test_orders.py`, classes Refund and the hold/cancel tests)", "Replace Primitive with Object: one `status` field instead of the flags, the old flags kept as read-only questions about it, so callers and tests don't change", "Put the legal moves in one method that refuses the illegal ones; `ship`, `cancel`, `refund` and `hold` call it", "Stop there; the State pattern is not warranted at five or six states"],
+   "files": ["shop/orders.py", "tests/test_orders.py"], "size": "S", "risk": "Medium",
+   "verify": "`python3 -m unittest discover -s tests -t .`, with R1's pins on ship, cancel, refund and hold and the `PinnedBehaviourToReview` class unchanged",
+   "commits": [], "outcome": ""},
+  {"id": "F1", "status": "todo", "from": "2026-11-11", "title": "Cash on delivery and card orders get the same reference prefix", "note": "Still reproduced at a7345c7c3: a cash order and a card order both get `CA-ann-240` (the entries at `shop/payment_kinds.py:80` and `:87`; the reference is built at `:28` and `:50`). Pinned in `tests/test_orders.py:389`. Klarna will need a prefix too; the fix can add a check that prefixes are unique. Start with a failing test; one commit.", "commits": [], "outcome": ""},
+  {"id": "F2", "status": "todo", "from": "2026-11-11", "title": "An order for stock that isn't there is charged and left marked paid", "note": "Still reproduced: `process_order` takes the payment (`kind.pay`, `shop/orders.py:31`) before reserving stock (`:32-33`); pinned in `tests/test_orders.py:393`. Klarna would inherit it. The fix (reserve first) is a behaviour change: failing test first, own commit.", "commits": [], "outcome": ""},
+  {"id": "F3", "status": "todo", "from": "2026-11-11", "title": "Check: refunding a voucher, gift card or crypto order gives nothing back", "note": "`refund` (`shop/orders.py:60-69`) credits the wallet only where the kind has `refunds_to_wallet` (`shop/payment_kinds.py:73`): now card, PayPal and Apple Pay; the other six set `is_refunded` and give nothing back (pinned at `tests/test_orders.py:238` and `:401`). Store credit is next and will change exactly this rule, and `refund(order, wallet)` has only a wallet to pay into. Decide the rule before store credit starts; the first step is a failing test, else skipped with the decision.", "commits": [], "outcome": ""},
+  {"id": "F4", "status": "todo", "from": "2026-11-11", "title": "Check: invoice, bank and cash orders are marked paid when created", "note": "`pay_on_account` (`shop/payment_kinds.py:45-52`) logs 'awaiting payment' and then sets `is_paid` at `:52`, so `ship` ships an unpaid invoice order (pinned at `tests/test_orders.py:409`). If Klarna works the same way, this decides R3. Ask the owner; failing test first, else skipped.", "commits": [], "outcome": ""},
+  {"id": "F5", "status": "todo", "title": "Check: wallet customers pay the fee the shop is said to pay, and don't get it back on refund", "note": "`fees.py:1` says the fee is 'what each payment kind costs the shop' and `PaymentKind.fee_rate` says 'share of the total the shop pays' (`shop/payment_kinds.py:71`), but `pay_from_wallet` debits the customer total plus fee (`:25-27`) and crypto converts total plus fee (`:58`). `refund` gives back the total only (`shop/orders.py:65`): an Apple Pay order of 240 took 246 from the wallet and refunded 240 (reproduced). Both are pinned (`tests/test_orders.py:91`, `:223`). Might be intended; store credit refunds will need the answer. Ask, then a failing test, else skipped.", "commits": [], "outcome": ""},
+  {"id": "L1", "status": "todo", "from": "2026-11-11", "title": "The pay functions repeat a three-line tail", "note": "Unchanged: `pay_from_wallet`, `pay_from_code`, `pay_on_account` and `pay_in_crypto` (`shop/payment_kinds.py:21-62`) each end with the same reference line, 'paid by' log line and `order.is_paid = True`. Apple Pay reused `pay_from_wallet`, so still cold. Klarna fits none of the four as written (it neither debits the customer's wallet nor a code), so if it gets a fifth pay function, do this first: Extract Function for the tail. Fix in passing then: `pay_from_wallet`'s docstring (`:22`) still says 'Card and PayPal'.", "commits": [], "outcome": ""},
+  {"id": "D1", "status": "todo", "from": "2026-11-11", "title": "The low-stock line is a code change every few days", "note": "`LOW_STOCK` (`shop/inventory.py:3`): 22 of 39 commits, 16 in the newer half, none since 2026-10-30. Option A: keep it in code (reviewed, in history). Option B: read it from a setting outside the code, so a weekly review is not a commit. Still your call.", "commits": [], "outcome": ""}
+ ],
+ "left_alone": [
+  {"what": "`shop/payment_kinds.py` and the R2 result", "why": "73 code lines, longest function 10; one commit since R2 and it was the 1-line Apple Pay entry. A table of definitions is a list by design."},
+  {"what": "`process_order`'s six parameters (`shop/orders.py:20`)", "why": "Over 4, and store credit as a balance would add a seventh plus a `Funds` field. But every caller names them (`wallet=`, `codes=`...), which the catalogue excuses, and the only callers are tests. Revisit if store credit needs more than one new argument."},
+  {"what": "The heatmap's group admin + fees + orders + receipts, and `tests/test_orders.py` tied to them", "why": "All 8 shared commits are the old kind additions, last 2026-10-15; R2 removed the cause and Apple Pay touched none of those files. History, not a current coupling."},
+  {"what": "`shop/legacy_export.py` (240 lines, `export_csv` 237 lines, nested 5 deep)", "why": "Still 1 commit in the window, nothing imports it, and no planned work lands there."},
+  {"what": "`shop/pricing.py`, `shop/fees.py`, `shop/admin.py`, `shop/receipts.py`", "why": "2 to 16 code lines each, all reading the kind definition now; nothing to gain."},
+  {"what": "The README's 'Payment kinds so far' list", "why": "A hand-kept copy of `KINDS`, but one line in a doc; cheaper to keep than to generate."}
+ ],
+ "log": [
+  {"date": "2026-11-11", "text": "Second pass, at a7345c7c3, building on `.refactor-pass/2026-11-11.html` (R1 and R2 done). Since its base: R1 and R2's 8 commits and Apple Pay (a7345c7c3). Apple Pay was 1 line in 1 production file, as R2 predicted; R1's pins missed it. Carried over R3, F1 to F4, L1, D1; added R4 and F5. Walkthrough: Klarna and store credit, from the Apple Pay commit."}
+ ]
+}
+</script>
+</body>
+</html>

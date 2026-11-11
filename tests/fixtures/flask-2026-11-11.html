@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Refactor pass</title>
+</head>
+<body>
+<!-- A checklist an agent wrote with an earlier version of the skill, kept for the suite: the data blocks and the comment above them are as written; the page's style and script are left out. -->
+<!-- The data. heatmap.py --page writes the heatmap block, and rewrites it on a
+     refresh; leave it alone. You write the pass block, as SKILL.md steps 5 to 7
+     say, and run scripts/check_page.py on this file after each edit.
+
+     Start each item with its id and status on one line, exactly as below,
+     and its other fields after them, so a status update is a one-line edit;
+     a JSON pretty-printer's layout won't do. Rn and Fn stand for real IDs,
+     such as R1 and F1:
+       {"id": "Rn", "status": "todo", "title": "Name the states of a checkout",
+        "eases": "adding a payment method",
+        "smells": ["Hidden State Machine: 6 flags, 9 places set them (`checkout.py:40`)"],
+        "cost": {"today": "5 files, 2 switches", "after": "1 file"},
+        "plan": ["Pin today's behaviour with tests", "Replace Primitive with Object: one state field"],
+        "files": ["src/checkout.py", "src/payment.py"],
+        "size": "M", "risk": "Medium",
+        "verify": "`make test`; the checkout snapshots",
+        "commits": [], "outcome": ""}
+       {"id": "Fn", "status": "todo", "title": "…", "note": "…", "commits": [], "outcome": ""}
+     L and D items have the same fields as F. An item carried over from an
+     earlier checklist adds "from": "2026-11-03", the date it first appeared.
+     Statuses: todo, doing, waiting (on the user), done, skipped. Size: S, M
+     or L; risk: Low, Medium or High. Dates as 2026-11-03, the local date, as
+     the heatmap's are. In text, `code` shows as code. -->
+<script type="application/json" id="heatmap">
+{
+ "head": "49943b5a9",
+ "scope": [
+  "src",
+  "tests"
+ ],
+ "window": {"commits": 183, "newest": {"sha": "bfc8f9838", "date": "2026-10-30", "subject": "add `versionchanged` for ctx signature change"}, "oldest": {"sha": "f622b1cad", "date": "2024-01-18", "subject": "release version 3.0.1"}, "newer_half_from": "2025-05-11", "excluded": 17, "excluded_asked": 0, "excluded_ignore_revs": 0, "excluded_checklists": 0, "excluded_bots": 17, "too_big_for_pairs": 0, "since": null, "tests_aside": 20, "shallow": false},
+ "options": {"top": 25, "pairs": 15, "max_files": 25, "min_shared": 5, "min_revs": 5, "min_degree": 30},
+ "total_files": 22,
+ "files": [
+  {"path": "src/flask/app.py", "commits": 27, "recent": 14, "last": "2026-10-30", "churn": 720, "added": 459, "removed": 261, "size": 1686, "rel": 0.43, "size_before": 1488, "growth": 198},
+  {"path": "src/flask/sansio/app.py", "commits": 16, "recent": 12, "last": "2026-10-07", "churn": 334, "added": 190, "removed": 144, "size": 1014, "rel": 0.33, "size_before": 968, "growth": 46},
+  {"path": "src/flask/cli.py", "commits": 11, "recent": 6, "last": "2026-10-07", "churn": 161, "added": 89, "removed": 72, "size": 1126, "rel": 0.14, "size_before": 1109, "growth": 17},
+  {"path": "src/flask/helpers.py", "commits": 15, "recent": 9, "last": "2026-10-07", "churn": 210, "added": 134, "removed": 76, "size": 679, "rel": 0.31, "size_before": 621, "growth": 58},
+  {"path": "src/flask/sansio/scaffold.py", "commits": 6, "recent": 3, "last": "2026-08-11", "churn": 42, "added": 19, "removed": 23, "size": 800, "rel": 0.05, "size_before": 804, "growth": -4},
+  {"path": "src/flask/sessions.py", "commits": 12, "recent": 6, "last": "2026-10-07", "churn": 102, "added": 58, "removed": 44, "size": 385, "rel": 0.26, "size_before": 371, "growth": 14},
+  {"path": "src/flask/ctx.py", "commits": 8, "recent": 8, "last": "2026-05-01", "churn": 584, "added": 349, "removed": 235, "size": 540, "rel": 1.08, "size_before": 449, "growth": 91},
+  {"path": "src/flask/testing.py", "commits": 7, "recent": 4, "last": "2026-08-11", "churn": 28, "added": 14, "removed": 14, "size": 298, "rel": 0.09, "size_before": 298, "growth": 0},
+  {"path": "src/flask/sansio/blueprints.py", "commits": 2, "recent": 2, "last": "2025-08-19", "churn": 216, "added": 138, "removed": 78, "size": 692, "rel": 0.31, "size_before": 632, "growth": 60},
+  {"path": "src/flask/wrappers.py", "commits": 4, "recent": 1, "last": "2026-10-30", "churn": 103, "added": 92, "removed": 11, "size": 255, "rel": 0.4, "size_before": 174, "growth": 81},
+  {"path": "src/flask/json/provider.py", "commits": 4, "recent": 2, "last": "2026-06-10", "churn": 8, "added": 4, "removed": 4, "size": 215, "rel": 0.04, "size_before": 215, "growth": 0},
+  {"path": "src/flask/templating.py", "commits": 4, "recent": 4, "last": "2026-02-18", "churn": 95, "added": 44, "removed": 51, "size": 212, "rel": 0.45, "size_before": 219, "growth": -7},
+  {"path": "src/flask/config.py", "commits": 2, "recent": 0, "last": "2024-10-31", "churn": 11, "added": 3, "removed": 8, "size": 367, "rel": 0.03, "size_before": 372, "growth": -5},
+  {"path": "src/flask/blueprints.py", "commits": 3, "recent": 0, "last": "2024-10-24", "churn": 83, "added": 60, "removed": 23, "size": 128, "rel": 0.65, "size_before": 91, "growth": 37},
+  {"path": "src/flask/views.py", "commits": 2, "recent": 1, "last": "2026-08-11", "churn": 6, "added": 3, "removed": 3, "size": 191, "rel": 0.03, "size_before": 191, "growth": 0},
+  {"path": "src/flask/json/tag.py", "commits": 1, "recent": 0, "last": "2024-04-07", "churn": 1, "added": 1, "removed": 0, "size": 327, "rel": 0.0, "size_before": 326, "growth": 1},
+  {"path": "src/flask/typing.py", "commits": 3, "recent": 1, "last": "2025-05-13", "churn": 85, "added": 41, "removed": 44, "size": 87, "rel": 0.98, "size_before": 90, "growth": -3},
+  {"path": "src/flask/debughelpers.py", "commits": 1, "recent": 1, "last": "2025-09-19", "churn": 7, "added": 4, "removed": 3, "size": 179, "rel": 0.04, "size_before": 178, "growth": 1},
+  {"path": "src/flask/json/__init__.py", "commits": 1, "recent": 1, "last": "2025-09-19", "churn": 2, "added": 1, "removed": 1, "size": 170, "rel": 0.01, "size_before": 170, "growth": 0},
+  {"path": "src/flask/__init__.py", "commits": 3, "recent": 0, "last": "2025-03-29", "churn": 50, "added": 15, "removed": 35, "size": 39, "rel": 1.28, "size_before": 60, "growth": -21},
+  {"path": "src/flask/globals.py", "commits": 1, "recent": 1, "last": "2025-09-19", "churn": 62, "added": 44, "removed": 18, "size": 77, "rel": 0.81, "size_before": 51, "growth": 26},
+  {"path": "src/flask/sansio/README.md", "commits": 1, "recent": 1, "last": "2026-08-11", "churn": 2, "added": 1, "removed": 1, "size": 6, "rel": 0.33, "size_before": 6, "growth": 0}
+ ],
+ "groups": [],
+ "pairs": [],
+ "tests": [
+  {"test": "tests/test_basic.py", "files": [{"path": "src/flask/app.py", "shared": 8}, {"path": "src/flask/sessions.py", "shared": 5}]}
+ ]
+}
+</script>
+<script type="application/json" id="pass">
+{
+ "project": "flask",
+ "started": "2026-11-11",
+ "base": "49943b5a9",
+ "updated": "2026-11-11",
+ "summary": "Flask is in good shape: the hottest files are hot mostly because of two finished context refactors and routine sweeps (dependency bumps, Python-version drops, typing fixes), not because of one tangled design. One refactor is worth doing (the six copy-pasted template-registration decorators); the rest is a dead helper, a gap in test coverage on the context-signature compat shim, and three Later notes.",
+ "checks": ["`tox run` (pytest), as in `.github/workflows/tests.yaml`", "`tox run -e typing` (mypy and pyright; `tests/type_check/` pins the decorator overloads)", "`pre-commit run --all-files` (ruff check and format, codespell)", "Not run in this pass; the pass only read the code."],
+ "earlier": null,
+ "items": [
+  {"id": "R1", "status": "todo", "title": "Write the 'decorator with or without a name' registration once",
+   "eases": "changing how template filters, tests and globals are registered (as in daf1510a, 2025-05-17, and edebd370, 2025-08-19), or adding a fourth kind",
+   "smells": ["Duplicated Code: the same 6-line decorator body, six times: `template_filter`, `template_test`, `template_global` (`src/flask/sansio/app.py:671`, `:721`, `:780`) and `app_template_filter`, `app_template_test`, `app_template_global` (`src/flask/sansio/blueprints.py:450`, `:504`, `:562`)", "Shotgun Surgery: both files and both test files changed in step twice in the window (daf1510a: 6 files, 272 lines added; edebd370: 3 files, 228 lines)"],
+   "cost": {"today": "2 source files, 6 identical decorator bodies, 2 test files (108 mentions of the three names)", "after": "2 source files, 1 shared body (the 12 overload stubs stay, since the type checkers need them)"},
+   "plan": ["Run `tox run` and `tox run -e typing` first, and note the numbers", "Slide Statements to line the six bodies up; Extract Function into one private helper that takes the `add_*` callable and returns the right thing for `callable(name)` and for `name=None or str`", "Replace each of the six bodies with a call to it, one decorator per commit, checks after each", "Leave the overloads alone; stop there (do not build a registry of kinds: there is no fourth kind)"],
+   "files": ["src/flask/sansio/app.py", "src/flask/sansio/blueprints.py"], "size": "S", "risk": "Low",
+   "verify": "`tox run` (tests/test_templating.py and tests/test_blueprints.py cover all six), `tox run -e typing` (mypy, pyright and tests/type_check/typing_app_decorators.py)",
+   "commits": [], "outcome": ""},
+  {"id": "F1", "status": "todo", "title": "Remove the unused `_make_timedelta` in `app.py`", "note": "Dead Code. `src/flask/app.py:72` has no caller anywhere in the repo (searched src, tests, docs); the copy that is used is `src/flask/sansio/app.py:53`. It was left behind by the sansio split (0ec7f713). `timedelta` is still imported for other uses in that file. Remove Dead Code, one commit.", "commits": [], "outcome": ""},
+  {"id": "F2", "status": "todo", "title": "Pin the old-signature compat shim with tests", "note": "Untested Code. `Flask.__init_subclass__`, `remove_ctx` and `add_ctx` (`src/flask/app.py:82-105`, `:251-305`, about 95 lines) rewrite any subclass override that still has the pre-3.2 signature. No test defines such an override: the only subclass override in `tests/` (`tests/test_subclassing.py:8`) already uses `ctx`. Characterization tests: an old-style `log_exception(self, exc_info)` override warns and still gets called; a new-style one does not warn. Their own commit. The shim is due to go in Flask 4.0, so keep them small.", "commits": [], "outcome": ""},
+  {"id": "F3", "status": "todo", "title": "Check: a subclass of an old-signature subclass warns again", "note": "A suspicion, not reproduced. A grandchild that does not override the method inherits the parent's `remove_ctx` wrapper, which is not `Flask.<method>`, so `method is base_method` is false (`src/flask/app.py:271`), and `inspect.signature` follows `__wrapped__` to the old signature. The result would be a repeated DeprecationWarning, nothing worse. First step: a failing test (after F2's tests); if none fails, skip it and say what was found.", "commits": [], "outcome": ""},
+  {"id": "L1", "status": "todo", "title": "Two lists of HTTP methods kept in step by hand", "note": "The route shortcuts in `src/flask/sansio/scaffold.py:296-341` and `http_method_funcs` in `src/flask/views.py:12` have to agree. Adding `query` missed the second: 89992954 and 2a8a38b0 landed the same day (2026-08-11). Methods are added about once in several years, so the cost is low. If another method is added, derive `http_method_funcs` from one place then.", "commits": [], "outcome": ""},
+  {"id": "L2", "status": "todo", "title": "Delete the old-signature shim when Flask 4.0 drops it", "note": "A temporary shim, not a design. When the old signature is dropped, delete `__init_subclass__`, `remove_ctx`, `add_ctx` and the 13 'Takes `ctx: AppContext`' paragraphs in `src/flask/app.py` docstrings in one commit. Until then, a new method that takes `ctx` must be added by hand to the list at `src/flask/app.py:258-270`. The `RequestContext` alias in `src/flask/ctx.py:528` goes at the same time.", "commits": [], "outcome": ""},
+  {"id": "L3", "status": "todo", "title": "`Blueprint.register`: Long Function with two parallel merge blocks", "note": "`src/flask/sansio/blueprints.py:273`, about 55 code lines after the docstring, with the subdomain and url_prefix merges written as two similar 3-way ifs (`:350-376`). Cold: no commit in the window touched it (last real change 2023-12-14), and the two blocks differ in how they join. Leave it; extract the merges (Extract Function) if a change next lands in `register`.", "commits": [], "outcome": ""}
+ ],
+ "left_alone": [
+  {"what": "`src/flask/app.py` (1686 lines, 27 commits, the top hot spot)", "why": "Big, but 747 of its lines (44%) are docstrings, and the churn is two finished refactors (c2705ffd, 6a649690: 343 of 720 lines) plus sweeps. Since 2026-02 its changes are one-liners and a docs note. The next likely change, a config option, touches one dict in it (`default_config`, line 205): 5 files in all with docs, changelog and test (4f7156f2, 9efc1ebe), which is a normal recipe, not a smell."},
+  {"what": "`Flask.make_response` (`src/flask/app.py:1267`, band 90th)", "why": "measure.py's 107 lines include a 41-line docstring; the body is about 65 lines that read top to bottom in three steps (unpack the tuple, coerce the body, apply status and headers). In the window it was touched only by sweeps. Not a smell when it reads top to bottom."},
+  {"what": "`src/flask/cli.py` (hot by size, 11 commits) and `find_app_by_string` (61 lines, band 90th)", "why": "Its commits are Python-version drops, dependency bumps and type fixes; the function itself last changed in 2023-12 (`git log -L`). Cold where it matters."},
+  {"what": "`src/flask/ctx.py` (rel 1.08, 8 commits)", "why": "The merge of the app and request contexts is finished and documented (last change 2026-05-01). Its `_request is None` checks are the one place a nullable field gives two modes, but there are only two, and they are deliberate."},
+  {"what": "`tests/test_basic.py`, listed as changing with `app.py` (8 commits) and `sessions.py` (5)", "why": "The heatmap's pairing is by name. The tests go through the test client; the only private reach is `app_ctx._session` in one test group (`tests/test_basic.py:255-277`)."},
+  {"what": "`src/flask/helpers.py`, `sessions.py`, `sansio/app.py` otherwise, `sansio/scaffold.py`", "why": "Hot by count but changed by sweeps and small features; no function past the floor, and tests name their public functions (`tests/test_helpers.py`, `tests/test_session_interface.py`, `tests/test_cli.py`)."}
+ ],
+ "log": [
+  {"date": "2026-11-11", "text": "First pass. Window: 183 commits (2024-01-18 to 2026-10-30), scope `src tests`. Checked each finding against the code and the history; dropped the god-file readings of `app.py` and `cli.py`."}
+ ]
+}
+</script>
+</body>
+</html>
