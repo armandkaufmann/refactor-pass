@@ -79,8 +79,10 @@ DEFINITION = {
     "Kotlin": re.compile(r"\bfun\s+(?:<[^>]*>\s*)?(?:[\w.<>?]+\.)?`?\w+`?\s*\("),
     "Rust": re.compile(r"\bfn\s+\w+\s*[<(]"),
     "GDScript": re.compile(r"^\s*(?:static\s+)?func\s+\w+\s*\("),
-    "C#": re.compile(r"^\s*(?:\[[^\]]*\]\s*)*(?:\w+\s+)*[\w<>\[\],.?()]+\s+[\w.]+(?:<[^()]*>)?\s*\("),
-    "Java": re.compile(r"^\s*(?:@\w+(?:\([^)]*\))?\s+)*(?:\w+\s+)*(?:<[^>]*>\s+)?[\w<>\[\],.?]+\s+\w+\s*\("),
+    "C#": re.compile(r"^\s*(?:\[[^\]]*\]\s*)*(?:\w+\s+)*[\w<>\[\],.?()]+\s+(?!(?:static|async|new|return|throw|"
+                     r"in|is|as|when|case|await)\b)[\w.]+(?:<[^()]*>)?\s*\("),
+    "Java": re.compile(r"^\s*(?:@\w+(?:\([^)]*\))?\s+)*(?:\w+\s+)*(?:<[^>]*>\s+)?[\w<>\[\],.?]+\s+(?!(?:new|return|"
+                       r"throw|case|instanceof)\b)\w+\s*\("),
 }
 STATEMENT = re.compile(r"\s*(?:return|if|for|foreach|while|switch|catch|else|do|new|throw|case|using|lock|await|var|"
                        r"yield)\b")
