@@ -37,6 +37,9 @@ skill's catalogue of smells, and in its scripts.
   for Complexity Metrics" (ICPC 2008).
 - PMD's design rules and their defaults:
   https://docs.pmd-code.org/latest/pmd_rules_java_design.html
+- Checkstyle's ParameterNumber check, whose default maximum is 7, so it
+  flags more than 7:
+  https://checkstyle.sourceforge.io/checks/sizes/parameternumber.html
 - Nagappan & Ball, "Use of Relative Code Churn Measures to Predict System
   Defect Density" (ICSE 2005).
 - Tornhill, code-maat: https://github.com/adamtornhill/code-maat
@@ -70,7 +73,14 @@ skill's catalogue of smells, and in its scripts.
   2026):
   https://www.rosenfeld.page/articles/programming/2026_09_02_ai_agents_and_the_refactoring_that_never_happens/
 - Ottenhof, Penner, Hindle & Lutellier, "How do Agents Refactor: An
-  Empirical Study" (MSR 2026): https://arxiv.org/abs/2601.20160
+  Empirical Study" (MSR 2026): https://arxiv.org/abs/2601.20160. It finds
+  that "agents are not introducing more code smells in refactoring commits
+  than developers", Cursor the exception, counting smells with
+  DesigniteJava. It isn't evidence that agents add needless layers: its
+  Unnecessary Abstraction is among the agents' three commonest smells, but
+  it gives no developers' figure for it, and DesigniteJava's rule for it is
+  a class with no methods and at most five fields:
+  https://github.com/tushartushar/DesigniteJava/blob/master/src/Designite/smells/designSmells/AbstractionSmellDetector.java
 - Two vendors' guidance for their own models, quoted as evidence of what
   those models tend to do:
   - Anthropic, prompting best practices for Claude:

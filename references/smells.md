@@ -114,7 +114,7 @@ codebase:
 | Branches (cyclomatic) | over 10 | over 14 | McCabe's 10; PMD's default 10; Alves et al.'s 90th percentile 14 |
 | Cognitive complexity | over 15 | | PMD's default 15 |
 | Nesting | 3 inside a long function | 4 anywhere | Lanza & Marinescu's Brain Method; ESLint's default 4 |
-| Parameters | over 4 | 7 or more | Alves et al.: 4 at the 95th percentile |
+| Parameters | over 4 | over 7 | Alves et al.: 4 at the 95th percentile; Checkstyle's default maximum, 7 |
 | Methods in a class | over 16 | | Oliveira et al.: 80% of classes have 16 or fewer |
 | Lines in a class | over 220 | over 440 | Oliveira et al.: 75% of classes have 222 or fewer |
 
@@ -623,14 +623,11 @@ G25.*
   - Remove Dead Code;
   - Kerievsky's Inline Singleton.
 - **Priority:** medium, and it applies to your own proposals too. Don't
-  propose a layer for a second case that doesn't exist yet. Agents produce
-  this smell readily. In agents' refactoring pull requests on 86 Java
-  projects, Unnecessary Abstraction was among the three smells they
-  introduced most, and not among developers' top three (Ottenhof et al.,
-  2026). And Anthropic's prompting guide says two of its own models, Claude
-  Opus 4.5 and 4.6, "have a tendency to overengineer by creating extra
-  files, adding unnecessary abstractions, or building in flexibility that
-  wasn't requested."
+  propose a layer for a second case that doesn't exist yet. Some models are
+  prone to it: Anthropic's prompting guide says two of its own, Claude Opus
+  4.5 and 4.6, "have a tendency to overengineer by creating extra files,
+  adding unnecessary abstractions, or building in flexibility that wasn't
+  requested."
 
 ### Dead Code
 
@@ -742,10 +739,14 @@ has "no aesthetic disgust at a 300-line function, no intuition that 'we
 don't do it that way here.'" Rodrigo Rosenfeld Rosas: "The agent never gets
 lost, so the signal never fires."
 
-Three studies have measured some of these so far: Huang et al. the first,
-He et al. the third and Ottenhof et al. the fourth. The rest come from
-practitioners' reports and from what two vendors, Anthropic and OpenAI, tell
-their own models to avoid, so take the order as rough:
+Two studies have measured some of these so far: Huang et al. the first and
+He et al. the third. The rest come from practitioners' reports and from what
+two vendors, Anthropic and OpenAI, tell their own models to avoid, so take
+the order as rough. And treat them as things to look for, not a verdict on
+agents' code: in one study of agents' refactoring commits in 86 Java
+projects, the agents brought in no more smells than developers did, as a
+static analyser (DesigniteJava) counted them, with one agent, Cursor, the
+exception (Ottenhof et al., 2026).
 
 1. **Reimplemented helpers.** Agents "frequently disregard code reuse
    opportunities, resulting in higher levels of redundancy compared to human
