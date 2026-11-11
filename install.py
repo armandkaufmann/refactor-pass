@@ -677,15 +677,24 @@ def named(args):
     return bool(args.agent or args.dir or args.project)
 
 
-def refused(refusal, args):
-    """Print a refusal; return 1 if it counts as a failure: a folder this installer didn't make doesn't, when
-    it was only come across while looking in every agent's folders."""
+def refused(refusal, args, seen):
+    """Print a refusal, and count it in seen; return 1 if it counts as a failure: a folder this installer
+    didn't make doesn't, when it was only come across while looking in every agent's folders."""
+    seen.append(refusal)
     if isinstance(refusal, NotOurs) and not named(args):
         say("Left alone: %s" % refusal)
         return 0
     say("Refused: %s" % refusal)
     return 1
 
+
+def none_done(what, seen, args):
+    """What to say when no copy was acted on: that nothing was, if some were left alone; else that none was
+    found."""
+    if seen:
+        return "Nothing was %s." % what
+    return "No copy of refactor-pass that this installer made was found%s." % (
+        "" if named(args) else " in the agents' folders or this project")
 
 
 def source_of(record, args, folder):
@@ -700,7 +709,7 @@ def source_of(record, args, folder):
 
 
 def run_update(args):
-    plan, targets, failed = [], {}, 0
+    plan, targets, failed, seen = [], {}, 0, []
     for folder in copies(args):
         try:
             record = examine(folder, args.force)
@@ -708,7 +717,7 @@ def run_update(args):
                 continue
             source = source_of(record, args, folder)
         except Refusal as refusal:
-            failed += refused(refusal, args)
+            failed += refused(refusal, args, seen)
             continue
         if source not in targets:
             targets[source] = resolve(source, args.ref)
@@ -716,21 +725,20 @@ def run_update(args):
                 say(targets[source].notice)
         plan.append((folder, [], source))
     if not plan:
-        say("No copy of refactor-pass that this installer made was found%s." % (
-            "" if named(args) else " in the agents' folders or this project"))
+        say(none_done("updated", seen, args))
         return 1 if failed else 0
-    say("%s to the latest:" % ("Would update" if args.dry_run else "Updating"))
+    say("%s to %s:" % ("Would update" if args.dry_run else "Updating", args.ref or "the latest"))
     return put_all(plan, targets, args, True) or (1 if failed else 0)
 
 
 def run_check(args):
-    latest, failed, any_copy = {}, 0, False
+    latest, failed, any_copy, seen = {}, 0, False, []
     for folder in [f for f in copies(args) if os.path.lexists(f)]:
         try:
             record = examine(folder, True)
             source = source_of(record, args, folder)
         except Refusal as refusal:
-            failed += refused(refusal, args)
+            failed += refused(refusal, args, seen)
             continue
         any_copy = True
         if source not in latest:
@@ -742,24 +750,25 @@ def run_check(args):
             state += "; edited since it was installed"
         say("%s: %s (%s)%s; %s." % (shown_path(folder), record.get("version") or record.get("ref"),
                                    short(record.get("commit")), from_where(source), state))
-    if not any_copy and not failed:
-        say("No copy of refactor-pass that this installer made was found.")
+    if not any_copy:
+        say(none_done("checked", seen, args))
     return 1 if failed else 0
 
 
 def run_uninstall(args):
-    failed, done = 0, 0
+    failed, done, seen = 0, 0, []
     for folder in [f for f in copies(args) if os.path.lexists(f)]:
         try:
             say("%s: %s" % (shown_path(folder), remove_copy(folder, args.force, args.dry_run)))
             done += 1
         except Refusal as refusal:
-            failed += refused(refusal, args)
+            failed += refused(refusal, args, seen)
         except OSError as error:
             failed += 1
+            seen.append(error)
             say("%s: couldn't remove it: %s" % (shown_path(folder), error.strerror or error))
-    if not done and not failed:
-        say("No copy of refactor-pass that this installer made was found.")
+    if not done:
+        say(none_done("removed", seen, args))
     return 1 if failed else 0
 
 

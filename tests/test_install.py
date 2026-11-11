@@ -281,6 +281,8 @@ class Updates(unittest.TestCase):
         self.assertEqual(updated.out.count(": replaced v1.9.0"), 2, updated)
         named = install("update", "--dir", skills, home=home)
         self.assertIn(": replaced v1.2.0", named.out)
+        pinned = install("update", "--dir", skills, "--ref", "v1.9.0", "--dry-run", home=home)
+        self.assertIn("Would update to v1.9.0:", pinned.out)
         for copy in copies:
             self.assertEqual(sorted(p for p in tree(copy) if p != RECORD), sorted(expected()), copy)
             self.assertEqual(record(copy)["version"], "v1.10.0")
@@ -381,6 +383,9 @@ class Refusals(unittest.TestCase):
                 for command in ("install", "update", "uninstall") if change == "edit" else ("update",):
                     run = install(command, "--source", Sources.tagged(), "--dir", skills)
                     self.assertLeftAlone(run, copy, before, says)
+                    if command == "update":
+                        self.assertIn("Nothing was updated.", run.out)
+                        self.assertNotIn("No copy", run.out)
                 forced = install("update", "--dir", skills, "--force")
                 self.assertEqual(forced.code, 0, forced)
                 self.assertEqual(record(copy)["version"], "v1.10.0")
@@ -477,9 +482,10 @@ class Untrusted(unittest.TestCase):
         install("--source", Sources.tagged(), "--project", "--agent", "codex", cwd=project.path)
         copy = os.path.join(project.path, ".agents", "skills", "refactor-pass")
         self.write_record(copy, source=command)
-        for args in (["check"], ["update"], ["update", "--force"]):
+        for args, what in ((["check"], "checked"), (["update"], "updated"), (["update", "--force"], "updated")):
             run = install(*args, cwd=project.path)
             self.assertIn("names a source, %r, that isn't an https, ssh or git URL" % command, run.out)
+            self.assertIn("Nothing was %s." % what, run.out)
             self.assertFalse(os.path.exists(pwned), args)
         for args in (["--source=" + command], ["--source", "ext::sh -c touch% " + pwned], ["--ref=" + command],
                      ["--source", "ssh://-oProxyCommand=touch%20" + pwned + "/x"], ["--source", "http://example.com/x"],
@@ -554,6 +560,7 @@ class Untrusted(unittest.TestCase):
             self.assertEqual(tree(copy), before)
             removed = install("uninstall", "--dir", skills)
             self.assertIn("couldn't remove it", removed.out)
+            self.assertIn("Nothing was removed.", removed.out)
             self.assertEqual(tree(copy), before)
         finally:
             os.chmod(skills, 0o755)
