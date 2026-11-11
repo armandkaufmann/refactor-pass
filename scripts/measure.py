@@ -54,9 +54,9 @@ It points at code to read; it doesn't judge it. What it gets wrong:
     lines count in the function around them, or in none at the top level;
   - a function that doesn't start a line, such as a method in an object
     literal written on one line, isn't found;
-  - shapes can catch a macro, and in TypeScript a type's member typed as a
-    function and ended with a comma, not a semicolon, counts as a function
-    of one line;
+  - shapes can catch a macro, and in TypeScript a member typed as a
+    function, in a type written after an = (as a generic's default), counts
+    as a function;
   - a brace in a heredoc, or in a JavaScript regular expression that follows
     a word, an arrow or a closing bracket, can put a function's end in the
     wrong place or lose the function;
@@ -110,11 +110,12 @@ C_SHAPES = C_SHAPE + r"|^" + NOT_A_TYPE + r"([A-Za-z_][\w~]*(?:::~?\w+)*)\s*\([^
 
 # JavaScript and TypeScript: how a definition's line starts, up to the bracket that opens its parameters
 # (or its type parameters). What follows the parameters then says whether it's a function (js_function).
-# catch can be a method's name too, written with no space before its bracket, unlike the statement's.
+# catch can be a method's name too, written with no space before its bracket, unlike the statement's; async
+# followed by a space starts an anonymous arrow function, such as a callback's.
 JS_FUNCTION = re.compile(r"^\s*(?:export\s+)?(?:default\s+)?(?:declare\s+)?(?:async\s+)?function\s*\*?\s*([\w$]+)")
 JS_METHOD = re.compile(r"^\s*(?:(?:public|private|protected|static|async|readonly|override|abstract|get|set|declare|"
                        r"accessor)\s+)*\*?\s*(?!(?:if|for|while|switch|function|return|with|else|do|typeof|void|"
-                       r"await|yield|new|case|import|super|in|of|instanceof)\b|catch\b(?!\())"
+                       r"await|yield|new|case|import|super|instanceof)\b|catch\b(?!\()|async\s)"
                        r"(#?[\w$]+|\[[^\]]*\])\s*\??\s*(?=[(<])")
 # A name given a value: a variable or a class's property, typed or not; or an object literal's key.
 JS_ASSIGNED = re.compile(r"^\s*(?:export\s+)?(?:(?:const|let|var|public|private|protected|static|readonly|declare|"
@@ -123,10 +124,20 @@ JS_KEY = re.compile(r"^\s*([\w$]+|\[[^\]]*\])\s*:\s*")
 # A declaration typed over several lines, whose = comes after its type (js_after_type).
 JS_TYPED = re.compile(r"^\s*(?:export\s+)?(?:(?:const|let|var|public|private|protected|static|readonly|declare|"
                       r"override|accessor)\s+)+(#?[\w$]+)\s*[?!]?\s*:\s*")
-# What's assigned: a function written out, an arrow with one bare parameter, or a function wrapped in
-# a call, such as React.memo(function Card(...) {...}), whose body starts at its keyword.
-JS_FUNCTION_VALUE = re.compile(r"(?:async\s+)?(?:function\b|[\w$]+\s*=>)")
+# What's assigned: a function written out (its keyword, then an optional * and name), an arrow with one
+# bare parameter, or a named function wrapped in a call, such as React.memo(function Card(...) {...}).
+JS_EXPRESSION = re.compile(r"(?:async\s+)?function\b\s*\*?\s*[\w$]*\s*")
+JS_ONE_PARAMETER = re.compile(r"(?:async\s+)?[\w$]+\s*=>")
 JS_WRAPPED = re.compile(r"[\w.$]+\s*(?:<[^<>()]*>)?\(\s*(?=function\s*\*?\s*[\w$]+\s*[(<])")
+# A type that goes on past the end of its line: one that ends the line with an operator, an open bracket
+# or an arrow, or that the next line goes on with a union, an intersection, a chain or a conditional's ? or :.
+TYPE_GOES_ON = re.compile(r"(?:[|&:?.,<(\[{]|=>|\b(?:extends|keyof|typeof|is|as|in))\s*$")
+TYPE_GOES_ON_NEXT = re.compile(r"\s*[|&.?:]")
+# A line that is only an object literal's key and its :, as before the { of an object nested in another.
+JS_KEY_ONLY = re.compile(r"\s*(?:[\w$]+|\[[^\]]*\]|\"s*\"|'s*')\s*\??\s*:$")
+# How far a parameter list or a return type may run: a component's destructured props, with their types, can
+# take dozens of lines.
+SIGNATURE_LINES = 200
 
 
 def js_close(code, i, j, limit):
@@ -160,12 +171,13 @@ def js_next(code, i, j, limit=3):
 
 def js_tail(code, k, col, want):
     """Where a function's body starts, if the parameter list that closed at code[k][col] is a function's:
-    after an optional return type, the { of a method's body, or the => of an arrow function. None if
-    something else comes first: a ; ends a declaration, and a , or a closing bracket an argument or a
-    parameter typed as a function. A { just after the type's :, a | or an & or the word is opens an
-    object type, not the body."""
-    typed, depth, previous, word, gap = False, 0, "", "", False
-    for i in range(k, min(len(code), k + 15)):
+    after an optional return type, the { of a method's body, or the => of an arrow function, on the same
+    line or opening the next. None if something else comes first: a ; ends a declaration, a , or a
+    closing bracket an argument or a parameter typed as a function, and a return type that's whole at the
+    end of its line an overload or an abstract method, where nothing follows to say so. A { just after
+    the type's :, a | or an & or the word is opens an object type, not the body."""
+    typed, depth, previous, word = False, 0, "", ""
+    for i in range(k, min(len(code), k + SIGNATURE_LINES)):
         line = code[i]
         gap = True
         for j in range(col if i == k else 0, len(line)):
@@ -193,17 +205,27 @@ def js_tail(code, k, col, want):
             letter = c.isalnum() or c in "_$"
             word = (word + c if word and not gap else c) if letter else ""
             previous, gap = c, False
+        if typed and depth == 0 and not TYPE_GOES_ON.search(line):
+            following = next((n for n in range(i + 1, min(len(code), i + 20)) if code[n].strip()), None)
+            if following is None:
+                return None
+            start = len(code[following]) - len(code[following].lstrip())
+            if code[following].startswith(want, start):
+                return following, start
+            if not TYPE_GOES_ON_NEXT.match(code[following]):
+                return None
     return None
 
 
-def js_signature(code, i, j, want):
+def js_signature(code, i, j, want, call=True):
     """Where the body starts of a function whose parameters open at code[i][j], or its type parameters
-    at a <; None if they aren't a function's. They have to close within a few lines, and a body or an
-    arrow follow (js_tail). A list left open at the end of the line must end the way a parameter list
-    split over lines does, so a call with a callback (it(..., () => {) isn't followed to its end."""
+    at a <; None if they aren't a function's. They have to close, and a body or an arrow follow
+    (js_tail). Where the line could start a call (call), a list left open at its end must end the way a
+    parameter list split over lines does, so a call with a callback (it(..., () => {) isn't followed to
+    its end."""
     line = code[i].rstrip()
-    end = js_close(code, i, j, 30)
-    if end is None or end[0] != i:
+    end = js_close(code, i, j, SIGNATURE_LINES)
+    if call and (end is None or end[0] != i):
         if not (line.endswith(("(", ",", "<", "[", "|", "&")) or
                 (line.endswith("{") and line[:-1].rstrip().endswith(("(", ",", ":")))):
             return None
@@ -214,7 +236,7 @@ def js_signature(code, i, j, want):
         if at is None or code[at[0]][at[1]] != "(":
             return None
         i, j = at
-        end = js_close(code, i, j, 30)
+        end = js_close(code, i, j, SIGNATURE_LINES)
     return js_tail(code, end[0], end[1], want) if end else None
 
 
@@ -233,9 +255,57 @@ def js_in_braces(code, i):
     return True
 
 
+# The brackets left open at the start of each line of the last file js_opener read, worked out once.
+OPEN_AT = {"code": None, "stacks": None}
+
+
+def js_opener(code, i, col):
+    """The innermost bracket left open before code[i][col], as its line, column and character; None at the
+    top level."""
+    if OPEN_AT["code"] is not code:
+        stacks, stack = [], []
+        for k, line in enumerate(code):
+            stacks.append(tuple(stack))
+            for at, c in enumerate(line):
+                if c in OPEN:
+                    stack.append((k, at, c))
+                elif c in CLOSE and stack:
+                    stack.pop()
+        OPEN_AT.update(code=code, stacks=stacks)
+    stack = list(OPEN_AT["stacks"][i])
+    for at, c in enumerate(code[i][:col]):
+        if c in OPEN:
+            stack.append((i, at, c))
+        elif c in CLOSE and stack:
+            stack.pop()
+    return stack[-1] if stack else None
+
+
+def js_in_object(code, i, col=0, depth=0):
+    """Whether code[i][col] is inside an object literal, where a key's value can be a function: in braces
+    opened after one of = ( , [ { ?, after return or export default, or after a ternary's : that starts
+    its line. Not in an interface, a type, a class's body, a block or a parameter list, where a name typed
+    as a function is a type. Braces opened after a key's : are an object literal's only if that key is in
+    one."""
+    opener = js_opener(code, i, col)
+    if opener is None or opener[2] != "{":
+        return False
+    k, at, _ = opener
+    before = code[k][:at].rstrip() or next((line.rstrip() for line in reversed(code[max(0, k - 20):k])
+                                           if line.strip()), "")
+    if re.search(r"\b(?:interface|class|enum|namespace|declare)\b|^\s*(?:export\s+)?type\b", before):
+        return False
+    if JS_KEY_ONLY.match(before):
+        return depth < 8 and js_in_object(code, k, at, depth + 1)
+    if before.strip() == ":":
+        return True
+    return bool(re.search(r"(?:[=(,\[{?]|\|\||&&|\breturn|\bexport\s+default)$", before)) and not before.endswith("=>")
+
+
 def js_after_type(code, i, j):
     """Where the value starts that follows a type running from code[i][j] on, over several lines if need be:
-    just after its =. None if the type ends some other way, as a declaration with no value does."""
+    just after its =. None if the type ends some other way, as a declaration with no value does: with a ;,
+    or at the end of a line it doesn't go on from."""
     depth = 0
     for k in range(i, min(len(code), i + 40)):
         line = code[k]
@@ -251,7 +321,17 @@ def js_after_type(code, i, j):
                     return None
             elif depth == 0 and c in ";,=":
                 return (k, col + 1) if c == "=" and line[col + 1:col + 2] != "=" else None
+        if depth == 0 and line[j if k == i else 0:].strip() and not TYPE_GOES_ON.search(line):
+            following = next((n for n in range(k + 1, min(len(code), k + 20)) if code[n].strip()), None)
+            if following is None or not re.match(r"\s*(?:[|&.]|=(?![=>]))", code[following]):
+                return None
     return None
+
+
+def js_expression(code, i, j):
+    """Where the body starts of the function written out from its keyword at code[i][j] on, or None."""
+    at = js_next(code, i, JS_EXPRESSION.match(code[i], j).end())
+    return js_signature(code, at[0], at[1], "{", call=False) if at and code[at[0]][at[1]] in "(<" else None
 
 
 def js_value(code, i, j):
@@ -262,11 +342,13 @@ def js_value(code, i, j):
         return None
     k, j = at
     value = code[k][j:]
-    if JS_FUNCTION_VALUE.match(value):
-        return i, 0
+    if JS_EXPRESSION.match(value):
+        return js_expression(code, k, j)
+    if JS_ONE_PARAMETER.match(value):
+        return k, j
     wrapped = JS_WRAPPED.match(value)
     if wrapped:
-        return k, j + wrapped.end()
+        return js_expression(code, k, j + wrapped.end())
     if re.match(r"async\b", value):
         at = js_next(code, k, j + len("async"))
         if at is None:
@@ -281,9 +363,8 @@ def js_function(code, i):
     method by a body after its parameters, and a name given a value when that value is a function."""
     match = JS_FUNCTION.match(code[i])
     if match:
-        at = js_next(code, i, match.end())
-        body = js_signature(code, at[0], at[1], "{") if at and code[at[0]][at[1]] in "(<" else None
-        return match.group(1), body or (i, 0)
+        body = js_expression(code, i, code[i].rfind("function", 0, match.start(1)))
+        return (match.group(1), body) if body else None
     match = JS_METHOD.match(code[i])
     if match:
         body = js_signature(code, i, match.end(), "{")
@@ -297,12 +378,12 @@ def js_function(code, i):
     body = js_value(code, at[0], at[1]) if at else None
     if body and js_in_braces(code, i):  # Not a parameter's default value.
         return match.group(1), body
-    # A key or a property typed as a function, with no value, is a type: an interface's member ends with a
-    # ;, and a parameter or a tuple's member isn't in braces.
+    # A key given a function is an object literal's; elsewhere, as in an interface, a class's body or a
+    # parameter list, a name typed as a function is a type, and so is one whose type ends with a ;.
     match = JS_KEY.match(code[i])
     if match and not code[i].rstrip().endswith(";"):
         body = js_value(code, i, match.end())
-        if body and not code[body[0]][body[1]:].rstrip().endswith(";") and js_in_braces(code, i):
+        if body and not code[body[0]][body[1]:].rstrip().endswith(";") and js_in_object(code, i):
             return match.group(1), body
     return None
 
@@ -345,9 +426,10 @@ REFERENCE = {"file": (220, 440), "function": (45, 75)}
 PERCENTS = (70, 80, 90)
 BIG = set(["80th", "90th"] + [">%d" % strong for _, strong in REFERENCE.values()])
 # An operator that an expression goes on after, at the end of a line, or before, at the start of the next
-# (goes_on). Not a ++ or a --.
-GOES_ON = re.compile(r"(?:=>?|\|\||&&|\?\?|[?:]|(?<![+-])[+-])\s*$")
-GOES_ON_NEXT = re.compile(r"\s*(?:\|\||&&|\?\?|\?(?!\.)|:|\.(?!\.)|[+-](?![+-]))")
+# (goes_on). Not a ++ or a --; and a *, /, % or > only after a space, unlike a JSX tag's > or a regular
+# expression's closing /.
+GOES_ON = re.compile(r"(?:=>?|\|\||&&|\?\?|[?:<]|(?<![+-])[+-]|\s[*/%>])\s*$")
+GOES_ON_NEXT = re.compile(r"\s*(?:\|\||&&|\?\?|\?(?!\.)|:|\.(?!\.)|[+-](?![+-])|[|&*%])")
 # A JavaScript regular expression: from / to /, past escapes and the / in a class such as [/].
 REGEX = re.compile(r"/(?:\\.|\[(?:\\.|[^\]\\])*\]|[^/\\\[])+/")
 # A Python statement that is only a string, as a docstring is: documentation, so not a code line.

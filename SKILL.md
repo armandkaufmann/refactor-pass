@@ -368,10 +368,10 @@ and gives the name a new one takes.
    the same day; `--page` on the old one would only refresh its heatmap.
 4. **Carry items over.** Items still `todo`, `doing` or `waiting` carry
    over, checked again as any finding is ([step 4](#4-check-every-finding)),
-   keeping their IDs and `from`, the date of the checklist they came from. Done and skipped items stay
-   behind; done refactors appear in `earlier` instead. A Later item that has
-   turned hot becomes a new R item. New items number on from the highest ID
-   of each letter.
+   keeping their IDs and `from`, the date of the checklist they first
+   appeared on. Done and skipped items stay behind; done refactors appear in
+   `earlier` instead. A Later item that has turned hot becomes a new R item.
+   New items number on from the highest ID of each letter.
 5. **Check the predictions.** For each refactor finished on the newest
    checklist, find the first real change of the kind it eased after its
    last commit (never one recorded on a checklist), list what it touched
