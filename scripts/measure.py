@@ -201,11 +201,11 @@ def c_head(language):
 
 # Java and C# also write a constructor with no modifier, so with nothing before its name.
 CONSTRUCTOR = r"|^\s*" + ANNOTATIONS + r"([A-Z]\w*)\s*\(" + SIGNATURE_REST
-# C# also writes a method's body as an expression after =>, on its own line with its ;; and an operator, whose
-# name is operator and what follows it (operator ==, implicit operator Money).
+# C# also writes a method's body as an expression after =>, after any where clause, on its own line with its ;;
+# and an operator, whose name is operator and what follows it (operator ==, implicit operator Money).
 CS_SHAPES = (r"^\s*" + ANNOTATIONS + MODIFIERS + r"(?:" + TYPE_WORD + r"\s+)*(operator\s*(?:[^\w\s(]+|true\b|"
              r"false\b|[\w.]+" + TYPE_ARGUMENTS + r"\??))\s*\((?:" + SIGNATURE_REST + r"|[^;]*\)\s*=>)|" +
-             c_head("C#") + SIGNATURE_REST + CONSTRUCTOR + "|" + c_head("C#") + r"[^;]*\)\s*=>")
+             c_head("C#") + SIGNATURE_REST + CONSTRUCTOR + "|" + c_head("C#") + r"[^;]*\)(?:\s*where\s[^;]*?)?\s*=>")
 JAVA_SHAPES = c_head("Java") + SIGNATURE_REST + CONSTRUCTOR
 
 
