@@ -373,6 +373,26 @@ class Refusals(unittest.TestCase):
                 self.assertEqual(record(copy)["version"], "v1.10.0")
                 self.assertEqual(sorted(p for p in tree(copy) if p != RECORD), sorted(expected()))
 
+    @unittest.skipIf(support.WINDOWS, "a symbolic link needs extra rights on Windows")
+    def test_a_link_is_left_alone(self):
+        skills, copy = self.installed()
+        linked = support.new_folder("linked")
+        os.symlink(copy, os.path.join(linked, "refactor-pass"))
+        before = tree(copy)
+        for command in ("install", "update", "uninstall"):
+            run = install(command, "--source", Sources.tagged(), "--dir", linked, "--force")
+            self.assertLeftAlone(run, copy, before, "is a link, to")
+        self.assertTrue(os.path.islink(os.path.join(linked, "refactor-pass")))
+
+    def test_uninstall_removes_only_what_it_installed(self):
+        skills, copy = self.installed()
+        with open(os.path.join(copy, "references", "mine.md"), "w") as f:
+            f.write("mine\n")
+        run = install("uninstall", "--dir", skills, "--force")
+        self.assertEqual(run.code, 0, run)
+        self.assertIn("removed, but for the files it didn't install: references/mine.md", run.out)
+        self.assertEqual(tree(copy), {"references/mine.md": b"mine\n"})
+
     def test_a_failed_run_changes_nothing(self):
         skills, copy = self.installed()
         before = tree(copy)
