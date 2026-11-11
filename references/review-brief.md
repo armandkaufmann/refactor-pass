@@ -40,10 +40,10 @@ the code against them.
 
 **Why your area.** <The heatmap's rows for these files: commits in the
 window and in its newer half, the date of the last, churn, relative churn,
-size and growth; the pairs and groups that change together, and any test
-listed as changing with several of them; and the changes coming next, from
-the user, the project's plans or the commonest kinds in the commit
-messages.> A file that
+size and growth; the pairs and groups that change together, with the date
+they last did; any test listed as changing with several of them, as a lead
+to check, not a finding; and the changes coming next, from the user, the
+project's plans or the commonest kinds in the commit messages.> A file that
 nearly every change edits, or two files that always change together, is
 where the next change will hurt. Find out why changes keep landing here.
 

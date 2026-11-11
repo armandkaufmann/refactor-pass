@@ -19,7 +19,9 @@ fix.
 
 - **A heatmap** of git history: the files that are both busy and big, how
   much of each was rewritten or grew, the files that keep changing
-  together, and the tests tied to other files' internals.
+  together and when they last did, and the tests that change with several
+  other files, as leads to check. Housekeeping bots' commits are left out;
+  coding agents' commits count.
 - **The smells**, from a catalogue of the established code smells, each
   with what to count, when it isn't a smell, and its playbook of named
   refactorings.
@@ -103,7 +105,8 @@ python3 scripts/heatmap.py -C ~/code/my-app src tests
 ```
 
 - `scripts/heatmap.py`: where a repo's changes keep landing, from git
-  history; with `--checklists`, where the checklists are.
+  history; with `--checklists`, where the checklists are and the name a new
+  one takes.
 - `scripts/measure.py`: how long a codebase's files and functions are,
   against the codebase itself. It finds functions in Python, JavaScript,
   TypeScript, Vue, Svelte, PHP, Go, Ruby, Java, C#, C, C++, Kotlin, Swift,

@@ -65,10 +65,14 @@ python3 <this skill's directory>/scripts/heatmap.py -C <repo> <scope ...>
 - **Window**: by default the last 200 commits. `--since` sets it instead
   when the user names a starting point ("since v2.0", "since we added
   billing", "the last three months"): a tag, branch or commit, or a date.
-  Bots' commits, the bulk reformats a repo lists in `.git-blame-ignore-revs`
-  and the commits recorded on earlier checklists are left out automatically.
+  Left out automatically: housekeeping bots' commits (dependencies,
+  releases, formatting; the output names them, and `--bot NAME` adds one),
+  the bulk reformats a repo lists in `.git-blame-ignore-revs`, and the
+  commits recorded on earlier checklists. Coding agents' commits count.
   `--exclude-commits` leaves out others that would make everything they
-  touched look hot, such as a vendored import.
+  touched look hot, such as a vendored import. Dates are commit dates, as
+  `git log --date=short-local --format='%h %cd %s'` shows them, not the
+  author dates plain `git log` shows.
 - **Too thin?** With fewer than about 30 commits in the window, the counts
   can't tell hot files from cold ones. Widen the window, or say the history
   is too short to point anywhere and judge by the smells alone. A shallow
@@ -96,7 +100,9 @@ python3 <this skill's directory>/scripts/heatmap.py -C <repo> <scope ...>
 - **Pairs** are files that keep changing in the same commits. A **group**
   is three or more that all pair with each other, counted by the commits
   that changed them all; groups that overlap are listed together as one
-  area.
+  area. A row's `last` is when its files last changed together: one whose
+  last shared commit came before a refactor that took it apart is history,
+  not coupling you'd feel today.
   - Files from different layers that pair strongly, or a group across
     layers, usually mean one feature spread across them (Shotgun Surgery).
   - Check what links each pair. An import, a call, or a contract something
@@ -106,9 +112,10 @@ python3 <this skill's directory>/scripts/heatmap.py -C <repo> <scope ...>
     or two lists kept in step by hand, have a hidden dependency, the
     strongest kind of coupling.
   - A file that pairs with many others is a hub every change passes through.
-  - A test listed as changing with several files besides its own is tied to
-    their internals and will block refactoring, unless those files are a
-    group that the test only follows.
+  - A test listed as changing with several files besides its own is a lead
+    to read: one that reaches their private members or internal paths is
+    tied to their internals and will block refactoring; a broad test that
+    follows features through them, or only follows a group, isn't.
   - If many commits were too big to pair (`--max-files`), as in a repo that
     squash-merges, raise it or read the pairs as partial.
 - **Why it changes.** Read the top few files' commit messages (`--show`)
@@ -231,12 +238,13 @@ Order the list so that:
 
 ## 6. Write the checklist and report
 
-Run step 1's command again with `--page .refactor-pass/<YYYY-MM-DD>.html`,
-by today's date. It makes the checklist from
+Run step 1's command again with `--page` and the name `--checklists` gave:
+today's date (`.refactor-pass/2026-11-11.html`, or `2026-11-11-2.html` for a
+second pass that day). It makes the checklist from
 [assets/page.html](assets/page.html) and writes the heatmap into its
-`heatmap` block; run again, it refreshes the heatmap and nothing else. You
-write the `pass` block below it, whose `project`, `started`, `base` and
-`updated` are already filled in:
+`heatmap` block; on a checklist that exists, it refreshes the heatmap and
+nothing else, and says so. You write the `pass` block below it, whose
+`project`, `started`, `base` and `updated` are already filled in:
 
 - `summary`: the overall state in two or three sentences;
 - `items`: every item, with step 5's fields, a `status` (`todo`, `doing`,
@@ -249,10 +257,13 @@ write the `pass` block below it, whose `project`, `started`, `base` and
 - `left_alone`: each with `what` and `why`;
 - `checks`: the project's checks, from its instructions, or what you'll
   check by hand if it has none;
-- `earlier`: after an earlier pass, its `checklist` and `results`, one per
-  refactor finished on it: its `id`, `title`, `eases` and `cost`, the real
-  `change` that came next and what it `actual`ly touched (both empty if none
-  has come yet), and a `note`. Otherwise `null`;
+- `earlier`: after an earlier pass, `checklist`, its path as
+  `--checklists` prints it, and `results`, one per refactor finished on it
+  (one that only added pinning tests too): its `id`, `title`, `eases` and
+  `cost` as it had them; `change`, the first real change of that kind
+  since, as hash, date and subject, and `actual`, what that touched, from
+  `git show --stat`, both empty if none has come yet; and a `note` on how
+  the prediction held. Otherwise `null`;
 - `log`: each with a `date` and `text`, newest first.
 
 After each edit, run `python3 <this skill's directory>/scripts/check_page.py
@@ -329,19 +340,30 @@ Don't change any code until the user picks.
 
 ## After an earlier pass
 
-`heatmap.py --checklists` lists every checklist, newest first: the main
-checkout's and any worktree's. Build on the newest. The heatmap leaves out
-the commits recorded on all of them, so the refactoring just done doesn't
-make its own files look hot. If it warns that a recorded commit isn't
-reachable from HEAD and the work was squash-merged or rebased, record the
-hash that landed it instead, and run the heatmap again before reading it.
-`--since <its base>` shows what has landed since; when that's nothing but
-the pass's own work, it says so, and so should you. Items not done or
-skipped carry over, checked again as in step 4, keeping their IDs and
-`from`, the date of the checklist they first appeared on. A Later item that
-has turned hot becomes a new R item. New items number on from the highest
-ID of each letter. For each refactor finished on the newest checklist, find
-the first real change of the kind it eased after its last commit, list what
-it touched (`git show --stat`), and set that beside the cost the item
-predicted, in `earlier`. That is the "it's easier now" half of the feeling,
-so the report leads with it, misses included.
+`heatmap.py --checklists` lists every checklist, the main checkout's and
+any worktree's, newest first by the date in its name and then its number,
+and gives the name a new one takes.
+
+1. **Build on the newest.** The heatmap leaves out the commits recorded on
+   every checklist, so the refactoring just done doesn't make its own files
+   look hot. If it warns that a recorded commit isn't reachable from HEAD
+   and the work was squash-merged or rebased, record the hash that landed it
+   instead, and run the heatmap again before reading it.
+2. **See what has landed since.** `--since <its base>` shows it; when
+   that's nothing but the pass's own work, it says so, and so should you.
+   Growth, being two sizes, still counts the pass's own commits: a file a
+   refactor made or shrank shows growth its churn doesn't explain.
+3. **Start a new checklist** under the name `--checklists` gives, even on
+   the same day; `--page` on the old one would only refresh its heatmap.
+4. **Carry items over.** Items still `todo`, `doing` or `waiting` carry
+   over, checked again as any finding is ([step 4](#4-check-every-finding)),
+   keeping their IDs and `from`, the date of the checklist they came from. Done and skipped items stay
+   behind; done refactors appear in `earlier` instead. A Later item that has
+   turned hot becomes a new R item. New items number on from the highest ID
+   of each letter.
+5. **Check the predictions.** For each refactor finished on the newest
+   checklist, find the first real change of the kind it eased after its
+   last commit (never one recorded on a checklist), list what it touched
+   (`git show --stat`), and set that beside the cost the item predicted, in
+   `earlier`. That is the "it's easier now" half of the feeling, so the
+   report leads with it, misses included.

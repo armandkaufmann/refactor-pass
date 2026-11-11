@@ -21,8 +21,12 @@ of recent commits:
 
 Files are listed by commits times size, so the top ones are both busy and
 big. A small file changed often, like a config, and a big one rarely
-changed both come lower. Dates are the local date where this runs, as the
-checklist page's own dates are.
+changed both come lower. Dates are commit dates, as the local date where
+this runs, like the checklist page's own dates. git log shows author dates
+by default, which a rebase or a cherry-pick keeps from the first commit
+while the commit date moves on. This shows the dates given here:
+
+  git log --date=short-local --format='%h %cd %s'
 
 Test files are set aside, so a spec beside its source doesn't top the list:
 those named as the common frameworks name them (Board.spec.ts, test_x.py,
@@ -36,7 +40,9 @@ named like a test.
 Then the files that keep changing in the same commits, with two measures:
 of the quieter file's commits, the share that changed both (how likely the
 busier file changes when the quieter one does), and code-maat's degree,
-shared commits over the two files' average. Files that all pair with each
+shared commits over the two files' average. last is the date of the latest
+commit that changed them together, which a refactor that took them apart
+leaves in the past. Files that all pair with each
 other are one row, a group, when the commits that changed all of them meet
 the same thresholds; its measures count those commits. Groups that share
 two files or more are listed together, as one area that keeps changing,
@@ -47,24 +53,31 @@ says how many; in a repo that squash-merges, that can be most of them.
 Last, the tests that change together with several production files besides
 their own: the file of the same name less the test's marker or, when there
 is none, the controller, handler or command of that name, as a feature test
-names it (ShowDashboardTest.php and ShowDashboardController.php). Each is
-tied to their internals, or follows files that already change together.
+names it (ShowDashboardTest.php and ShowDashboardController.php). Each is a
+lead, not a verdict: a test that reaches into those files' private members
+or internal paths is tied to their internals, while a broad test that
+follows features through them, or follows files that already change
+together, isn't.
 
 --show FILE prints a file's commits in the window instead, to read the
 reasons it keeps changing.
 
 History is followed across renames, so a file moved or renamed in the window
 keeps the changes it had under its old name. Merge commits are skipped, and so
-are bots' commits, those the repo lists in .git-blame-ignore-revs (bulk
-reformats), and those recorded on the items of the checklists (a refactor
-pass's own work, which would make the files it just refactored look hot).
+are housekeeping bots' commits (dependency updates, releases and formatting, by
+dependabot, renovate, github-actions, pre-commit-ci and the like; the output
+names them, and --bot NAME adds another), those the repo lists in
+.git-blame-ignore-revs (bulk reformats), and those recorded on the items of the
+checklists (a refactor pass's own work, which would make the files it just
+refactored look hot). Any other bot counts, coding agents such as Copilot,
+Claude, Devin and Jules among them: theirs are the changes a pass is about.
 A recorded commit that isn't reachable from HEAD, as after a squash merge or
 a rebase, gets a warning. A left out commit counts toward nothing but its
-renames, and growth, being two sizes, includes what it did. Binary files are
-left out, and so is any copy of this skill a project keeps in the repo,
-unless a scope names its folder. In a shallow clone, the commits where its
-history stops look as if they add every file, so they are left out too, and
-the output says so. A window left empty, as with --since a pass's base just
+renames, and growth, being two sizes, includes what it did. Binary files,
+symbolic links and submodules are left out, and so is any copy of this skill
+a project keeps in the repo, unless a scope names its folder. In a shallow
+clone, the commits where its history stops look as if they add every file,
+so they are left out too, and the output says so. A window left empty, as with --since a pass's base just
 after the pass, is a result, not an error: the output says what was left
 out, and --page leaves the page as it was.
 
@@ -73,7 +86,11 @@ worktree, which may be removed once its work is done, a relative --page path
 is written in the main checkout's .refactor-pass/, which outlives it. Every
 worktree's .refactor-pass/ is read, wherever this runs, since a sandbox may
 have kept a pass out of the main checkout. --checklists lists them all,
-newest first, and where a new one goes. --page also writes a .gitignore into
+newest first, by the date in each one's name and then its number (a second
+pass on one day is 2026-11-10-2.html), and names the one a new pass should
+make: today's date, or the first number after it that's free. --page on a
+checklist that exists refreshes its heatmap and nothing else, and says
+which checklist that is. --page also writes a .gitignore into
 a .refactor-pass/ folder that has none and holds nothing git tracks, so the
 checklists stay out of commits and the project's own .gitignore is left
 alone. If the page can't be written, as in a sandbox, it says what to do.
@@ -113,13 +130,18 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import scoping  # noqa: E402
 
-# Authors whose commits are a bot's: dependency bumps and the like.
-BOT = re.compile(r"\[bot\]|dependabot|renovate|github-actions", re.I)
+# Housekeeping bots, whose commits are left out: dependency updates, releases and formatting. Matched against
+# "Name <email>". Any other bot counts, coding agents among them (copilot-swe-agent[bot], claude[bot]...).
+HOUSEKEEPING = re.compile(r"dependabot|renovate|github-actions|<action@github\.com>|pre-commit-ci|greenkeeper|"
+                          r"snyk-bot|imgbot|all-?contributors|semantic-release-bot|release-please|depfu|pyup-bot|"
+                          r"autofix-ci|restyled-io", re.I)
 SHA = re.compile(r"[0-9a-f]{7,40}")
 # The checklist page: its template, and the tag that opens each data block.
 TEMPLATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir, "assets", "page.html")
 BLOCK = '<script type="application/json" id="%s">'
 FOLDER = ".refactor-pass"
+# A checklist's name: the day its pass started, and a number after it for the day's second pass and on.
+PAGE_NAME = re.compile(r"(\d{4}-\d{2}-\d{2})(?:-(\d+))?\.html$")
 KIND_NAMES = {"R": "refactors", "F": "small fixes", "L": "later", "D": "your call"}
 
 
@@ -288,40 +310,64 @@ def checklist_commits(pages):
     return records, unreadable
 
 
+def page_order(page, data):
+    """Where a checklist comes among the others, oldest first: by the date in its name (or else the day
+    its pass started), then the number after that date, as 2026-11-10-2.html is that day's second."""
+    named = PAGE_NAME.match(os.path.basename(page))
+    if named:
+        return named.group(1), int(named.group(2) or 1), page
+    return str((data or {}).get("started") or ""), 1, page
+
+
+def new_page_name(folders):
+    """The name a new checklist takes: today's date, or the first number after it that no checklist in
+    any of the folders has."""
+    taken = set(os.path.basename(p) for p in checklist_pages(folders))
+    today = datetime.now().strftime("%Y-%m-%d")
+    number = 1
+    while ("%s.html" % today if number == 1 else "%s-%d.html" % (today, number)) in taken:
+        number += 1
+    return "%s.html" % today if number == 1 else "%s-%d.html" % (today, number)
+
+
+def item_counts(data):
+    """A checklist's items, per kind, with their statuses: "refactors 3 (1 todo, 2 done); ..."."""
+    items = [i for i in data.get("items", []) if isinstance(i, dict)]
+    kinds = []
+    for prefix in "RFLD":
+        mine = [str(i.get("status")) for i in items if str(i.get("id", "")).startswith(prefix)]
+        if mine:
+            counts = Counter(mine)
+            kinds.append("%s %d (%s)" % (KIND_NAMES[prefix], len(mine),
+                                         ", ".join("%d %s" % (n, s) for s, n in sorted(counts.items()))))
+    return "; ".join(kinds) or "no items yet"
+
+
 def list_checklists(home, folders, repo):
-    """Print every checklist, newest first, with its dates and its items' statuses, and where a new
-    one goes."""
+    """Print every checklist, newest first, with its dates and its items' statuses, and the name a new
+    one takes."""
     rows = []
     for page in checklist_pages(folders):
         data = read_pass(page) or {}
-        named = re.match(r"\d{4}-\d{2}-\d{2}", os.path.basename(page))
-        started = str(data.get("started") or (named.group(0) if named else ""))
-        rows.append((started, str(data.get("updated") or ""), os.path.getmtime(page), page, data))
+        rows.append((page_order(page, data), page, data))
     rows.sort(reverse=True)
     if not rows:
         print("No checklist yet: none in %s." % " or ".join(shown(f, home, repo) + os.sep for f in folders))
     else:
         print("Checklists, newest first:")
-    for started, updated, _, page, data in rows:
+    for _, page, data in rows:
         if not data:
             print("  %s: its pass block doesn't parse; check_page.py says where." % shown(page, home, repo))
             continue
-        items = [i for i in data["items"] if isinstance(i, dict)]
-        kinds = []
-        for prefix in "RFLD":
-            mine = [str(i.get("status")) for i in items if str(i.get("id", "")).startswith(prefix)]
-            if mine:
-                counts = Counter(mine)
-                kinds.append("%s %d (%s)" % (KIND_NAMES[prefix], len(mine),
-                                             ", ".join("%d %s" % (n, s) for s, n in sorted(counts.items()))))
         print("  %s: started %s, updated %s, from %s; %s" % (
-            shown(page, home, repo), started or "?", updated or "?", data.get("base") or "?",
-            "; ".join(kinds) or "no items yet"))
+            shown(page, home, repo), data.get("started") or "?", data.get("updated") or "?",
+            data.get("base") or "?", item_counts(data)))
     if rows:
-        print("The newest is %s." % shown(rows[0][3], home, repo))
-    print("A new checklist goes in %s: --page %s writes one there, named by today's date." % (
-        shown(os.path.join(home, FOLDER), home, repo) + os.sep,
-        os.path.join(FOLDER, datetime.now().strftime("%Y-%m-%d.html"))))
+        print("The newest is %s." % shown(rows[0][1], home, repo))
+    name = new_page_name(folders)
+    print("A new pass gets a new checklist: --page %s makes it in %s (today's date%s)." % (
+        os.path.join(FOLDER, name), shown(os.path.join(home, FOLDER), home, repo) + os.sep,
+        ", and a number, since today already has one" if PAGE_NAME.match(name).group(2) else ""))
 
 
 def not_landed(repo, shas):
@@ -425,7 +471,7 @@ def main():
                                      epilog=__doc__.split("\n\n", 1)[1])
     parser.add_argument("scope", nargs="*", help="folders or globs to count (default: everything)")
     parser.add_argument("-C", dest="repo", default=".", help="the repo (default: the current directory)")
-    parser.add_argument("-n", "--commits", type=int, default=200,
+    parser.add_argument("-n", "--commits", type=scoping.count(1), default=200,
                         help="the window: this many of the latest non-merge commits (default 200)")
     parser.add_argument("--since", metavar="REV_OR_DATE",
                         help="the window: every commit after REV (a tag, branch or commit, itself not included), "
@@ -445,8 +491,9 @@ def main():
                              "'app/ABTest.php' or 'docs/spec/*': they count like the rest")
     parser.add_argument("--keep-tests", action="store_true",
                         help="count test files like the rest, in the table and the pairs")
-    parser.add_argument("--top", type=int, default=25, help="files to print, and to put on --page (default 25)")
-    parser.add_argument("--pairs", type=int, default=15,
+    parser.add_argument("--top", type=scoping.count(0), default=25,
+                        help="files to print, and to put on --page (default 25)")
+    parser.add_argument("--pairs", type=scoping.count(0), default=15,
                         help="pairs and groups to print, and tests, and to put on --page (default 15 each)")
     parser.add_argument("--min-shared", type=int, default=5,
                         help="a pair needs at least this many commits together (default 5, as code-maat; "
@@ -456,7 +503,12 @@ def main():
                              "three times, each time with a busy file, doesn't score 100%%")
     parser.add_argument("--min-degree", type=int, default=30,
                         help="a pair needs at least this code-maat degree, in percent (default 30)")
-    parser.add_argument("--keep-bots", action="store_true", help="count bots' commits too")
+    parser.add_argument("--keep-bots", action="store_true",
+                        help="count housekeeping bots' commits too (dependabot, renovate, github-actions, "
+                             "pre-commit-ci and the like, which are left out by default)")
+    parser.add_argument("--bot", action="append", default=[], metavar="NAME",
+                        help="leave out another bot's commits too: those whose author's name or email holds NAME, "
+                             "in any case, such as a translation or release bot the output doesn't name")
     parser.add_argument("--keep-ignore-revs", action="store_true",
                         help="count the commits listed in .git-blame-ignore-revs too")
     parser.add_argument("--keep-pass-commits", action="store_true",
@@ -473,10 +525,10 @@ def main():
                         help="print this file's commits in the window (its name today), instead of the heatmap")
     parser.add_argument("--checklists", action="store_true",
                         help="list the checklists in every worktree's .refactor-pass/, newest first, with their "
-                             "items' statuses and where a new one goes, and stop; needs no scope")
+                             "items' statuses, and the name a new one takes, and stop; needs no scope")
     args = parser.parse_args()
 
-    repo = git(args.repo, "rev-parse", "--show-toplevel").strip()
+    repo = scoping.toplevel(args.repo)
     home, folders, where = checklist_places(repo)
     if args.checklists:
         list_checklists(home, folders, repo)
@@ -520,12 +572,17 @@ def main():
                   shown(page, home, repo), ident, " and ".join(shas), "isn't" if len(shas) == 1 else "aren't"),
               file=sys.stderr)
     recorded = matching(set(sha for _, _, sha in records)) - asked - listed
-    bots = set() if args.keep_bots else set(c[0] for c in everything if BOT.search(c[4])) - asked - listed - recorded
+    named = [n.lower() for n in args.bot]
+    bots = set() if args.keep_bots else set(
+        c[0] for c in everything if HOUSEKEEPING.search(c[4]) or any(n in c[4].lower() for n in named)) \
+        - asked - listed - recorded
+    # Who the bots were, so a wrong guess shows: each author's name, with their count.
+    bot_names = Counter(c[4].rsplit(" <", 1)[0] for c in everything if c[0] in bots).most_common()
     excluded = asked | listed | recorded | bots
     commits = [c for c in everything if c[0] not in excluded]
     left_out = [(len(asked), "asked", ""), (len(listed), "in .git-blame-ignore-revs", "--keep-ignore-revs"),
                 (len(recorded), "recorded on refactor checklists", "--keep-pass-commits"),
-                (len(bots), "by bots", "--keep-bots")]
+                (len(bots), "by housekeeping bots (%s)" % ", ".join("%s %d" % b for b in bot_names), "--keep-bots")]
     page = None
     if args.page:
         page = args.page if os.path.isabs(args.page) else os.path.join(home, args.page)
@@ -536,10 +593,10 @@ def main():
             print(("Nothing has landed since %s: the window has no commits." % args.since if args.since
                    else "No commits in the window.") + (" " + shallow if shallow else ""))
         else:
-            reasons = ", ".join("%d %s" % (n, why) for n, why, _ in left_out if n)
+            reasons = "; ".join("%d %s" % (n, why) for n, why, _ in left_out if n)
             flags = [flag for n, _, flag in left_out if n and flag] + (["drop them from --exclude-commits"]
                                                                         if asked else [])
-            print("%s: the window's %s left out (%s). To count them, %s." % (
+            print("%s: the window's %s left out: %s. To count them, %s." % (
                 "Nothing else has landed since %s" % args.since if args.since else "Nothing to count",
                 "commit is" if len(everything) == 1 else "%d commits are all" % len(everything), reasons,
                 " or ".join(flags)))
@@ -563,7 +620,7 @@ def main():
 
     patterns = scoping.DEFAULT_IGNORE + args.ignore
     files = defaultdict(lambda: {"commits": 0, "recent": 0, "added": 0, "removed": 0})
-    sets = []  # Per commit, the files it changed.
+    sets, set_dates = [], []  # Per commit, newest first, the files it changed and its date.
     logs = defaultdict(list)  # Per file (in scope or not), the commits that changed it.
     own_left_out = set()
     for commit in everything:
@@ -597,6 +654,7 @@ def main():
                 stats["removed"] += removed
         if sha not in excluded:
             sets.append(touched)
+            set_dates.append(describe(commit)["date"])
 
     sizes = line_counts(repo, "HEAD", sorted(files))
     before = {}
@@ -604,8 +662,9 @@ def main():
         then = line_counts(repo, base, sorted(set(earliest.get(p, p) for p in files)))
         before = dict((p, then.get(earliest.get(p, p), 0)) for p in files)
     rows = []
+    at_head = set(tracked)  # Not symbolic links or submodules.
     for path, stats in files.items():
-        if path not in sizes or stats["binary"]:  # Gone at HEAD, or binary.
+        if path not in sizes or stats["binary"] or path not in at_head:  # Gone at HEAD, binary, or not a file.
             continue
         row = {"path": path, "commits": stats["commits"], "recent": stats["recent"], "last": stats["last"],
                "churn": stats["added"] + stats["removed"], "added": stats["added"], "removed": stats["removed"],
@@ -627,6 +686,7 @@ def main():
 
     shared, with_tests = Counter(), Counter()
     seen_in = defaultdict(set)  # Per file, the commits counted for pairs that changed it.
+    newest = {}  # Per pair, the newest commit that changed both: the first met.
     too_big = 0
     for index, touched in enumerate(sets):
         mine = sorted(touched & alive)
@@ -634,6 +694,8 @@ def main():
             too_big += 1
             continue
         shared.update(combinations(mine, 2))
+        for pair in combinations(mine, 2):
+            newest.setdefault(pair, index)
         for path in mine:
             seen_in[path].add(index)
         with_tests.update((test, path) for test in touched & tests for path in mine)
@@ -652,7 +714,7 @@ def main():
     for (a, b), count in shared.items():
         found = measures([a, b], count)
         if found:
-            pairs.append(dict(a=a, b=b, **found))
+            pairs.append(dict(a=a, b=b, last=set_dates[newest[(a, b)]], **found))
     pairs.sort(key=lambda p: (-p["shared"], -p["degree"], p["a"], p["b"]))
     # Files that all pair with each other are one row, grown from the strongest pair left: add the file
     # that pairs with every one of them and keeps the most commits that changed them all, while those
@@ -677,7 +739,8 @@ def main():
             members.sort()
             # Its pairs' own counts too, so a strong pair inside a weaker group still shows.
             counts = [shared[p] for p in combinations(members, 2)]
-            groups.append(dict(files=members, pairs=[min(counts), max(counts)], **measures(members, len(common))))
+            groups.append(dict(files=members, pairs=[min(counts), max(counts)], last=set_dates[min(common)],
+                               **measures(members, len(common))))
             grouped.update(combinations(members, 2))
     pairs = [p for p in pairs if (p["a"], p["b"]) not in grouped]
     together = sorted(groups + pairs, key=lambda r: (-r["shared"], -r["degree"], r.get("a") or r["files"][0]))
@@ -725,7 +788,8 @@ def main():
     window = {"commits": len(commits), "newest": describe(commits[0]), "oldest": describe(commits[-1]),
               "newer_half_from": describe(commits[(len(commits) + 1) // 2 - 1])["date"],
               "excluded": len(excluded), "excluded_asked": len(asked), "excluded_ignore_revs": len(listed),
-              "excluded_checklists": len(recorded), "excluded_bots": len(bots), "too_big_for_pairs": too_big,
+              "excluded_checklists": len(recorded), "excluded_bots": len(bots), "bots": bot_names,
+              "too_big_for_pairs": too_big,
               "since": args.since, "tests_aside": None if args.keep_tests else len(tests), "shallow": bool(cut)}
     if args.show:
         for path in args.show:
@@ -745,6 +809,7 @@ def main():
         heatmap = {"head": head, "scope": scope, "window": window, "options": options, "total_files": len(rows),
                    "files": rows[:args.top], "groups": [r for r in together if "files" in r],
                    "pairs": [r for r in together if "a" in r], "tests": tied[:args.pairs]}
+        earlier = read_pass(page) if os.path.exists(page) else None
         try:
             made, ignore = write_page(page, heatmap, os.path.basename(home))
         except OSError as e:
@@ -755,9 +820,16 @@ def main():
                 "ask the user to let you write there, or give --page a path you can write and tell them where it is"
             sys.exit("Couldn't write %s: %s.\nIf a sandbox keeps you out of that folder, %s." % (
                 page, e.strerror or e, sandboxed))
-        print("%s %s, with the heatmap.%s\n" % ("Made" if made else "Updated", page,
-                                                " Wrote a .gitignore beside it, so git leaves the checklists out "
-                                                "of commits." if ignore else ""))
+        if made:
+            print("Made %s, with the heatmap.%s\n" % (page, " Wrote a .gitignore beside it, so git leaves the "
+                                                            "checklists out of commits." if ignore else ""))
+        else:
+            # A checklist that exists keeps its pass: say which one it is, in case a new pass meant to make its own.
+            print("Updated the heatmap on %s, and nothing else: it's the checklist started %s from %s, with %s. "
+                  "A new pass needs a checklist of its own: --page %s.\n" % (
+                      shown(page, home, repo), (earlier or {}).get("started") or "?",
+                      (earlier or {}).get("base") or "?", item_counts(earlier) if earlier else "items that don't "
+                      "parse", os.path.join(FOLDER, new_page_name(folders))))
 
     print("%s at %s, scope: %s" % (os.path.basename(repo), head, " ".join(scope)))
     reasons = ", ".join("%d %s" % (n, why) for n, why, _ in left_out if n)
@@ -798,7 +870,7 @@ def main():
     if too_big:
         print("  %d of the %d commits changed more than %d files and %s left out of these; raise --max-files to "
               "count them." % (too_big, len(commits), args.max_files, "is" if too_big == 1 else "are"))
-    print("%7s %8s %7s" % ("shared", "quieter", "degree"))
+    print("%7s %8s %7s %10s" % ("shared", "quieter", "degree", "last"))
     for row in together:
         if row.get("cluster") and row is next(r for r in together if r.get("cluster") == row["cluster"]):
             mine = [r for r in together if r.get("cluster") == row["cluster"]]
@@ -809,15 +881,16 @@ def main():
         least, most = row.get("pairs", [row["shared"]] * 2)
         spread = "" if least == most == row["shared"] else \
             " (each pair %d)" % least if least == most else " (each pair %d to %d)" % (least, most)
-        print("%7d %7.0f%% %6.0f%%  %s%s%s" % (row["shared"], row["of_quieter"] * 100, row["degree"] * 100,
-                                              "  " if row.get("cluster") else "",
-                                              " + ".join(row.get("files") or [row["a"], row["b"]]), spread))
+        print("%7d %7.0f%% %6.0f%% %10s  %s%s%s" % (row["shared"], row["of_quieter"] * 100, row["degree"] * 100,
+                                                    row["last"], "  " if row.get("cluster") else "",
+                                                    " + ".join(row.get("files") or [row["a"], row["b"]]), spread))
     if not together:
         print("  none")
     if tests:
         print()
-        print("Tests changed together with several production files besides their own (as above; "
-              "commits together in brackets):")
+        print("Tests changed together with several production files besides their own (as above; commits "
+              "together in brackets). Each is a lead to check: a test that reaches into their private members or "
+              "internal paths is tied to their internals; a broad test that follows features isn't:")
         for row in tied[:args.pairs]:
             print("  %s: %d files, %s" % (row["test"], len(row["files"]),
                                           ", ".join("%s (%d)" % (f["path"], f["shared"]) for f in row["files"])))

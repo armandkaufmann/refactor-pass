@@ -164,6 +164,7 @@ td.num { font-family: var(--font-mono); font-size: var(--step--1); white-space: 
 .bar .recent { background: var(--accent); }
 details { display: grid; gap: 10px; }
 summary { cursor: pointer; color: var(--muted); font-size: var(--step--1); }
+#pairs-wrap, #tied-wrap { display: grid; gap: 8px; }
 .pairs { margin: 0; padding-left: 1.1rem; display: grid; gap: 4px; }
 .pairs li::marker { color: var(--muted); }
 .pairs .pairs { margin-top: 4px; }
@@ -288,6 +289,7 @@ ol.items, ul.items { list-style: none; margin: 0; padding: 0; display: grid; gap
     </div>
     <div id="tied-wrap" hidden>
       <h3>Tests that change with several files</h3>
+      <p class="muted">Each is a lead to check: a test that reaches into these files' private members or internal paths is tied to their internals; a broad test that follows features isn't.</p>
       <ul class="pairs" id="tied"></ul>
     </div>
   </section>
@@ -452,11 +454,13 @@ function renderHeatmap(heat) {
     return;
   }
   const w = heat.window;
+  // A heatmap from before the bots were named has only their count.
+  const bots = list(w.bots).length ? `by housekeeping bots (${list(w.bots).map(b => `${esc(b[0])} ${number(b[1])}`).join(", ")})` : "by bots";
   const leftOut = [
     [w.excluded_checklists, "recorded on refactor checklists"],
     [w.excluded_asked, "asked"],
     [w.excluded_ignore_revs, "in .git-blame-ignore-revs"],
-    [w.excluded_bots, "by bots"],
+    [w.excluded_bots, bots],
   ].filter(x => x[0]).map(x => `${number(x[0])} ${x[1]}`);
   const since = w.since ? ` (since ${esc(w.since)})` : "";
   // A heatmap from before "last" was recorded has no such column.
@@ -482,8 +486,9 @@ function renderHeatmap(heat) {
   // Pairs, and groups of files that all pair with each other, strongest first.
   const names = paths => paths.map(path).join(", ").replace(/, (?=[^,]*$)/, " and ");
   const together = list(heat.groups).concat(list(heat.pairs)).sort((x, y) => y.shared - x.shared || y.degree - x.degree);
+  // A heatmap from before "last" was recorded for pairs doesn't say when they last changed together.
   const describe = p => {
-    const degree = `degree ${Math.round(p.degree * 100)}%`;
+    const degree = `degree ${Math.round(p.degree * 100)}%${p.last ? `, the last on ${day(p.last)}` : ""}`;
     if (!p.files) return `<li>${names([p.a, p.b])}: ${p.shared} commits together, ${degree}</li>`;
     const [least, most] = p.pairs || [p.shared, p.shared];
     const spread = least === most && most === p.shared ? "" : `; each pair ${least}${least === most ? "" : ` to ${most}`}`;
@@ -607,6 +612,10 @@ document.addEventListener("DOMContentLoaded", () => {
        {"id": "Fn", "status": "todo", "title": "…", "note": "…", "commits": [], "outcome": ""}
      L and D items have the same fields as F. An item carried over from an
      earlier checklist adds "from": "2026-11-03", the date it first appeared.
+     After an earlier pass, "earlier" says what came of its refactors:
+       {"checklist": ".refactor-pass/2026-11-03.html", "results": [
+        {"id": "Rn", "title": "…", "eases": "…", "cost": {"today": "…", "after": "…"},
+         "change": "a1b2c3d 2026-11-08 Add store credit", "actual": "2 files: …", "note": "…"}]}
      Statuses: todo, doing, waiting (on the user), done, skipped. Size: S, M
      or L; risk: Low, Medium or High. Dates as 2026-11-03, the local date, as
      the heatmap's are. In text, `code` shows as code. -->

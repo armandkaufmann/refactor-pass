@@ -744,8 +744,11 @@ desiderata call for tests that are "structure-insensitive".*
   - tests calling private methods or reading private fields;
   - tests reaching nodes or objects by internal paths;
   - a test the heatmap lists as changing with several production files
-    besides its own, unless those files are a group it only follows; or one
-    that changes in most refactoring commits;
+    besides its own: a lead, not a finding. Read it. Calls to their private
+    members or paths into their internals make it one; a broad test that
+    follows features through those files, or a group it only follows,
+    isn't;
+  - a test that changes in most refactoring commits;
   - mocks with long lists of expected calls.
 - **Not a smell when:** one deliberate seam, used by every test, holds the
   reach.
