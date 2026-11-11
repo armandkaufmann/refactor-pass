@@ -39,10 +39,82 @@ fix.
 
 ## Install
 
-The skill is the `skills/refactor-pass` folder in this repo, and installing
-it means copying that folder where your agent looks for skills. For all
-your projects, with Codex, Cursor, Gemini CLI, GitHub Copilot, opencode or
-Amp, which all look in `~/.agents/skills`:
+The skill is the `skills/refactor-pass` folder in this repo. The installer,
+`install.py`, puts that folder, and nothing else from the repo, where your
+coding agents look for skills. It needs Python 3.7 or later and git, and
+runs piped, with nothing to download first. On macOS or Linux:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/armandkaufmann/refactor-pass/main/install.py | python3 -
+```
+
+In Windows PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/armandkaufmann/refactor-pass/main/install.py | python -
+```
+
+It looks for the agents below by their folders in your home, installs the
+latest release once in each skills folder they read (one copy serves every
+agent that shares a folder), and prints what it did and where. If it finds
+none, it installs nothing and lists the choices. Flags go after the `-`,
+as in `| python3 - --agent claude-code`, or after `install.py` when you run
+it from a clone; `--dry-run` prints what it would do, and `--help` lists
+the rest.
+
+- `--agent NAME` (repeatable): install for these agents, found or not.
+- `--dir DIR` (repeatable): install in `DIR/refactor-pass`, any place (or
+  in `DIR` itself if it's named `refactor-pass`).
+- `--project`: put a copy in the current git repo, to commit, for the
+  agents named with `--agent`, else those whose folders the repo has, else
+  those found in your home. The scripts leave the copy's own files out of
+  what they count.
+- `--ref REF`: a release tag such as `v1.0.0`, a branch, or a full commit,
+  instead of the latest release.
+- `--source URL_OR_FOLDER`: install from another clone, or a local one (as
+  `--source . --ref HEAD` installs your clone's last commit).
+
+Later, with the same one line, or `install.py`, and a command after it, as
+in `curl -fsSL .../install.py | python3 - update`:
+
+- `update`: brings every copy it made, in the agents' folders and the
+  current project's, to the latest release (and any `--dir` you name).
+- `check`: prints each copy's version against the latest, changing nothing.
+- `uninstall`: removes the copies it made, only the files it installed.
+
+The latest release is the highest `vMAJOR.MINOR.PATCH` tag; until there is
+one, it installs the default branch and says so, and `update` moves it to
+the first release. Each copy holds a small `.install.json` with its source,
+version and a hash of each file, which these commands read. A copy whose
+files were edited since, or that holds files it didn't install, is left
+alone unless you add `--force`. A folder it didn't make, and a git clone,
+are always left alone. A new copy is built beside the old one and swapped
+in, so a failed run leaves the old copy whole.
+
+Where each agent reads skills, from its own documentation:
+
+| Agent | `--agent` | Found by | User folders it reads | Project folders it reads |
+| - | - | - | - | - |
+| [Claude Code](https://code.claude.com/docs/en/skills) | `claude-code` | [`~/.claude`](https://code.claude.com/docs/en/settings) | `~/.claude/skills` | `.claude/skills` |
+| [Codex](https://learn.chatgpt.com/docs/build-skills) | `codex` | `~/.codex` | `~/.agents/skills` | `.agents/skills` |
+| [Cursor](https://cursor.com/docs/context/skills) | `cursor` | [`~/.cursor`](https://cursor.com/docs/context/mcp) | `~/.agents/skills`, `~/.cursor/skills`, and `~/.claude/skills`, `~/.codex/skills` | `.agents/skills`, `.cursor/skills`, `.claude/skills`, `.codex/skills` |
+| [Gemini CLI](https://geminicli.com/docs/cli/skills/) | `gemini-cli` | [`~/.gemini`](https://geminicli.com/docs/reference/configuration/) | `~/.agents/skills`, `~/.gemini/skills` | `.agents/skills`, `.gemini/skills` |
+| [GitHub Copilot](https://docs.github.com/en/copilot/concepts/agents/about-agent-skills) | `github-copilot` | [`~/.copilot`](https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/configure-copilot-cli) | `~/.agents/skills`, `~/.copilot/skills` | `.agents/skills`, `.github/skills`, `.claude/skills` |
+| [opencode](https://opencode.ai/docs/skills/) | `opencode` | [`~/.config/opencode`](https://opencode.ai/docs/config/) | `~/.agents/skills`, `~/.config/opencode/skills`, `~/.claude/skills` | `.agents/skills`, `.opencode/skills`, `.claude/skills` |
+| [Amp](https://ampcode.com/docs/customize/skills) | `amp` | [`~/.config/amp`](https://ampcode.com/docs/cli/settings) | `~/.agents/skills`, `~/.config/agents/skills`, `~/.config/amp/skills`, `~/.claude/skills` | `.agents/skills`, `.claude/skills` |
+
+So `~/.agents/skills` serves every agent but Claude Code, and
+`~/.claude/skills` serves Claude Code, Cursor, opencode and Amp: with
+Claude Code and another agent, the installer makes one copy in each, and
+says which agents may then list the skill twice. The Codex page names
+`~/.codex/config.toml`; Copilot is found by the CLI's folder, so name it
+with `--agent` for VS Code alone. The pages give no Windows paths for
+Codex, Cursor, Gemini CLI or opencode; the installer uses the same folders
+under your user folder there. Folders moved by an environment variable
+(`CLAUDE_CONFIG_DIR`, `COPILOT_HOME`) aren't followed: use `--dir`.
+
+To install by hand instead, copy the skill's folder where your agent looks,
+and do the same again to update it:
 
 ```bash
 git clone --depth 1 https://github.com/armandkaufmann/refactor-pass /tmp/refactor-pass
@@ -51,23 +123,24 @@ cp -R /tmp/refactor-pass/skills/refactor-pass ~/.agents/skills/
 rm -rf /tmp/refactor-pass
 ```
 
-With Claude Code, which looks in its own folder, copy it into
-`~/.claude/skills/` instead.
-
-For one project, so that everyone who clones it has the skill, copy it into
-the project's `.agents/skills` (or `.claude/skills` for Claude Code) and
-commit it. The scripts leave the copy's own files out of what they count.
-To update a copy, delete it and copy it again.
+If you installed it before by cloning this repo into a skills folder, that
+clone no longer has `SKILL.md` at its top after a pull, so agents stop
+seeing the skill. The installer leaves a clone alone, so remove it
+yourself (`rm -rf ~/.claude/skills/refactor-pass`, or your folder), then
+install. `npx skills add armandkaufmann/refactor-pass`, from the
+[skills](https://github.com/vercel-labs/skills) tool, should also work: its
+documentation says it finds a repo's `skills/<name>/SKILL.md`, and leaves
+`.git` and `__pycache__` out of what it copies. We haven't tried it.
 
 With any other agent, put the folder anywhere and ask the agent to read
 its `SKILL.md` and follow it ("Read ~/refactor-pass/SKILL.md and do a
 refactor pass"); point it there again when you carry on in a new session.
 
-It needs git (2.15 or later, for `git rev-parse --is-shallow-repository`)
-and Python 3.7 or later, with the standard library only. The scripts were
-tested with Python 3.9 and 3.14 on macOS; they're written to work on
-Windows too, where the command may be `python` or `py` rather than
-`python3`, but haven't been tested there.
+The scripts need git (2.15 or later, for
+`git rev-parse --is-shallow-repository`) and Python 3.7 or later, with the
+standard library only. Their tests run on every push on Linux, macOS and
+Windows, with Python 3.9, 3.13 and 3.14 on each, and 3.7 and 3.8 on Linux.
+On Windows the command may be `python` or `py` rather than `python3`.
 
 ## Use
 
@@ -114,15 +187,18 @@ count and which are tests.
   - `references/sources.md`: the books, studies and articles drawn on.
   - `scripts/`: the scripts above.
   - `assets/page.html`: the template for the checklist page.
-- `tests/`: the scripts' tests, for contributors (see [Tests](#tests)).
+- `install.py`: the installer, which copies only `skills/refactor-pass`.
+- `tests/`: the tests, for contributors (see [Tests](#tests)).
 - `.github/workflows/tests.yml`: runs the tests on every push.
 
 ## Tests
 
 For contributors; an installed copy doesn't need them. The suite in
 `tests/` uses Python's standard library and git, builds the small repos it
-reads in a temporary folder, and runs in well under a minute. `-B` keeps
-Python from writing bytecode into the skill's folder:
+reads in a temporary folder, and runs in under a minute. It tries the
+installer against source repos it builds there too, never the network,
+with a home folder of its own. `-B` keeps Python from writing bytecode into
+the skill's folder:
 
 ```bash
 python3 -B -m unittest discover -s tests -t .
@@ -162,3 +238,26 @@ priorities come from empirical studies of smells, churn and refactoring.
 
 It's under the MIT licence ([LICENSE](LICENSE)), so you're free to use,
 change and share it.
+
+## Releasing
+
+The installer takes the highest `vMAJOR.MINOR.PATCH` tag, so a release is a
+tag on `main`:
+
+1. Check that the tests passed on `main`'s last commit, on every system,
+   in GitHub Actions.
+2. Tag that commit, then push the tag:
+
+   ```bash
+   git tag -a v1.0.0 -m "refactor-pass v1.0.0"
+   git push origin v1.0.0
+   ```
+
+`update` brings everyone's copies to it from then on. The installer itself
+is always fetched from `main`, while the skill comes from a tag, so
+`install.py` on `main` must install every release from the first on. Keep
+the whole skill in `skills/refactor-pass`, with `SKILL.md` in it; keep
+reading the `.install.json` that older installers wrote (its `record`
+number says which form it is); and after changing `install.py`, install
+the first release with it (`python3 install.py --dir /tmp/try --ref v1.0.0`).
+

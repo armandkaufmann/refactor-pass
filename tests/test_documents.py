@@ -243,6 +243,29 @@ class NothingAboutTheSuite(unittest.TestCase):
             self.assertTrue(source.endswith("/skills/refactor-pass"), source)
 
 
+class Install(unittest.TestCase):
+    """The README's install part against install.py: the one-line installs, and the table of agents."""
+
+    def setUp(self):
+        self.readme = read(os.path.join(ROOT, "README.md"))
+        self.install = self.readme[self.readme.index("## Install"):self.readme.index("## Use")]
+
+    def test_the_one_line_installs(self):
+        url = "https://raw.githubusercontent.com/armandkaufmann/refactor-pass/main/install.py"
+        self.assertIn("curl -fsSL %s | python3 -" % url, self.install)
+        self.assertIn("irm %s | python -" % url, self.install)
+
+    def test_the_table_of_agents_is_the_installers(self):
+        import runpy
+        agents = runpy.run_path(os.path.join(ROOT, "install.py"))["AGENTS"]
+        rows = [line.split("|")[1:-1] for line in self.install.split("\n") if line.startswith("| [")]
+        table = dict((re.search(r"`([\w-]+)`", row[1]).group(1),
+                      (re.findall(r"`([^`]+)`", row[2])[0], sorted(re.findall(r"`([^`]+)`", row[3])),
+                       sorted(re.findall(r"`([^`]+)`", row[4])))) for row in rows)
+        self.assertEqual(table, dict((name, ("~/" + found, sorted("~/" + f for f in user), sorted(project)))
+                                     for name, _, found, user, project in agents))
+
+
 class Hygiene(unittest.TestCase):
 
     def python_files(self):
