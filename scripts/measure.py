@@ -163,7 +163,8 @@ def not_a_name(language):
     return r"(?!(?:%s)(?![\w$]))" % C_RESERVED[language]
 
 
-# A type is words and the punctuation of generics, arrays and pointers, or a tuple such as C#'s (int, string).
+# A type is words and the punctuation of generics, arrays and pointers, or a tuple such as C#'s (int, string);
+# or words around type arguments that hold a function's type in parentheses, as std::function<void(int)>.
 # A line that starts with a : (not C++'s ::) or a , goes on from the one before, as a constructor's initializers
 # do, or C#'s : base(...).
 # The name isn't a reserved word either, as in a labelled statement (again: switch (c) {), and doesn't follow
@@ -171,8 +172,9 @@ def not_a_name(language):
 # can). Each part of a name can take type arguments, as C#'s Get<T>( and C++'s SkipList<Key, Cmp>::Insert( do;
 # and in C# a part is an interface's, as in IDisposable.Dispose(. Java's names can hold a $, and C#'s start
 # with an @ that makes a reserved word a name.
-TYPE_ARGUMENTS = r"(?:<[^<>;(){}=]*(?:<[^<>;(){}=]*>[^<>;(){}=]*)*>)?"
-TYPE_WORD = r"(?:[\w<>\[\],.?*&:]+|\([\w<>\[\],.?\s]+\))"
+ANGLED = r"<(?:[^<>;{}=()]|\([^;{}()]*\)|<(?:[^<>;{}=()]|\([^;{}()]*\))*>)*>"
+TYPE_ARGUMENTS = r"(?:" + ANGLED + r")?"
+TYPE_WORD = r"(?:[\w<>\[\],.?*&:]+|\([\w<>\[\],.?\s]+\)|[\w:.]+" + ANGLED + r"[\w\[\],.?*&:]*)"
 # Before it all, Java's annotations (@Test, @SuppressWarnings("x")) and C#'s attributes ([InlineData(1)]).
 ANNOTATIONS = r"(?:@[\w.]+(?:\((?:[^()]|\([^()]*\))*\))?\s+|\[(?:[^\[\]()]|\((?:[^()]|\([^()]*\))*\))*\]\s*)*"
 # C++'s template <...> before a definition on its line, whatever its parameters hold (= false, enable_if(...)).
@@ -212,7 +214,7 @@ def c_shapes(language):
 # C++ also writes an operator (bool operator==(...), operator int(), auto operator()(...)), whose name is
 # operator and what follows it, and a constructor or a destructor in its class with no type (Stats() {,
 # virtual ~Rep() {), whose name isn't in capitals, as a macro that annotates a signature is.
-CPP_SHAPES = (r"^\s*" + TEMPLATE + MODIFIERS + r"(?:(?:[\w<>\[\],.*&:]+)\s+)*[*&]*(?:\w+" + TYPE_ARGUMENTS + r"::)*"
+CPP_SHAPES = (r"^\s*" + TEMPLATE + MODIFIERS + r"(?:" + TYPE_WORD + r"\s+)*[*&]*(?:\w+" + TYPE_ARGUMENTS + r"::)*"
               r"(operator\s*(?:\(\)|[^\w\s(][^\s(]*|[A-Za-z_][\w\s:<>*&]*?))\s*\(" + SIGNATURE_REST + "|" +
               c_shapes("C++") + r"|^\s*" + TEMPLATE + r"(?:(?:explicit|inline|constexpr|virtual)\s+)*" +
               not_a_type("C++") + not_a_name("C++") + r"(?![A-Z][A-Z0-9_]*\s*\()(~?[A-Za-z_]\w*)\s*\(" +
@@ -1106,15 +1108,18 @@ SIGNATURE_GOES_ON = re.compile(r"(?:[|&:.,<(\[{=]|->|=>|\b(?:where|extends|imple
 SIGNATURE_NEXT = re.compile(r"\s*(?:[{:=,.?|&>)\]]|->|=>|(?:where|throws|rethrows|async|noexcept|requires|"
                             r"extends|implements|try)\b)")
 SIGNATURE_MACRO = re.compile(r"\s*[A-Z][A-Z0-9_]{2,}\b")
+# In C++ the next line can also start with a qualifier, as in const LOCKS_REQUIRED(mu) {.
+SIGNATURE_NEXT_CPP = re.compile(r"\s*(?:const|volatile|override|final)\b")
 
 
-def body_by_brackets(code, inside, start, column=0, initialized=False):
+def body_by_brackets(code, inside, start, column=0, cpp=False, opened=None):
     """The last line of a function's body, by matching brackets from code[start][column] on, where its
     definition starts or, if it's known, its body; None if no body follows, as for a declaration, or if
     its brackets never close. A block ends where its brace closes; an expression, such as an arrow
-    function's, at the end of a line outside brackets that it doesn't go on from (goes_on). With
-    initialized, as in C++, a constructor's initializers after its : can be braces, as in : size_{n} {,
-    which open right after a name or a >, unlike its body's."""
+    function's, at the end of a line outside brackets that it doesn't go on from (goes_on). In C++, a
+    constructor's initializers after its : run to its body's {, whatever lines they hold (a directive, a
+    macro), and can be braces, as in : size_{n} {, which open right after a name or a >, unlike its body's.
+    The line where a block opens is added to opened, if given."""
     depth = carried = 0
     initializers = False  # Past a constructor's : in C++, so a { after a name is an initializer's.
     expression = False
@@ -1135,8 +1140,10 @@ def body_by_brackets(code, inside, start, column=0, initialized=False):
             if not expression and depth == 0:
                 if c == "{" and not (initializers and re.match(r"[\w>]", line[j - 1:j])):  # A block: it ends
                     end = closes.get((i, j + offset))  # where its brace closes.
+                    if end and opened is not None:
+                        opened.append(i)
                     return end[0] if end else None
-                elif c == ":" and initialized and signed and ":" not in (line[j - 1:j], line[j + 1:j + 2]):
+                elif c == ":" and cpp and signed and ":" not in (line[j - 1:j], line[j + 1:j + 2]):
                     initializers = True
                 elif line.startswith("=>", j):
                     rest = line[j + 2:].strip()
@@ -1153,13 +1160,15 @@ def body_by_brackets(code, inside, start, column=0, initialized=False):
                 if depth < 0 and not expression:  # The block around it closed first: a declaration, as a protocol's.
                     return None
                 signed = signed or (depth == 0 and c == ")")
-        if signed and not expression and not arrow and depth == 0 and not column and line.strip() and \
-                not line.lstrip().startswith("#") and not SIGNATURE_GOES_ON.search(line.rstrip()[-12:]):
+        if signed and not expression and not arrow and not initializers and depth == 0 and not column and \
+                line.strip() and not line.lstrip().startswith("#") and \
+                not SIGNATURE_GOES_ON.search(line.rstrip()[-12:]):
             # A body's { follows its signature on the same line or the next, unless the next goes on with it
             # (where, throws, ->, :...); else it's a declaration with none, as an interface's method.
             following = next((n for n in code[i + 1:i + 20] if n.strip() and not n.lstrip().startswith("#")), "")
             deeper = len(following) - len(following.lstrip()) > len(code[start]) - len(code[start].lstrip())
-            if not SIGNATURE_NEXT.match(following) and not (deeper and SIGNATURE_MACRO.match(following)):
+            if not SIGNATURE_NEXT.match(following) and not (deeper and SIGNATURE_MACRO.match(following)) and \
+                    not (cpp and SIGNATURE_NEXT_CPP.match(following)):
                 return None
         if expression and depth <= 0 and line.strip():
             if not goes_on(code, inside, i):
@@ -1205,7 +1214,7 @@ def docstrings(code, inside, continued):
     return found
 
 
-TYPE_ARGUMENTS_IN = re.compile(r"(?<=\w)" + TYPE_ARGUMENTS[3:-2])
+TYPE_ARGUMENTS_IN = re.compile(r"(?<=\w)" + ANGLED)
 
 
 def by_pattern(pattern, listed=False):
@@ -1290,17 +1299,21 @@ def functions(path, text):
     skip = [a or b for a, b in zip(inside, continued)]
     unit = indent_unit(lines, code, skip)
     found = []
-    for start in range(len(code)):
-        defined = find(code, start) if not inside[start] else None
+    signature_until = -1  # In C++, no definition starts in another's signature, as among its initializers,
+    for start in range(len(code)):  # nor on the line its body opens.
+        defined = find(code, start) if not inside[start] and start > signature_until else None
         if not defined:
             continue
         if defined[0].startswith("`"):  # A name in backquotes, whose text the skeleton has as a string's.
             written = re.search(r"\bfunc?\s+[^`]*(`[^`]+`)", lines[start])
             defined = (written.group(1) if written else defined[0]), defined[1]
         if ending == "brackets":
-            last = body_by_brackets(code, inside, *defined[1], initialized=name == "C++")
+            opened = []
+            last = body_by_brackets(code, inside, *defined[1], cpp=name == "C++", opened=opened)
             if last is None:
                 continue
+            if name == "C++" and opened:
+                signature_until = max(signature_until, opened[0])
         else:
             last = body_by_indent(lines, code, inside, open_brackets, start, ending == "end")
         base = indent_of(lines[start])
