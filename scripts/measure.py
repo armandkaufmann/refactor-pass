@@ -534,9 +534,10 @@ PERCENTS = (70, 80, 90)
 BIG = set(["80th", "90th"] + [">%d" % strong for _, strong in REFERENCE.values()])
 # An operator that an expression goes on after, at the end of a line (read from its last three characters),
 # or before, at the start of the next (goes_on). Not a ++ or a --; and a *, /, % or > only after a space,
-# unlike a JSX tag's > or a regular expression's closing /.
+# unlike a JSX tag's > or a regular expression's closing /. At the start of a line, a > goes on as a
+# comparison does, or closes a type's < left open, as in x as Array<...> split over lines.
 GOES_ON = re.compile(r"(?:=>?|\|\||&&|\?\?|[?:<]|(?<![+-])[+-]|\s[*/%>])$")
-GOES_ON_NEXT = re.compile(r"\s*(?:\|\||&&|\?\?|\?(?!\.)|:|\.(?!\.)|[+-](?![+-])|[|&*%])")
+GOES_ON_NEXT = re.compile(r"\s*(?:\|\||&&|\?\?|\?(?!\.)|:|\.(?!\.)|[+-](?![+-])|[|&*%>])")
 # The words after which a / opens a regular expression, since only an expression can follow them; as whole
 # words, not a member's name such as x.in.
 REGEX_AFTER = re.compile(r"(?<![\w$.])(?:return|case|typeof|void|delete|throw|new|await|yield|in|of|do|else)$")

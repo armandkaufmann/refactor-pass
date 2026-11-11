@@ -52,6 +52,7 @@
  "nested-templates.ts": [["arrow", 1, 7, 7], ["after", 8, 10, 3]],
  "type-members.ts": [["after", 35, 37, 3]],
  "expressions.ts": [["circle", 1, 5, 5], ["isDrag", 7, 10, 4], ["pages", 12, 19, 8], ["after", 20, 22, 3]],
+ "type-assertion.ts": [["pick", 1, 6, 6], ["isLate", 7, 9, 3], ["after", 10, 10, 1]],
  "types.ts": [["f", 1, 5, 5], ["check", 18, 18, 1], ["after", 19, 21, 3]],
  "names.ts": [["function$x", 7, 9, 3], ["functionRef", 10, 12, 3], ["real", 14, 16, 3], ["y", 17, 19, 3]],
  "functional.ts": [],
