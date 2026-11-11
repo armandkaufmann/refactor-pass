@@ -134,10 +134,11 @@ count and which are tests.
 
 For contributors; an installed copy doesn't need them. The suite in
 `tests/` uses Python's standard library and git, builds the small repos it
-reads in a temporary folder, and runs in well under a minute:
+reads in a temporary folder, and runs in well under a minute. `-B` keeps
+Python from writing bytecode into the skill's folder:
 
 ```bash
-python3 -m unittest discover -s tests -t .
+python3 -B -m unittest discover -s tests -t .
 ```
 
 Run it from the repo's top, or from anywhere with both paths:

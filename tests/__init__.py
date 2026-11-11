@@ -14,7 +14,14 @@
   test_documents.py   the documents against the scripts, and the code's hygiene
   support.py          what they share: the scripts' folder, running them, and building git repos
 
+Run it with python3 -B, which keeps Python from writing bytecode beside the tests and scripts. This file
+stops that too, for every module imported after it, but not for itself.
+
 tools/ holds what the default run leaves out: the comparison with real parsers on pinned public repos, the
 counts of run-on functions and unreported definitions where there's no parser, the headless-Chrome check of
 rendered pages, and a longer stress run.
 """
+
+import sys
+
+sys.dont_write_bytecode = True
