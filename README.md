@@ -1,7 +1,9 @@
 # refactor-pass
 
-A Claude Code skill that finds what in a git repo needs refactoring, and
-what doesn't.
+A skill for coding agents that finds what in a git repo needs refactoring,
+and what doesn't. It's in the open [Agent Skills](https://agentskills.io)
+format, so it works in any agent that loads skills, and nothing in it
+depends on one agent or one model.
 
 Refactoring used to start with a feeling. Code was hard to work on, and the
 same feeling told you what to leave alone: ugly code you never touched
@@ -26,29 +28,41 @@ fix.
 - **A ranked checklist**, written as an HTML page in `.refactor-pass/` in
   the repo (kept out of commits through git's local exclude file). It holds
   refactors, small fixes, items for later, decisions for you, and what was
-  left alone and why. Claude works through it one item at a time, when you
-  name an item, and changes no code until you do.
+  left alone and why. Your agent works through it one item at a time, when
+  you name an item, and changes no code until you do.
 - **Later passes** build on the last checklist and check its predictions
   against what happened: for each finished refactor, what the next change
   of the kind it eased actually touched.
 
 ## Install
 
-For all your projects:
+It's a folder with a `SKILL.md` in it, so installing it means cloning it
+where your agent looks for skills. For all your projects, with Codex,
+Cursor, Gemini CLI, GitHub Copilot, opencode or Amp, which all look in
+`~/.agents/skills`:
+
+```bash
+git clone https://github.com/armandkaufmann/refactor-pass ~/.agents/skills/refactor-pass
+```
+
+With Claude Code, which looks in its own folder:
 
 ```bash
 git clone https://github.com/armandkaufmann/refactor-pass ~/.claude/skills/refactor-pass
 ```
 
-Or for one project, clone it into that project's
-`.claude/skills/refactor-pass`.
+For one project, clone it into that project's `.agents/skills/refactor-pass`,
+or `.claude/skills/refactor-pass` for Claude Code. With any other agent,
+clone it anywhere and ask the agent to read `SKILL.md` and follow it ("Read
+~/refactor-pass/SKILL.md and do a refactor pass"); point it there again
+when you carry on in a new session.
 
 It needs git (2.31 or later) and Python 3. The scripts use the standard
 library only; they were tested on Python 3.9.
 
 ## Use
 
-Ask Claude Code things like:
+Ask your agent things like:
 
 - "Do a refactor pass."
 - "We've made a lot of changes, anything to refactor?"
@@ -57,11 +71,17 @@ Ask Claude Code things like:
 - "Should we refactor X?" or "Is this class doing too much?"
 - "What's next on the list?" or "Start R4", to carry on with a checklist.
 
-Or invoke it directly with `/refactor-pass`.
+Or call it by name: `/refactor-pass` in Claude Code, Cursor or Copilot CLI,
+`$refactor-pass` in Codex, `@refactor-pass` in opencode.
 
 ## The scripts on their own
 
-Each runs with `--help` for its options.
+They need no agent, only Python 3 and git, and each runs with `--help` for
+its options:
+
+```bash
+python3 scripts/heatmap.py -C ~/code/my-app src tests
+```
 
 - `scripts/heatmap.py`: where a repo's changes keep landing, from git
   history.
@@ -74,7 +94,7 @@ count and which are tests.
 
 ## What's in the repo
 
-- `SKILL.md`: the skill itself, the steps Claude follows.
+- `SKILL.md`: the skill itself, the steps the agent follows.
 - `references/smells.md`: the catalogue of smells and their playbooks.
 - `references/review-brief.md`: the brief for reviewing one area of code.
 - `references/sources.md`: the books, studies and articles drawn on.

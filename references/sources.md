@@ -69,6 +69,12 @@ skill's catalogue of smells, and in its scripts.
 - Rosenfeld Rosas, "AI agents and the refactoring that never happens" (Sep
   2026):
   https://www.rosenfeld.page/articles/programming/2026_09_02_ai_agents_and_the_refactoring_that_never_happens/
-- Anthropic, prompting best practices:
-  https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices;
-  Claude Code best practices: https://code.claude.com/docs/en/best-practices
+- Ottenhof, Penner, Hindle & Lutellier, "How do Agents Refactor: An
+  Empirical Study" (MSR 2026): https://arxiv.org/abs/2601.20160
+- Two vendors' guidance for their own models, quoted as evidence of what
+  those models tend to do:
+  - Anthropic, prompting best practices for Claude:
+    https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices;
+    Claude Code best practices: https://code.claude.com/docs/en/best-practices
+  - OpenAI, Codex prompting guide:
+    https://developers.openai.com/cookbook/examples/gpt-5/codex_prompting_guide

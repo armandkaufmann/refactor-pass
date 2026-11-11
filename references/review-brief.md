@@ -5,7 +5,9 @@ belong to. Fill in the angle brackets and leave out what doesn't apply. A
 sub-agent knows nothing but this brief, so it has to carry everything: what
 the owner values, what's read-only, the project's intended design, the
 evidence from the heatmap, the catalogue to judge by, and the shape of the
-report. Reviewing an area yourself, use it as the checklist.
+report. If a sub-agent can't read files outside the repo, paste in the
+entries of smells.md it needs. Reviewing an area yourself, use it as the
+checklist.
 
 ---
 

@@ -50,12 +50,15 @@ its answer can be "no". If `.refactor-pass/` already holds a checklist, read
 python3 <this skill's directory>/scripts/heatmap.py -C <repo> <scope ...>
 ```
 
+`<this skill's directory>` is the folder that holds this SKILL.md.
+
 - **Scope**: the source folders and the tests' folders, such as `src tests`
-  or `app`, not docs or assets; read the project's layout (README, agent
-  instructions, a directory listing) to decide. Test files, known by name
-  (`Board.spec.ts`, `test_x.py`, `XTest.php`...) or folder, stay out of the
-  table and pairs, and are listed apart when they change with several files.
-  Add `--test GLOB` for other test names, `--ignore GLOB` for generated files.
+  or `app`, not docs or assets; read the project's layout (README, any
+  agent's instructions, such as `AGENTS.md` or `CLAUDE.md`, a directory
+  listing) to decide. Test files, known by name (`Board.spec.ts`,
+  `test_x.py`, `XTest.php`...) or folder, stay out of the table and pairs,
+  and are listed apart when they change with several files. Add
+  `--test GLOB` for other test names, `--ignore GLOB` for generated files.
 - **Window**: by default the last 200 commits. `--since` sets it instead
   when the user names a starting point ("since v2.0", "since we added
   billing", "the last three months"): a tag, branch or commit, or a date.
@@ -216,10 +219,12 @@ Run step 1's command again with `--page .refactor-pass/<YYYY-MM-DD>.html`.
 It makes the checklist from [assets/page.html](assets/page.html) and writes
 the heatmap into its `heatmap` block; run again, it refreshes the heatmap
 and nothing else. In a linked worktree, `.refactor-pass/` is the main
-checkout's, which outlives the worktree, and the heatmap says where; if there
-is no main checkout, tell the user the checklist goes with the worktree. You
-write the `pass` block below it, whose `project`, `started`, `base` and
-`updated` are already filled in:
+checkout's, which outlives the worktree, and the heatmap says where. If a
+sandbox won't let you write there, ask the user to allow it, or give
+`--page` an absolute path in the worktree. If the checklist will be deleted
+with a worktree or a cloud sandbox, tell the user. You write the `pass`
+block below it, whose `project`, `started`, `base` and `updated` are already
+filled in:
 
 - `summary`: the overall state in two or three sentences;
 - `items`: every item, with step 5's fields, a `status` (`todo`, `doing`,
@@ -240,9 +245,9 @@ The comment above the blocks shows an item in full. After each edit, run
 catches a broken bracket, a misspelt field or a duplicate ID. Add
 `.refactor-pass/`, if it isn't there, to the file `git -C <repo> rev-parse
 --path-format=absolute --git-path info/exclude` names, so the folder is never
-committed by accident but the project's `.gitignore` stays untouched. If your environment can publish or preview HTML pages,
-publish the same file and give the link; otherwise give the path to open in
-a browser.
+committed by accident but the project's `.gitignore` stays untouched. If
+your environment can publish or preview HTML pages, publish the same file
+and give the link; otherwise give the path to open in a browser.
 
 Then reply with:
 

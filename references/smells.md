@@ -624,10 +624,13 @@ G25.*
   - Kerievsky's Inline Singleton.
 - **Priority:** medium, and it applies to your own proposals too. Don't
   propose a layer for a second case that doesn't exist yet. Agents produce
-  this smell readily: Anthropic's own prompting guide says recent Claude
-  models "have a tendency to overengineer by creating extra files, adding
-  unnecessary abstractions, or building in flexibility that wasn't
-  requested."
+  this smell readily. In agents' refactoring pull requests on 86 Java
+  projects, Unnecessary Abstraction was among the three smells they
+  introduced most, and not among developers' top three (Ottenhof et al.,
+  2026). And Anthropic's prompting guide says two of its own models, Claude
+  Opus 4.5 and 4.6, "have a tendency to overengineer by creating extra
+  files, adding unnecessary abstractions, or building in flexibility that
+  wasn't requested."
 
 ### Dead Code
 
@@ -739,9 +742,10 @@ has "no aesthetic disgust at a 300-line function, no intuition that 'we
 don't do it that way here.'" Rodrigo Rosenfeld Rosas: "The agent never gets
 lost, so the signal never fires."
 
-Two studies have measured some of these so far: Huang et al. the first and
-He et al. the third. The rest come from practitioners' reports and
-Anthropic's guidance for its own models, so take the order as rough:
+Three studies have measured some of these so far: Huang et al. the first,
+He et al. the third and Ottenhof et al. the fourth. The rest come from
+practitioners' reports and from what two vendors, Anthropic and OpenAI, tell
+their own models to avoid, so take the order as rough:
 
 1. **Reimplemented helpers.** Agents "frequently disregard code reuse
    opportunities, resulting in higher levels of redundancy compared to human
@@ -757,9 +761,11 @@ Anthropic's guidance for its own models, so take the order as rough:
    [Speculative Generality](#speculative-generality).
 5. **[Defence in the Wrong Place](#defence-in-the-wrong-place)**, below.
 6. **Copied legacy patterns.** An agent copies the nearest example, good or
-   bad. Anthropic's best-practices guide asks projects to point out "an old
-   pattern that's everywhere but that new code must not copy." See
-   [Oddball Solution](#oddball-solution).
+   bad, and it's asked to: OpenAI's guide for its Codex models says "follow
+   existing patterns, helpers, naming, formatting". So a pattern not to copy
+   has to be named, as Anthropic's guide for Claude Code asks projects to do
+   in the agent's instructions: "an old pattern that's everywhere but that
+   new code must not copy." See [Oddball Solution](#oddball-solution).
 7. **Leftover scaffolding.** See [Dead Code](#dead-code).
 8. **Tests that can't fail:** an assertion loosened to pass, or a test with
    none. See [Untested Code](#untested-code).
@@ -800,9 +806,11 @@ Anthropic's guidance for its own models, so take the order as rough:
   documented and recoverable, and the caller is told.
 - **Playbook:** remove checks for impossible cases (Introduce Assertion where
   the invariant matters); move validation to the boundary; let unexpected
-  errors propagate to one handler that reports them. Anthropic's guidance
-  for its own models: trust internal code and framework guarantees, and only
-  validate at system boundaries.
+  errors propagate to one handler that reports them. Two vendors tell their
+  own models the same. OpenAI, for Codex: "do not add broad try/catch blocks
+  or success-shaped fallbacks; propagate or surface errors explicitly rather
+  than swallowing them." Anthropic, for Claude: trust internal code and
+  framework guarantees, and only validate at system boundaries.
 - **Priority:** medium; high where the history shows bugs that were hidden
   by a swallowed error.
 
