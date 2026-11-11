@@ -1149,6 +1149,7 @@ def body_by_brackets(code, inside, start, column=0, cpp=False, opened=None):
     expression = False
     arrow = False  # An arrow ended the last line, so this one says which kind of body it is.
     signed = False  # A parameter list has closed, so a body or the rest of the signature comes next.
+    flat = 0  # Lines read outside brackets.
     brackets = brackets_of(code)
     closes = brackets["closes"]
     for i in range(start, len(code)):
@@ -1204,8 +1205,9 @@ def body_by_brackets(code, inside, start, column=0, cpp=False, opened=None):
                 return i
         elif depth > 0:
             carried = 0
-        if not expression and i - start > 30:
-            return None
+        flat += depth <= 0
+        if not expression and (flat > 30 or i - start > SIGNATURE_LINES):  # Not a definition, or not one with
+            return None  # a body: stop after 30 lines outside brackets, or a parameter list longer than any.
     return None
 
 
