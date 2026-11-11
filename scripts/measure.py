@@ -503,7 +503,7 @@ def js_in_class(code, i):
 # when a / can open a regular expression.
 LANGUAGES = [
     ("Python", ".py", r"^\s*(?:async\s+)?def\s+(\w+)", "indent", "#", ""),
-    ("GDScript", ".gd", r"^\s*(?:static\s+)?func\s+(\w+)", "indent", "#", ""),
+    ("GDScript", ".gd", r"^\s*(?:static\s+)?func\s+(\w+)", "indent", "#", "spans"),
     # A def after a word, as private def, with a receiver (self., @@cache.) and an operator's name ([], <<).
     ("Ruby", ".rb", r"^\s*(?:[a-z_]\w*\s+)*def\s+(?:(?:self|@@?\w+|[A-Za-z_][\w:]*)\s*\.\s*)?([A-Za-z_]\w*[?!=]?|"
      r"\[\]=?|<=>|===?|=~|!=|!~|<<|>>|<=|>=|\*\*|[+\-~!]@?|[*/%<>^&|`])", "end", "#", "ruby"),
@@ -549,23 +549,50 @@ REGEX = re.compile(r"/(?:\\.|\[(?:\\.|[^\]\\])*\]|[^/\\\[])+/")
 DOCSTRING = re.compile(r"""\s*[rRuUbBfF]{0,2}("{3}|'{3}|"|')""")
 
 
-def skeleton(lines, comments, quotes, attributes=False):
+# A character literal, its escape as long as it may be ('\u{1F600}', '\x7f', '\0'), where ' quotes one.
+CHARACTER = re.compile(r"'(?:\\(?:u\{[0-9a-fA-F]{1,6}\}|x[0-9a-fA-F]{1,2}|u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8}|"
+                       r"[0-7]{1,3}|.)|[^\\'])'")
+# Per language, strings with no escapes, which can hold quotes and run over lines: how one opens, and its
+# closing text. C#'s verbatim @"..." (where "" is a quote), Rust's r"..." and r#"..."#, C++'s R"x(...)x",
+# Swift's #"..."#.
+RAW_STRING = {
+    "C#": (re.compile(r'(?:\$+@|@\$*)"'), lambda opened: '"'),
+    "Rust": (re.compile(r'b?r(#*)"'), lambda opened: '"' + opened.group(1)),
+    "C++": (re.compile(r'(?:u8|[uUL])?R"([^()\\\s]{0,16})\('), lambda opened: ")" + opened.group(1) + '"'),
+    "Swift": (re.compile(r'(#+)("""|")'), lambda opened: opened.group(2) + opened.group(1)),
+}
+
+
+def skeleton(lines, comments, quotes, attributes=False, language=None):
     """Each line with its comments taken out and its strings' insides turned to "s", so brackets
     and code lines can be counted; and whether the line began inside a string or comment. With
-    attributes, #[ opens an attribute, as in PHP 8, not a comment."""
+    attributes, #[ opens an attribute, as in PHP 8, not a comment. The language adds its own strings
+    (RAW_STRING)."""
     markers = comments.split()
     char_quote = quotes == "char"
     out, began_inside = [], []
     state = None  # Inside: a block comment ("*/"), or a string (its closing quote).
+    raw = None  # Inside a string with no escapes: its closing text.
     # In JavaScript, a template literal's ${...} is code, up to the } that matches its {, and can hold strings
     # and templates of its own: per ${ still open, how many braces are open inside it.
     templates = []
+    opens_raw = RAW_STRING.get(language)
     for line in lines:
-        began_inside.append(state is not None or bool(templates))  # A template's ${...} is inside it too.
+        began_inside.append(state is not None or bool(templates) or raw is not None)
         code = []
         i = 0
         while i < len(line):
-            if state == "*/":
+            if raw is not None:
+                if raw == '"' and language == "C#" and line.startswith('""', i):  # A verbatim string's quote.
+                    code.append("ss")
+                    i += 2
+                elif line.startswith(raw, i):
+                    code.append('"')
+                    i, raw = i + len(raw), None
+                else:
+                    code.append("s")
+                    i += 1
+            elif state == "*/":
                 end = line.find("*/", i)
                 if end < 0:
                     break
@@ -580,6 +607,8 @@ def skeleton(lines, comments, quotes, attributes=False):
                 elif line.startswith(state, i):
                     code.append(state)
                     i, state = i + len(state), None
+                    while language == "Kotlin" and line.startswith('"', i) and code[-1] == '"""':
+                        i += 1  # Kotlin's raw string ends at the last """ of a run of quotes: """a""""
                 else:
                     code.append("s")
                     i += 1
@@ -589,6 +618,11 @@ def skeleton(lines, comments, quotes, attributes=False):
             elif any(line.startswith(m, i) for m in markers if m != "/*") and not (
                     attributes and line.startswith("#[", i)):
                 break
+            elif opens_raw and opens_raw[0].match(line, i) and not re.match(r"[\w$@]", line[i - 1:i]):
+                opened = opens_raw[0].match(line, i)
+                raw = opens_raw[1](opened)
+                code.append('"')
+                i = opened.end()
             elif line.startswith('"""', i) or line.startswith("'''", i):
                 state = line[i:i + 3]
                 code.append(state)
@@ -598,7 +632,7 @@ def skeleton(lines, comments, quotes, attributes=False):
                 code.append("/" + "s" * (len(literal) - 2) + "/")
                 i += len(literal)
             elif line[i] == "'" and char_quote:
-                literal = re.match(r"'(?:\\.|[^\\'])'", line[i:])  # A character, or else a Rust lifetime.
+                literal = CHARACTER.match(line[i:])  # A character, or else a Rust lifetime.
                 code.append("s" if literal else " ")
                 i += len(literal.group(0)) if literal else 1
             elif line[i] in "\"'`":
@@ -616,8 +650,9 @@ def skeleton(lines, comments, quotes, attributes=False):
             else:
                 code.append(line[i])
                 i += 1
-        if state in ('"', "'") and quotes != "spans" and not line.rstrip().endswith("\\"):
-            state = None  # Most languages end a one-quote string at the line's end.
+        if state in ('"', "'") and quotes != "spans" and not line.rstrip().endswith("\\") and not (
+                language == "Rust" and state == '"'):
+            state = None  # Most languages end a one-quote string at the line's end; Rust's go on.
         out.append("".join(code))
     return out, began_inside
 
@@ -970,7 +1005,8 @@ def functions(path, text):
     if language and language[0] == "Ruby":
         code, inside = ruby_skeleton(lines)
     else:
-        code, inside = skeleton(lines, comments, language[5] if language else "", language and language[0] == "PHP")
+        code, inside = skeleton(lines, comments, language[5] if language else "", language and language[0] == "PHP",
+                                language and language[0])
     counted = [bool(c.strip()) for c in code]
     if not language:
         return sum(counted), None, None
