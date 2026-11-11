@@ -48,7 +48,8 @@ function ..., exports for module.exports = ...) or exported as the default
 (named default); and for C, C++, Java and C#, by their shape: a type, a
 name, parentheses, then a body, after any annotations (@Test, [Fact]);
 and in C++ and C# also an operator, and in C++ a constructor or a
-destructor with no type. A name is any the language allows, a word it
+destructor with no type, and a name qualified by its class (Session::run)
+at any indentation. A name is any the language allows, a word it
 doesn't reserve (delete in Java), and may carry type arguments (C#'s
 Get<T>, C++'s List<T>::Add, named Get and List::Add); a name in
 backquotes is a name in Kotlin and Swift; and a .h file is C++ when it
@@ -83,9 +84,10 @@ It points at code to read; it doesn't judge it. What it gets wrong:
     body ends it there, as a misindented end does in Ruby;
   - between #if and #else, when each branch opens a function's body its
     own way, only the last branch is read, usually the #else;
-  - a C function whose name sits indented on a line of its own, under its
-    type, isn't found, nor a C++ constructor written in its class when the
-    class's name is in capitals (RE()), as a macro's would be;
+  - a C function, or a C++ one with no class or namespace before its name,
+    whose name sits indented on a line of its own, under its type, isn't
+    found, nor a C++ constructor written in its class when the class's name
+    is in capitals (RE()), as a macro's would be;
   - nesting by indentation counts a continuation line (a call or literal
     split over lines) as deeper, except inside brackets left open.
 
@@ -215,12 +217,16 @@ def c_shapes(language):
 
 # C++ also writes an operator (bool operator==(...), operator int(), auto operator()(...)), whose name is
 # operator and what follows it, and a constructor or a destructor in its class with no type (Stats() {,
-# virtual ~Rep() {), whose name isn't in capitals, as a macro that annotates a signature is.
+# virtual ~Rep() {), whose name isn't in capitals, as a macro that annotates a signature is; and a name that
+# starts a line, at any indentation, qualified by its class or namespace (Session::Session(, Parser::parse(),
+# as a constructor or destructor defined outside its class, or a function whose type is on the line above;
+# with no = after it, unlike an assignment (std::tie(a, b) = ...), nor a , ending its line, as an argument's.
 CPP_SHAPES = (r"^\s*" + TEMPLATE + MODIFIERS + r"(?:" + TYPE_WORD + r"\s+)*[*&]*(?:\w+" + TYPE_ARGUMENTS + r"::)*"
               r"(operator\s*(?:\(\)|[^\w\s(][^\s(]*|[A-Za-z_][\w\s:<>*&]*?))\s*\(" + SIGNATURE_REST + "|" +
               c_shapes("C++") + r"|^\s*" + TEMPLATE + r"(?:(?:explicit|inline|constexpr|virtual)\s+)*" +
               not_a_type("C++") + not_a_name("C++") + r"(?![A-Z][A-Z0-9_]*\s*\()(~?[A-Za-z_]\w*)\s*\(" +
-              SIGNATURE_REST)
+              SIGNATURE_REST + r"|^\s*" + TEMPLATE + not_a_type("C++") + r"((?!\d)\w+" + TYPE_ARGUMENTS +
+              r"(?:::~?\w+" + TYPE_ARGUMENTS + r")+)\s*\((?!.*\)\s*,\s*$)[^;{=]*(?:\{.*)?$")
 # A .h file is C's header or C++'s: C++'s when its code holds what C has none of, as a class, a namespace, a
 # template, an access label or std::.
 CPP_IN_HEADER = re.compile(r"^\s*(?:template\s*<|namespace(?:\s+[\w:]+)?\s*\{|(?:public|private|protected)\s*:|"
@@ -1263,9 +1269,11 @@ def by_pattern(pattern, listed=False):
 
 def c_function(pattern, language):
     """C's and C++'s way of finding definitions: by their shapes, and also a name alone at the margin whose
-    parameters open the next line, as dtoa.c writes them (jvp_strtod, then (struct ...) below)."""
+    parameters open the next line, as dtoa.c writes them (jvp_strtod, then (struct ...) below); in C++ also a
+    qualified one at any indentation (Version::Version, then (unsigned major, ...) below)."""
     find = by_pattern(pattern, listed=True)
-    alone = re.compile(r"^" + not_a_name(language) + r"((?!\d)\w+)\s*$")
+    alone = re.compile(r"^" + not_a_name(language) + r"((?!\d)\w+)\s*$" +
+                       (r"|^\s*((?!\d)\w+(?:::~?\w+)+)\s*$" if language == "C++" else ""))
 
     def find_c(code, i):
         found = find(code, i)
@@ -1273,7 +1281,7 @@ def c_function(pattern, language):
         if name:
             following = next((k for k in range(i + 1, min(len(code), i + 3)) if code[k].strip()), None)
             if following is not None and code[following].lstrip().startswith("("):
-                return name.group(1), (i, 0)
+                return next(g for g in name.groups() if g), (i, 0)
         return found
     return find_c
 
@@ -1318,8 +1326,9 @@ def functions(path, text):
     unit = indent_unit(lines, code, skip)
     found = []
     signature_until = -1  # In C++, no definition starts in another's signature, as among its initializers,
-    for start in range(len(code)):  # nor on the line its body opens.
-        defined = find(code, start) if not inside[start] and start > signature_until else None
+    for start in range(len(code)):  # nor on the line its body opens; and in C and C++, none in open brackets.
+        defined = find(code, start) if not inside[start] and start > signature_until and not (
+            continued[start] and name in ("C", "C++")) else None
         if not defined:
             continue
         if defined[0].startswith("`"):  # A name in backquotes, whose text the skeleton has as a string's.

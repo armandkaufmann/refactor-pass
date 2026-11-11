@@ -146,7 +146,7 @@ class KnownLimits(unittest.TestCase):
                       "an arrow function that returns JSX with no brackets around it ends at its first line",
                       "a line indented less than its body ends it there",
                       "only the last branch is read",
-                      "a C function whose name sits indented on a line of its own",
+                      "whose name sits indented on a line of its own, under its type, isn't",
                       "a C++ constructor written in its class when the class's name is in capitals",
                       "nesting by indentation counts a continuation line"):
             with self.subTest(limit=words):

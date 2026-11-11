@@ -98,5 +98,8 @@
  "mocker.cc": [["AsFunction", 16, 18, 3], ["Find", 20, 23, 4], ["Mocker::Invoke", 27, 29, 3], ["Stream", 33, 42, 10],
                ["Impl::Impl", 59, 64, 6]],
  "unicode.rb": [["\u2764", 2, 4, 3], ["caf\u00e9?", 6, 8, 3], ["\u540d\u524d", 10, 12, 3]],
- "predicates.rb": [["enabled?", 3, 6, 4], ["parse", 8, 11, 4], ["characters", 13, 15, 3]]
+ "predicates.rb": [["enabled?", 3, 6, 4], ["parse", 8, 11, 4], ["characters", 13, 15, 3]],
+ "session.cpp": [["pair", 4, 4, 1], ["tie", 5, 5, 1], ["helper", 12, 12, 1], ["slot", 13, 13, 1],
+                 ["Session::Session", 20, 22, 3], ["Session::~Session", 24, 26, 3], ["Session::run", 29, 31, 3],
+                 ["Config::Config", 41, 44, 4], ["Version::Version", 54, 58, 5], ["use", 60, 71, 12]]
 }
