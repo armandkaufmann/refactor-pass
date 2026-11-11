@@ -40,15 +40,25 @@ line, its code lines, deepest nesting and band. git log -L FIRST,LAST:FILE
 then lists the commits that changed that function.
 
 Functions are found by each language's definition keyword (def, func, fn,
-fun, function, and Swift's init, deinit and subscript); in JavaScript and
-TypeScript also as methods, and as arrow functions or function expressions
-that are given a name, assigned to a member (named by its last name: send
-for res.send = function ..., exports for module.exports = ...) or exported
-as the default (named default); and for C, C++, Java and C#, by their
-shape: a type, a name, parentheses, then a body. A signature may run over
-several lines. A function runs to the end of its body, found by indentation
-(Python, GDScript, Ruby) or by matching brackets (the rest). Files in other
-languages get lines only, and the output says which.
+fun, function, and Swift's init, deinit and subscript), operators' too
+(Ruby's def [], Swift's static func ==); in JavaScript and TypeScript also
+as methods, and as arrow functions or function expressions that are given
+a name, assigned to a member (named by its last name: send for res.send =
+function ..., exports for module.exports = ...) or exported as the default
+(named default); and for C, C++, Java and C#, by their shape: a type, a
+name, parentheses, then a body, after any annotations (@Test, [Fact]);
+and in C++ also a constructor, a destructor or an operator with no type.
+A name may carry type arguments (C#'s Get<T>, C++'s List<T>::Add, named
+Get and List::Add), a name in backquotes is a name in Kotlin and Swift,
+and a .h file is C++ when it holds a class, a namespace or a template. A
+signature may run over several lines, and a body may sit on its
+signature's line. Each language's strings
+are read as it writes them (Ruby's regular expressions, % literals and
+heredocs, C#'s @"...", Rust's r#"..."#, C++'s R"(...)"), and C's, C++'s,
+C#'s and Swift's #if as their preprocessor does. A function runs to the end
+of its body, found by indentation (Python, GDScript, Ruby) or by matching
+brackets (the rest). Files in other languages get lines only, and the
+output says which.
 
 It points at code to read; it doesn't judge it. What it gets wrong:
   - a nested function counts in its own length and in its parent's;
@@ -56,15 +66,24 @@ It points at code to read; it doesn't judge it. What it gets wrong:
     lines count in the function around them, or in none at the top level;
   - a function that doesn't start a line, such as a method in an object
     literal written on one line, isn't found;
-  - shapes can catch a macro, and in TypeScript a member typed as a
-    function, in a type written after an = (as a generic's default), counts
-    as a function;
-  - a brace or a quote in a heredoc, or in a JavaScript regular expression
-    that follows a closing bracket or a name (not after an operator, an arrow
-    or a word such as return or typeof), can put a function's end in the
-    wrong place or lose the function;
-  - a line inside a multi-line string or a block comment's text can count
-    as code or not, depending on how it starts;
+  - shapes can catch a macro, and miss a function a macro makes; and in
+    TypeScript a member typed as a function, in a type written after an =
+    (as a generic's default), counts as a function;
+  - a brace or a quote in a PHP heredoc, or in a JavaScript regular
+    expression that follows a closing bracket or a name (not after an
+    operator, an arrow or a word such as return or typeof), can put a
+    function's end in the wrong place or lose the function;
+  - an arrow function that returns JSX with no brackets around it ends at
+    its first line;
+  - a line inside a PHP heredoc can count as code or not, depending on how
+    it starts;
+  - where a function ends by indentation, a line indented less than its
+    body ends it there, as a misindented end does in Ruby;
+  - between #if and #else, when each branch opens a function's body its
+    own way, only the first branch's opening is read;
+  - a C function whose name sits indented on a line of its own, under its
+    type, isn't found, nor a C++ constructor written in its class when the
+    class's name is in capitals (RE()), as a macro's would be;
   - nesting by indentation counts a continuation line (a call or literal
     split over lines) as deeper, except inside brackets left open.
 

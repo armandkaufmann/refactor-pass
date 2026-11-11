@@ -4,8 +4,7 @@ Where the help calls something wrong, the test asserts what would be right and i
 if a change to measure.py fixes the limit, the test passes unexpectedly, the run fails, and the help needs
 the line taken out. Where a limit is a choice the help describes (a nested function counted twice, an
 anonymous function counted in the one around it), the test asserts today's behaviour, so the help stays
-true. The last test checks the help still lists each of them. One limit the help doesn't list yet, found
-while writing these, is marked as such.
+true. The last test checks the help still lists each of them.
 """
 
 import unittest
@@ -31,6 +30,13 @@ CASES = {
                                     "function g() {\n  return 2\n}\n"),
     "heredoc comment": ("a.php", "<?php\nfunction f() {\n    $sql = <<<SQL\nSELECT 1\n# not a comment\nSQL;\n"
                                  "    return $sql;\n}\n"),
+    "misindented": ("a.rb", "class App\n  def call(env)\n    raise 'bzzzt' if @called > 0\n  @called += 1\n"
+                            "    [200, {}, ['OK']]\n  end\nend\n"),
+    "alternatives": ("a.c", "#ifdef _WIN32\nint umain(void) {\n#else\nint main(void) {\n#endif\n  return 0;\n}\n"),
+    "name on its own line": ("a.c", " static Bigint *\n Balloc(int k)\n{\n  return 0;\n}\n"),
+    "class in capitals": ("a.cc", "class RE {\n public:\n  RE(const char* regex) { Init(regex); }\n};\n"),
+    "made by a macro": ("a.cc", "GTEST_REPEATER_METHOD_(OnTestStart, TestInfo)\n"
+                                "GTEST_REPEATER_METHOD_(OnTestEnd, TestInfo)\n"),
     "continuation": ("a.py", "def f(a, b):\n    total = a + \\\n            b\n    return total\n"),
     "bare jsx": ("a.tsx", "const Row = () =>\n  <tr>\n    <td>a</td>\n  </tr>\nconst next = 1\n"),
 }
@@ -91,13 +97,34 @@ class KnownLimits(unittest.TestCase):
         self.assertEqual(spans("heredoc comment"), [["f", 2, 8, 7]])
 
     @unittest.expectedFailure
+    def test_a_line_indented_less_than_the_body(self):
+        self.assertEqual(spans("misindented"), [["call", 2, 6, 5]])
+
+    def test_between_alternatives_the_first_is_read(self):
+        # Known limit, by design: today's behaviour. Each branch opens main's body its own way; the first is
+        # read, wherever the program is built.
+        self.assertEqual(spans("alternatives"), [["umain", 2, 7, 6]])
+
+    @unittest.expectedFailure
+    def test_a_c_function_whose_name_sits_indented_on_its_own_line(self):
+        self.assertEqual(spans("name on its own line"), [["Balloc", 2, 5, 4]])
+
+    @unittest.expectedFailure
+    def test_a_constructor_in_its_class_whose_name_is_in_capitals(self):
+        self.assertEqual(spans("class in capitals"), [["RE", 3, 3, 1]])
+
+    @unittest.expectedFailure
+    def test_functions_a_macro_makes(self):
+        self.assertEqual([f[1] for f in spans("made by a macro")], [1, 2])
+
+    @unittest.expectedFailure
     def test_nesting_of_a_continuation_line(self):
         self.assertEqual([f[4] for f in measured("continuation")[1]], [0])
 
     @unittest.expectedFailure
     def test_an_arrow_returning_jsx_with_no_brackets_around_it(self):
-        # Not in the help's list: the body ends at its first line, since a JSX tag isn't an operator that an
-        # expression goes on after. Brackets around the JSX, as formatters write it, are read right.
+        # The body ends at its first line, since a JSX tag isn't an operator that an expression goes on after.
+        # Brackets around the JSX, as formatters write it, are read right.
         self.assertEqual(spans("bare jsx"), [["Row", 1, 4, 4]])
 
     def test_each_case_runs_without_an_error(self):
@@ -112,10 +139,15 @@ class KnownLimits(unittest.TestCase):
         flat = " ".join(limits.split())
         for words in ("a nested function counts in its own length and in its parent's",
                       "anonymous functions and lambdas aren't functions of their own",
-                      "a function that doesn't start a line", "shapes can catch a macro",
-                      "in a type written after an = (as a generic's default)", "a brace or a quote in a heredoc",
-                      "follows a closing bracket or a name",
-                      "a line inside a multi-line string or a block comment's text can count as code or not",
+                      "a function that doesn't start a line",
+                      "shapes can catch a macro, and miss a function a macro makes",
+                      "in a type written after an = (as a generic's default)", "a brace or a quote in a PHP heredoc",
+                      "follows a closing bracket or a name", "a line inside a PHP heredoc can count as code or not",
+                      "an arrow function that returns JSX with no brackets around it ends at its first line",
+                      "a line indented less than its body ends it there",
+                      "only the first branch's opening is read",
+                      "a C function whose name sits indented on a line of its own",
+                      "a C++ constructor written in its class when the class's name is in capitals",
                       "nesting by indentation counts a continuation line"):
             with self.subTest(limit=words):
                 self.assertIn(words, flat)
