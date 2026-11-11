@@ -59,8 +59,9 @@ It points at code to read; it doesn't judge it. What it gets wrong:
   - shapes can catch a macro, and in TypeScript a member typed as a
     function, in a type written after an = (as a generic's default), counts
     as a function;
-  - a brace in a heredoc, or in a JavaScript regular expression that follows
-    a word, an arrow or a closing bracket, can put a function's end in the
+  - a brace or a quote in a heredoc, or in a JavaScript regular expression
+    that follows a closing bracket or a name (not after an operator, an arrow
+    or a word such as return or typeof), can put a function's end in the
     wrong place or lose the function;
   - a line inside a multi-line string or a block comment's text can count
     as code or not, depending on how it starts;
@@ -438,7 +439,8 @@ def js_function(code, i):
         return (match.group(2), body) if body else None
     match = JS_METHOD.match(code[i])
     if match:
-        body = js_signature(code, i, match.end(), "{")
+        body = js_signature(code, i, match.end(), "{") if not (match.group(1) == "catch" and js_after_try(code, i)) \
+            else None
         return (match.group(1), body) if body else None
     match = JS_DEFAULT.match(code[i])
     if match:
@@ -466,6 +468,20 @@ def js_function(code, i):
         if body:
             return match.group(1), body
     return None
+
+
+def js_after_try(code, i):
+    """Whether line i follows the end of a try's block, so a catch( that starts it is the statement's, written
+    on its own line, and not a method named catch."""
+    k = next((n for n in range(i - 1, max(-1, i - 20), -1) if code[n].strip()), None)
+    if k is None or not code[k].rstrip().endswith("}"):
+        return False
+    opener = js_opener(code, k, len(code[k].rstrip()) - 1)
+    if opener is None or opener[2] != "{":
+        return False
+    before = code[opener[0]][:opener[1]].rstrip() or next(
+        (line.rstrip() for line in reversed(code[max(0, opener[0] - 20):opener[0]]) if line.strip()), "")
+    return bool(re.search(r"(?<![\w$.])try$", before))
 
 
 def js_in_class(code, i):
@@ -519,6 +535,9 @@ BIG = set(["80th", "90th"] + [">%d" % strong for _, strong in REFERENCE.values()
 # unlike a JSX tag's > or a regular expression's closing /.
 GOES_ON = re.compile(r"(?:=>?|\|\||&&|\?\?|[?:<]|(?<![+-])[+-]|\s[*/%>])$")
 GOES_ON_NEXT = re.compile(r"\s*(?:\|\||&&|\?\?|\?(?!\.)|:|\.(?!\.)|[+-](?![+-])|[|&*%])")
+# The words after which a / opens a regular expression, since only an expression can follow them; as whole
+# words, not a member's name such as x.in.
+REGEX_AFTER = re.compile(r"(?<![\w$.])(?:return|case|typeof|void|delete|throw|new|await|yield|in|of|do|else)$")
 # A JavaScript regular expression: from / to /, past escapes and the / in a class such as [/].
 REGEX = re.compile(r"/(?:\\.|\[(?:\\.|[^\]\\])*\]|[^/\\\[])+/")
 # A Python statement that is only a string, as a docstring is: documentation, so not a code line.
@@ -600,15 +619,16 @@ def skeleton(lines, comments, quotes, attributes=False):
 
 def regex_may_start(code, out):
     """Whether a / in JavaScript, after the line's code so far (code, as pieces) or else the last line's,
-    opens a regular expression rather than dividing: it comes after an operator or an opening bracket, or
-    the word return. Only the last few characters are read, so a long line stays quick."""
+    opens a regular expression rather than dividing: it comes after an operator, an opening bracket or an
+    arrow, or after a word that only an expression can follow, such as return or typeof. Only the last
+    few characters are read, so a long line stays quick."""
     before = ""
     for piece in reversed(code):
         before = piece + before
-        if len(before.strip()) > len("return"):
+        if len(before.strip()) > 8:
             break
     before = before.rstrip() or next((line.rstrip() for line in reversed(out) if line.strip()), "")
-    return not before or before[-1] in "(,=:[!&|?{};" or bool(re.search(r"(?<![\w$])return$", before))
+    return not before or before[-1] in "(,=:[!&|?{};" or before.endswith("=>") or bool(REGEX_AFTER.search(before))
 
 
 def indent_of(line):
