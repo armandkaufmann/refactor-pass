@@ -152,6 +152,17 @@ class Docstrings(unittest.TestCase):
         self.assertEqual(found("s.py", text), [["f", 1, 5, 1]])
 
 
+class Preprocessor(unittest.TestCase):
+    """C's, C++'s, C#'s and Swift's #if and #define, read as their preprocessor reads them."""
+
+    def test_a_define_and_if_zero(self):
+        # Neither a #define's brace nor one under #if 0 counts, so f ends at its own closing brace.
+        text = ("#define OPEN_BLOCK {\nint f(void) {\n#if 0\n    if (x) {\n#endif\n    return 0;\n}\n"
+                "int g(void) {\n    return 1;\n}\n")
+        _, functions, _ = support.load("measure").functions("a.c", text)
+        self.assertEqual([f[:3] for f in functions], [("f", 2, 7), ("g", 8, 10)])
+
+
 class CodeLines(unittest.TestCase):
     """What counts as a code line in a file, in each kind of language."""
 

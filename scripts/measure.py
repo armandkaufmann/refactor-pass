@@ -561,13 +561,59 @@ RAW_STRING = {
     "C++": (re.compile(r'(?:u8|[uUL])?R"([^()\\\s]{0,16})\('), lambda opened: ")" + opened.group(1) + '"'),
     "Swift": (re.compile(r'(#+)("""|")'), lambda opened: opened.group(2) + opened.group(1)),
 }
+# Per language, a preprocessor directive's line and its word, and whether it goes on after a \ at the end.
+PREPROCESSED = {
+    "C": (re.compile(r"\s*#\s*(\w*)"), True),
+    "C++": (re.compile(r"\s*#\s*(\w*)"), True),
+    "C#": (re.compile(r"\s*#\s*(if|elif|else|endif|region|endregion|define|undef|pragma|nullable|line|error|"
+                      r"warning)\b"), False),
+    "Swift": (re.compile(r"\s*#(if|elseif|else|endif)\b"), False),
+}
+BRACKETS_IN = re.compile(r"[()\[\]{}]")
+
+
+def preprocessed(lines, code, began_inside, directive, continues):
+    """The skeleton's lines with the preprocessor read: a directive's own brackets don't count, nor do those
+    of a conditional's later branches (#elif, #else) when its first branch leaves brackets open, as when
+    each branch opens a function's body its own way; those branches' lines are then set aside (began_inside),
+    so no function is found twice. A first branch that's balanced keeps the others, as alternatives written
+    in full. After #if 0 or #if false, the next branch counts instead. A bracket that doesn't count becomes
+    an s, so its line stays a code line."""
+    result, frames, going_on = [], [], False
+    for i, line in enumerate(lines):
+        found = directive.match(line) if going_on or not began_inside[i] else None
+        if going_on or found:
+            word = found.group(1) if found and not going_on else ""
+            going_on = continues and line.rstrip().endswith("\\")
+            if word in ("if", "ifdef", "ifndef"):
+                zero = line.split(word, 1)[1].strip() in ("0", "false")
+                frames.append({"skip": zero, "counting": not zero, "net": 0, "zero": zero})
+            elif word in ("elif", "elseif", "else") and frames:
+                frame = frames[-1]
+                if frame["zero"]:
+                    frame.update(zero=False, skip=False, counting=True, net=0)
+                elif frame["counting"]:
+                    frame.update(counting=False, skip=frame["net"] != 0)
+            elif word == "endif" and frames:
+                frames.pop()
+            result.append(BRACKETS_IN.sub("s", code[i]))
+        elif any(frame["skip"] for frame in frames):
+            result.append(BRACKETS_IN.sub("s", code[i]))
+            began_inside[i] = True
+        else:
+            net = sum(code[i].count(c) for c in OPEN) - sum(code[i].count(c) for c in CLOSE)
+            for frame in frames:
+                if frame["counting"]:
+                    frame["net"] += net
+            result.append(code[i])
+    return result
 
 
 def skeleton(lines, comments, quotes, attributes=False, language=None):
     """Each line with its comments taken out and its strings' insides turned to "s", so brackets
     and code lines can be counted; and whether the line began inside a string or comment. With
     attributes, #[ opens an attribute, as in PHP 8, not a comment. The language adds its own strings
-    (RAW_STRING)."""
+    (RAW_STRING) and, for C, C++, C# and Swift, its preprocessor (preprocessed)."""
     markers = comments.split()
     char_quote = quotes == "char"
     out, began_inside = [], []
@@ -654,6 +700,8 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
                 language == "Rust" and state == '"'):
             state = None  # Most languages end a one-quote string at the line's end; Rust's go on.
         out.append("".join(code))
+    if language in PREPROCESSED:
+        out = preprocessed(lines, out, began_inside, *PREPROCESSED[language])
     return out, began_inside
 
 
