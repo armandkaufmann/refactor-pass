@@ -41,12 +41,14 @@ then lists the commits that changed that function.
 
 Functions are found by each language's definition keyword (def, func, fn,
 fun, function, and Swift's init, deinit and subscript); in JavaScript and
-TypeScript also as methods and as arrow functions or function expressions
-given a name; and for C, C++, Java and C#, by their shape: a type, a name,
-parentheses, then a body. A signature may run over several lines. A
-function runs to the end of its body, found by indentation (Python,
-GDScript, Ruby) or by matching brackets (the rest). Files in other languages
-get lines only, and the output says which.
+TypeScript also as methods, and as arrow functions or function expressions
+that are given a name, assigned to a member (named by its last name: send
+for res.send = function ..., exports for module.exports = ...) or exported
+as the default (named default); and for C, C++, Java and C#, by their
+shape: a type, a name, parentheses, then a body. A signature may run over
+several lines. A function runs to the end of its body, found by indentation
+(Python, GDScript, Ruby) or by matching brackets (the rest). Files in other
+languages get lines only, and the output says which.
 
 It points at code to read; it doesn't judge it. What it gets wrong:
   - a nested function counts in its own length and in its parent's;
@@ -122,6 +124,10 @@ JS_METHOD = re.compile(r"^\s*(?:(?:public|private|protected|static|async|readonl
 JS_ASSIGNED = re.compile(r"^\s*(?:export\s+)?(?:(?:const|let|var|public|private|protected|static|readonly|declare|"
                          r"override|accessor)\s+)*(#?[\w$]+)\s*!?\s*(?::(?:[^=]|=>)+)?=(?![=>])\s*")
 JS_KEY = re.compile(r"^\s*([\w$]+|\[[^\]]*\])\s*:\s*")
+# A function given to a member in an assignment, named by the last name (exports, for module.exports = ...);
+# and an anonymous one exported as the default, named default.
+JS_MEMBER = re.compile(r"^\s*(?:[\w$]+\.)+(#?[\w$]+)\s*=(?![=>])\s*")
+JS_DEFAULT = re.compile(r"^\s*export\s+default\s+")
 # A declaration typed over several lines, whose = comes after its type (js_after_type).
 JS_TYPED = re.compile(r"^\s*(?:export\s+)?(?:(?:const|let|var|public|private|protected|static|readonly|declare|"
                       r"override|accessor)\s+)+(#?[\w$]+)\s*[?!]?\s*:\s*")
@@ -347,15 +353,17 @@ def js_in_object(code, i, col=0, depth=0):
         return False
     # Braces at the top level whose statement is a type or an interface hold its members, as after the > = of
     # generics split over lines, or the ? of a conditional type.
-    return js_opener(code, k, at) is not None or not JS_TYPE_STATEMENT.match(js_statement(code, k))
+    return js_opener(code, k, at) is not None or not JS_TYPE_STATEMENT.match(js_statement(code, k, 0))
 
 
-def js_statement(code, k):
-    """The first line of the top-level statement that line k is part of: the nearest line at or above it
-    that starts at the margin with something other than a closing bracket or an operator."""
+def js_statement(code, k, width):
+    """The first line of the statement that line k is part of, at an indentation of width or less: the
+    nearest line at or above it, indented no deeper, that starts with something other than a closing
+    bracket or an operator."""
     for n in range(k, max(-1, k - 200), -1):
         line = code[n]
-        if line.strip() and not line[0].isspace() and line[0] not in ">)]}?:|&=.,":
+        start = line.lstrip()
+        if start and len(line) - len(start) <= width and start[0] not in ">)]}?:|&=.,":
             return line
     return ""
 
@@ -432,7 +440,11 @@ def js_function(code, i):
     if match:
         body = js_signature(code, i, match.end(), "{")
         return (match.group(1), body) if body else None
-    match = JS_ASSIGNED.match(code[i])
+    match = JS_DEFAULT.match(code[i])
+    if match:
+        body = js_value(code, i, match.end())
+        return ("default", body) if body else None
+    match = JS_ASSIGNED.match(code[i]) or JS_MEMBER.match(code[i])
     body = js_value(code, i, match.end()) if match else None
     if body:
         return match.group(1), body
@@ -448,7 +460,21 @@ def js_function(code, i):
         body = js_value(code, i, match.end())
         if body and not code[body[0]][body[1]:].rstrip().endswith(";") and js_in_object(code, i):
             return match.group(1), body
+        # In a class's body, the name and its type are a property's, as after a modifier (JS_TYPED).
+        at = js_after_type(code, i, match.end()) if js_in_class(code, i) else None
+        body = js_value(code, at[0], at[1]) if at else None
+        if body:
+            return match.group(1), body
     return None
+
+
+def js_in_class(code, i):
+    """Whether line i starts directly in a class's body: in braces that a class's declaration opens."""
+    opener = js_opener(code, i, 0)
+    if opener is None or opener[2] != "{":
+        return False
+    line = code[opener[0]]
+    return bool(re.search(r"\bclass\b", js_statement(code, opener[0], len(line) - len(line.lstrip()))))
 
 
 # Per language: its extensions, how a definition's line looks (the name is
