@@ -39,45 +39,29 @@ fix.
 
 ## Install
 
-It's a folder with a `SKILL.md` in it, so installing it means cloning it
-where your agent looks for skills. For all your projects, with Codex,
-Cursor, Gemini CLI, GitHub Copilot, opencode or Amp, which all look in
-`~/.agents/skills`:
+The skill is the `skills/refactor-pass` folder in this repo, and installing
+it means copying that folder where your agent looks for skills. For all
+your projects, with Codex, Cursor, Gemini CLI, GitHub Copilot, opencode or
+Amp, which all look in `~/.agents/skills`:
 
 ```bash
-git clone https://github.com/armandkaufmann/refactor-pass ~/.agents/skills/refactor-pass
+git clone --depth 1 https://github.com/armandkaufmann/refactor-pass /tmp/refactor-pass
+mkdir -p ~/.agents/skills
+cp -R /tmp/refactor-pass/skills/refactor-pass ~/.agents/skills/
+rm -rf /tmp/refactor-pass
 ```
 
-With Claude Code, which looks in its own folder:
+With Claude Code, which looks in its own folder, copy it into
+`~/.claude/skills/` instead.
 
-```bash
-git clone https://github.com/armandkaufmann/refactor-pass ~/.claude/skills/refactor-pass
-```
+For one project, so that everyone who clones it has the skill, copy it into
+the project's `.agents/skills` (or `.claude/skills` for Claude Code) and
+commit it. The scripts leave the copy's own files out of what they count.
+To update a copy, delete it and copy it again.
 
-For one project, so that everyone who clones it has the skill, commit a
-copy of it in the project's `.agents/skills/refactor-pass`, or
-`.claude/skills/refactor-pass` for Claude Code. A plain clone there won't
-do: git records a repo inside a repo as a pointer, and the project's clones
-get an empty folder. So clone it, then delete the `.git` folder the clone
-made, and the `tests` and `.github` folders, which the skill doesn't need:
-
-```bash
-git clone --depth 1 https://github.com/armandkaufmann/refactor-pass .agents/skills/refactor-pass
-rm -rf .agents/skills/refactor-pass/.git .agents/skills/refactor-pass/tests .agents/skills/refactor-pass/.github
-```
-
-In PowerShell, the second line is
-`Remove-Item -Recurse -Force .agents/skills/refactor-pass/.git, .agents/skills/refactor-pass/tests, .agents/skills/refactor-pass/.github`.
-
-To update it, delete the folder and do the same again. A git submodule
-would keep the link to this repo, but a clone, and the fresh worktree many
-agents work in, starts with the folder empty until someone runs
-`git submodule update --init`, so a copy is the safer choice. The scripts
-leave the copy's own files out of what they count.
-
-With any other agent, clone it anywhere and ask the agent to read
-`SKILL.md` and follow it ("Read ~/refactor-pass/SKILL.md and do a refactor
-pass"); point it there again when you carry on in a new session.
+With any other agent, put the folder anywhere and ask the agent to read
+its `SKILL.md` and follow it ("Read ~/refactor-pass/SKILL.md and do a
+refactor pass"); point it there again when you carry on in a new session.
 
 It needs git (2.15 or later, for `git rev-parse --is-shallow-repository`)
 and Python 3.7 or later, with the standard library only. The scripts were
@@ -101,11 +85,11 @@ Or call it by name: `/refactor-pass` in Claude Code, Cursor or Copilot CLI,
 
 ## The scripts on their own
 
-They need no agent, only Python and git, and each runs with `--help` for
-its options:
+They're in the skill's `scripts/` folder, need no agent, only Python and
+git, and each runs with `--help` for its options:
 
 ```bash
-python3 scripts/heatmap.py -C ~/code/my-app src tests
+python3 skills/refactor-pass/scripts/heatmap.py -C ~/code/my-app src tests
 ```
 
 - `scripts/heatmap.py`: where a repo's changes keep landing, from git
@@ -122,13 +106,16 @@ count and which are tests.
 
 ## What's in the repo
 
-- `SKILL.md`: the skill itself, the steps the agent follows.
-- `references/smells.md`: the catalogue of smells and their playbooks.
-- `references/review-brief.md`: the brief for reviewing one area of code.
-- `references/sources.md`: the books, studies and articles drawn on.
-- `scripts/`: the scripts above.
-- `assets/page.html`: the template for the checklist page.
+- `skills/refactor-pass/`: the skill, all that an agent needs:
+  - `SKILL.md`: the skill itself, the steps the agent follows.
+  - `references/smells.md`: the catalogue of smells and their playbooks.
+  - `references/review-brief.md`: the brief for reviewing one area of
+    code.
+  - `references/sources.md`: the books, studies and articles drawn on.
+  - `scripts/`: the scripts above.
+  - `assets/page.html`: the template for the checklist page.
 - `tests/`: the scripts' tests, for contributors (see [Tests](#tests)).
+- `.github/workflows/tests.yml`: runs the tests on every push.
 
 ## Tests
 
@@ -169,7 +156,7 @@ Outside that run, `tests/tools/` holds four checks to run by hand:
 The smells and refactorings come from Fowler and Beck's catalogue in
 *Refactoring* and the authors who added to it; the measures and the
 priorities come from empirical studies of smells, churn and refactoring.
-[references/sources.md](references/sources.md) lists them all.
+[references/sources.md](skills/refactor-pass/references/sources.md) lists them all.
 
 ## Licence
 

@@ -7,7 +7,7 @@ than its tests. The pages: one heatmap.py makes in a small repo, as made and wit
 suite's fixture checklists, their data in today's template; and a page whose heatmap is in an older format,
 with no last dates, no bots and no dates on pairs. It exits 0 with a message when Chrome isn't found.
 
-It uses the scripts and template beside tests/, or those REFACTOR_PASS_SCRIPTS names, and git.
+It uses the skill's scripts and template, or those REFACTOR_PASS_SCRIPTS names, and git.
 
 Examples:
   render_pages.py

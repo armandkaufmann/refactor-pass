@@ -18,7 +18,7 @@ recorded from the numbers of the day it was set, a hair under them:
 A set whose parser isn't installed is skipped with a message, not failed. A clone already on disk at the
 pinned commit is used where --repos-dir finds it (DIR/<its folder>); any other is fetched, at that commit
 only, into the cache folder (default: refactor-pass-parsers in the system's temporary folder). The files
-compared are read, never run. It tests the scripts beside tests/, or those REFACTOR_PASS_SCRIPTS names.
+compared are read, never run. It tests the skill's scripts, or those REFACTOR_PASS_SCRIPTS names.
 
 Examples:
   compare_parsers.py --repos-dir ~/code

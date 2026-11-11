@@ -1,8 +1,8 @@
 """What the test modules share: where the scripts under test are, how to run them, how to build small git
 repos whose every commit, author and date is fixed in advance, and how to write checklist pages.
 
-The scripts tested are those in the scripts/ folder beside tests/, with the page template in assets/. To
-test another copy, such as an older commit's (git archive <commit> scripts assets | tar -x -C <folder>),
+The scripts tested are those in skills/refactor-pass/scripts/, with the page template in its assets/. To
+test another copy, such as an older commit's (git archive <commit> skills/refactor-pass | tar -x -C <dir>),
 set the REFACTOR_PASS_SCRIPTS environment variable to its scripts/ folder: its assets/ folder is the one
 beside it, as heatmap.py finds its template.
 
@@ -28,7 +28,8 @@ sys.dont_write_bytecode = True
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-SCRIPTS = os.path.abspath(os.environ.get("REFACTOR_PASS_SCRIPTS") or os.path.join(ROOT, "scripts"))
+SKILL = os.path.join(ROOT, "skills", "refactor-pass")  # The skill's own files, as an agent's folder holds them.
+SCRIPTS = os.path.abspath(os.environ.get("REFACTOR_PASS_SCRIPTS") or os.path.join(SKILL, "scripts"))
 ASSETS = os.path.join(os.path.dirname(SCRIPTS), "assets")
 TEMPLATE = os.path.join(ASSETS, "page.html")
 SAMPLES = os.path.join(HERE, "samples")

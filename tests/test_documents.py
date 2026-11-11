@@ -19,6 +19,7 @@ except ImportError:
     import support
 
 ROOT = support.ROOT
+SKILL = support.SKILL
 SCRIPTS = ["heatmap.py", "measure.py", "check_page.py"]
 TOOLS = os.path.join(support.HERE, "tools")
 # Options of other commands that the documents quote: git's.
@@ -32,16 +33,16 @@ def read(path):
 
 
 def markdown_files():
-    names = [os.path.join(ROOT, "SKILL.md"), os.path.join(ROOT, "README.md")]
-    references = os.path.join(ROOT, "references")
+    names = [os.path.join(SKILL, "SKILL.md"), os.path.join(ROOT, "README.md")]
+    references = os.path.join(SKILL, "references")
     names += [os.path.join(references, n) for n in sorted(os.listdir(references)) if n.endswith(".md")]
     return names
 
 
 def loaded_by_agents():
     """What an agent can load: SKILL.md and the files it points to."""
-    references = os.path.join(ROOT, "references")
-    return ([os.path.join(ROOT, "SKILL.md"), support.TEMPLATE] +
+    references = os.path.join(SKILL, "references")
+    return ([os.path.join(SKILL, "SKILL.md"), support.TEMPLATE] +
             [os.path.join(references, n) for n in sorted(os.listdir(references))])
 
 
@@ -137,7 +138,7 @@ class Help(unittest.TestCase):
 class Skill(unittest.TestCase):
 
     def test_frontmatter(self):
-        text = read(os.path.join(ROOT, "SKILL.md"))
+        text = read(os.path.join(SKILL, "SKILL.md"))
         self.assertTrue(text.startswith("---\n"))
         front = text[4:text.index("\n---\n", 4)]
         fields = dict(line.split(": ", 1) for line in front.split("\n"))
@@ -163,7 +164,7 @@ class Skill(unittest.TestCase):
                         self.assertIn(anchor, anchors(linked))
 
     def test_the_words_skill_md_quotes_are_the_scripts(self):
-        text = read(os.path.join(ROOT, "SKILL.md"))
+        text = read(os.path.join(SKILL, "SKILL.md"))
         vocabulary = set()
         check_page = support.load("check_page")
         for shape in (check_page.PASS, check_page.REFACTOR, check_page.OTHER, check_page.COST, check_page.EARLIER,
@@ -216,15 +217,13 @@ class NothingAboutTheSuite(unittest.TestCase):
         self.assertLess(total, 400 * 1024)
         self.assertLess(biggest[0], 60 * 1024, biggest[1])
 
-    def test_a_project_copy_leaves_the_suite_out(self):
+    def test_a_copy_by_hand_takes_only_the_skill(self):
         readme = read(os.path.join(ROOT, "README.md"))
-        install = readme[readme.index("For one project"):readme.index("With any other agent")]
-        removal = re.search(r"(?m)^rm -rf (.*)$", install).group(1).split()
-        wanted = [".git", ".github", "tests"]
-        self.assertEqual(sorted(p.rsplit("/", 1)[1] for p in removal), wanted)
-        self.assertTrue(all(p.startswith(".agents/skills/refactor-pass/") for p in removal), removal)
-        powershell = re.search(r"`Remove-Item -Recurse -Force ([^`]*)`", install).group(1)
-        self.assertEqual(sorted(p.strip().rsplit("/", 1)[1] for p in powershell.split(",")), wanted)
+        install = readme[readme.index("## Install"):readme.index("## Use")]
+        copies = re.findall(r"(?m)^cp -R (\S+) (\S+)$", install)
+        self.assertTrue(copies)
+        for source, target in copies:
+            self.assertTrue(source.endswith("/skills/refactor-pass"), source)
 
 
 class Hygiene(unittest.TestCase):

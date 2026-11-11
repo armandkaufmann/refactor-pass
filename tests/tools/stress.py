@@ -9,7 +9,7 @@ or hang.
   sweep FOLDER...    every file with a language measure.py knows, once each
 
 Each prints its failures and slowest calls, and exits 1 if a call raised or ran past --limit. It tests the
-scripts beside tests/, or those REFACTOR_PASS_SCRIPTS names. The time limit needs a system with SIGALRM.
+skill's scripts, or those REFACTOR_PASS_SCRIPTS names. The time limit needs a system with SIGALRM.
 
 Examples:
   stress.py fuzz ~/code/some-repo --seed 1

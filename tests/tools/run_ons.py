@@ -10,7 +10,7 @@ measure.py finds no function there. The looser rule also takes in a few lines th
 record, an attribute's line, a declaration followed by another's body), so its ceiling isn't zero. Neither
 count sees a function that ends early; compare_parsers.py checks that where a parser is at hand. The
 ceilings were recorded on 2026-11-11, and the repos are found or fetched as compare_parsers.py finds them.
-It tests the scripts beside tests/, or those REFACTOR_PASS_SCRIPTS names.
+It tests the skill's scripts (skills/refactor-pass/scripts), or those REFACTOR_PASS_SCRIPTS names.
 
 Examples:
   run_ons.py --repos-dir ~/code
