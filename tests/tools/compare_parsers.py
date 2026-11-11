@@ -322,8 +322,8 @@ def clang_truth(repo, folders, language, includes):
             span = node.get("range") or {}
             where(span.get("begin"))
             end = where(span.get("end"))
-            if node.get("kind") == "LambdaExpr":
-                return
+            if node.get("kind") == "LambdaExpr" or (node.get("definitionData") or {}).get("isLambda"):
+                return  # A lambda, and its class, which a lambda at a namespace's top also has there.
             written = not (node.get("isImplicit") or node.get("explicitlyDefaulted") or node.get("explicitlyDeleted"))
             if node.get("kind") in CLANG_FUNCTIONS and written and name_at and end and \
                     any(c.get("kind") == "CompoundStmt" for c in node.get("inner", [])):
