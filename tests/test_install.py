@@ -4,9 +4,11 @@ uninstall, every refusal leaving the target as it was, and a copy that works. No
 always a local repo, given with --source.
 """
 
+import hashlib
 import json
 import os
 import shutil
+import stat
 import subprocess
 import sys
 import unittest
@@ -240,7 +242,18 @@ class Installs(unittest.TestCase):
         committed = dict((p[len("skills/refactor-pass/"):],
                           subprocess.run(["git", "-C", support.ROOT, "show", "HEAD:" + p], capture_output=True,
                                          env=support.environment()).stdout) for p in listed)
-        self.assertCopy(os.path.join(skills, "refactor-pass"), committed, None)
+        copy = os.path.join(skills, "refactor-pass")
+        self.assertCopy(copy, committed, None)
+        if not support.WINDOWS:  # A folder as mkdir makes one, and each file's mode as git has it.
+            mask = os.umask(0)
+            os.umask(mask)
+            self.assertEqual(stat.S_IMODE(os.stat(copy).st_mode), 0o777 & ~mask)
+            modes = dict((line.split("\t")[1][len("skills/refactor-pass/"):], line.split()[0]) for line in
+                         support.git(support.ROOT, "ls-tree", "-r", "HEAD", "skills/refactor-pass").splitlines())
+            self.assertIn("100755", modes.values())
+            for path, mode in modes.items():
+                executable = bool(os.stat(os.path.join(copy, *path.split("/"))).st_mode & stat.S_IXUSR)
+                self.assertEqual(executable, mode == "100755", path)
 
 
 class Updates(unittest.TestCase):
@@ -406,6 +419,98 @@ class Refusals(unittest.TestCase):
         stale = install("update", "--dir", skills, "--source", old.path, "--force")
         self.assertLeftAlone(stale, copy, before, "has no skills/refactor-pass/SKILL.md")
 
+
+class Untrusted(unittest.TestCase):
+    """A record, and a source's contents, are input someone else may have written: a project's copy is
+    committed, so its .install.json is the project author's text, read by check, update and uninstall."""
+
+    def assertQuietRefusal(self, run, says):
+        self.assertIn(says, run.out)
+        self.assertNotIn("Traceback", run.out)
+        self.assertNotIn("Traceback", repr(run))
+
+    def write_record(self, copy, **changes):
+        entry = record(copy)
+        entry.update(changes)
+        with open(os.path.join(copy, RECORD), "w", encoding="utf-8") as f:
+            json.dump(entry, f)
+
+    def test_a_record_naming_a_file_outside_the_copy(self):
+        for name in ("../victim.txt", "/victim.txt", "..\\victim.txt", "C:victim.txt", "a/../../victim.txt"):
+            with self.subTest(name=name):
+                skills, copy = Refusals.installed(self)
+                victim = os.path.join(skills, "victim.txt")
+                with open(victim, "wb") as f:
+                    f.write(b"keep me\n")
+                files = record(copy)["files"]
+                files[name] = hashlib.sha256(b"keep me\n").hexdigest()
+                self.write_record(copy, files=files)
+                before = tree(copy)
+                for command in (["uninstall"], ["uninstall", "--force"], ["update", "--force"], ["check"]):
+                    run = install(*(command + ["--dir", skills]))
+                    self.assertEqual(run.code, 1, run)
+                    self.assertQuietRefusal(run, "can't act on (it lists a file it can't have installed")
+                    self.assertEqual(read(victim), b"keep me\n")
+                    self.assertEqual(tree(copy), before)
+
+    def test_a_malformed_record_is_a_refusal(self):
+        for changes in ({"files": ["SKILL.md"]}, {"files": {}}, {"files": {"SKILL.md": 5}}, {"version": 5},
+                        {"commit": "abc"}, {"source": 7}, {"ref": "--upload-pack=x"}, {"skill": "other"}):
+            with self.subTest(changes=changes):
+                skills, copy = Refusals.installed(self)
+                self.write_record(copy, **changes)
+                run = install("uninstall", "--dir", skills)
+                self.assertEqual(run.code, 1, run)
+                self.assertQuietRefusal(run, "this installer can't act on")
+                self.assertTrue(os.path.isfile(os.path.join(copy, "SKILL.md")))
+        skills, copy = Refusals.installed(self)
+        with open(os.path.join(copy, RECORD), "w") as f:
+            f.write("{not json")
+        self.assertQuietRefusal(install("check", "--dir", skills), "(it isn't JSON)")
+
+    def test_a_source_never_reaches_git_as_an_option(self):
+        pwned = os.path.join(support.new_folder("pwned"), "PWNED")
+        command = "--upload-pack=touch %s;" % pwned
+        project = support.Repo("project")
+        project.commit("2026-01-01", "Start", {"src/app.py": "x = 1\n"})
+        project.done()
+        install("--source", Sources.tagged(), "--project", "--agent", "codex", cwd=project.path)
+        copy = os.path.join(project.path, ".agents", "skills", "refactor-pass")
+        self.write_record(copy, source=command)
+        for args in (["check"], ["update"], ["update", "--force"]):
+            run = install(*args, cwd=project.path)
+            self.assertIn("names a source, %r, that isn't an https, ssh or git URL" % command, run.out)
+            self.assertFalse(os.path.exists(pwned), args)
+        for args in (["--source=" + command], ["--source", "ext::sh -c touch% " + pwned], ["--ref=" + command],
+                     ["--source", "ssh://-oProxyCommand=touch%20" + pwned + "/x"], ["--source", "http://example.com/x"],
+                     ["--source", Sources.tagged(), "--ref", "v1..0"]):
+            run = install(*(args + ["--dir", support.new_folder("skills")]))
+            self.assertEqual(run.code, 1, run)
+            self.assertFalse(os.path.exists(pwned), args)
+            self.assertNotIn("Traceback", repr(run))
+        # A source other than this repo on GitHub is shown beside each copy it updates or checks.
+        self.write_record(copy, source=Sources.tagged())
+        shown = install("check", cwd=project.path)
+        self.assertIn("from %s" % Sources.tagged(), shown.out)
+
+    def test_a_link_or_a_submodule_in_the_source(self):
+        secret = os.path.join(support.new_folder("secret"), "secret.txt")
+        with open(secret, "w") as f:
+            f.write("my secret\n")
+        for name, entry in (("link", support.Link(secret)), ("submodule", support.Gitlink("1" * 40))):
+            with self.subTest(entry=name):
+                repo = support.Repo("bad-" + name)
+                files = dict(("skills/refactor-pass/" + p, d) for p, d in skill_files().items())
+                files["skills/refactor-pass/references/notes.md"] = entry
+                mark = repo.commit("2026-01-01", "Release", files)
+                repo.done(checkout=False)
+                support.git(repo.path, "tag", "v1.0.0", repo.sha(mark))
+                skills = support.new_folder("skills")
+                run = install("--source", repo.path, "--dir", skills)
+                self.assertEqual(run.code, 1, run)
+                self.assertIn("references/notes.md in skills/refactor-pass, which isn't a plain file", run.out)
+                self.assertEqual(os.listdir(skills), [])
+                self.assertEqual(os.listdir(run.temp), [])
 
 class InstalledCopy(unittest.TestCase):
     """An installed copy works: its scripts run, the page template is found, and in a project it's left out."""

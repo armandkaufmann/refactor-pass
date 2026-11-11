@@ -12,11 +12,14 @@ Commands:
              files it installed
 
 The latest release is the highest vMAJOR.MINOR.PATCH tag on the source. With no such tag yet, the default
-branch is installed, with a notice, and update moves it to the first release when there is one.
+branch is installed, with a notice, and update moves it to the first release when there is one. A source is
+an https, ssh or git URL, or a folder that exists; files are read from its commits, not from a checkout, and
+only plain files are installed.
 
 Each copy gets a small .install.json beside SKILL.md: where it came from, its version, and a hash of each
 file. A copy whose files were edited since, or that holds files it didn't install, is left alone unless
---force; a folder this installer didn't make (with no .install.json), and a git clone, always are.
+--force; a folder this installer didn't make, one whose .install.json it can't trust, a git clone and a link
+always are.
 
 It runs with Python 3.7 or later and git, from a checkout or piped, as one line:
   curl -fsSL https://raw.githubusercontent.com/armandkaufmann/refactor-pass/main/install.py | python3 -
@@ -55,6 +58,17 @@ RELEASE = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
 STAGING, RETIRED = ".refactor-pass.new-", ".refactor-pass.old-"  # Beside a copy, only while it's swapped.
 BYTECODE = "__pycache__"  # What Python may write beside the scripts: never recorded, never a reason to refuse.
 
+# What a source, a ref and a path may be. A source and a ref never start with -, so git can't read one as an
+# option, nor does a URL's host or user (as ssh://-oProxyCommand=... would have it), and a source is never a
+# remote helper's <transport>::<address>; a path is a plain relative one that every system can hold, so a
+# record or a commit can't name a file outside the copy.
+URL = re.compile(r"^(?:https|ssh|git)://[A-Za-z0-9]\S*$|"
+                 r"^[A-Za-z0-9][A-Za-z0-9._-]*@[A-Za-z0-9][A-Za-z0-9.-]*:(?!:)\S+$")
+REF = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/+-]*$")
+COMMIT = re.compile(r"^[0-9a-f]{40}$")
+DIGEST = re.compile(r"^[0-9a-f]{64}$")
+RESERVED = re.compile(r"(?i)^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$")
+
 # The agents, from each one's own documentation: its name here, its name to show, the folder in the home
 # that shows it's installed, then the user-level and the project-level skills folders it reads, from the
 # home and from the project's top. The README cites the page for each row.
@@ -77,6 +91,9 @@ PROJECT_MARKS = [(".claude", "claude-code"), (".codex", "codex"), (".cursor", "c
                  (".github/skills", "github-copilot"), (".opencode", "opencode"), (".agents", "codex")]
 # Where a copy goes when several folders would do: the folder most agents share, then Claude Code's.
 PREFERRED = [".agents/skills", ".claude/skills"]
+# The environment variables that would point git at another repo than the one each call names.
+GIT_PLACES = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+              "GIT_COMMON_DIR", "GIT_NAMESPACE")
 
 
 class Refusal(Exception):
@@ -84,7 +101,8 @@ class Refusal(Exception):
 
 
 class NotOurs(Refusal):
-    """A folder this installer didn't make: never changed, and only noted when the user didn't name it."""
+    """A folder this installer didn't make, or can't trust: never changed, and only noted when the user didn't
+    name it."""
 
 
 class Failure(Exception):
@@ -101,16 +119,19 @@ def home():
 
 
 def git(*args, **options):
-    """Run git with no prompt (stdin may be this script) and return its output; raise Failure if it fails."""
-    env = dict(os.environ, GIT_TERMINAL_PROMPT="0")
+    """Run git with no prompt (stdin may be this script), only the transports a source may use, and none of
+    the user's variables that would point it at another repo; return its output as text, or as bytes with
+    raw=True; raise Failure if it fails, or return None with check=False."""
+    env = dict((k, v) for k, v in os.environ.items() if k not in GIT_PLACES)
+    env.update(GIT_TERMINAL_PROMPT="0", GIT_PROTOCOL_FROM_USER="0", GIT_ALLOW_PROTOCOL="file:git:https:ssh")
     result = subprocess.run(["git"] + list(args), cwd=options.get("cwd"), stdin=subprocess.DEVNULL,
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
     if result.returncode != 0:
         if options.get("check", True):
             message = result.stderr.decode("utf-8", "replace").strip() or "exit %d" % result.returncode
-            raise Failure("git %s: %s" % (" ".join(args[:2]), message))
+            raise Failure("git %s: %s" % (" ".join(a for a in args[:3] if not a.startswith("/")), message))
         return None
-    return result.stdout.decode("utf-8", "replace")
+    return result.stdout if options.get("raw") else result.stdout.decode("utf-8", "replace")
 
 
 def remove_tree(path):
@@ -137,23 +158,89 @@ def shown_path(path):
     return path
 
 
+def from_where(source):
+    """The source, for the output, when it isn't this repo on GitHub."""
+    return "" if source == SOURCE else " from %s" % source
+
+
+# What may be trusted: sources, refs and paths, from the command line, a record or a commit.
+
+def checked_source(given, where="--source"):
+    """A source as the record keeps it, a folder as an absolute path; raise Failure if it's none of the kinds
+    a source may be."""
+    if isinstance(given, str) and given and not given.startswith("-"):
+        if URL.match(given):
+            return given
+        expanded = os.path.expanduser(given)
+        if os.path.isdir(expanded):
+            return os.path.abspath(expanded)
+    raise Failure("%s %r isn't an https, ssh or git URL, nor a folder that exists, so nothing is fetched from it."
+                  % (where, given))
+
+
+def checked_ref(ref):
+    if not REF.match(ref) or ".." in ref or ref.endswith((".lock", "/", ".")):
+        raise Failure("--ref %r isn't a release tag, a branch or a full commit." % ref)
+    return ref
+
+
+def path_problem(path):
+    """Why a path from a record or a commit can't name a file in a copy; None if it can."""
+    if not isinstance(path, str) or not path or path.startswith("/") or "\\" in path:
+        return "%r isn't a relative path with / between its parts" % (path,)
+    for part in path.split("/"):
+        if part in ("", ".", "..") or part.lower() == ".git":
+            return "%r has a part, %r, that would leave the copy or reach outside a plain folder" % (path, part)
+        if any(c in part for c in ':*?"<>|') or any(ord(c) < 32 for c in part) or part[-1] in " ." or \
+                RESERVED.match(part):
+            return "%r has a name, %r, that some systems can't hold as a file" % (path, part)
+    return None
+
+
+def record_problem(record):
+    """Why a copy's .install.json isn't one this installer wrote, or can't be acted on; None if it's sound."""
+    if not isinstance(record, dict):
+        return "it isn't a JSON object"
+    if record.get("skill") != NAME or not isinstance(record.get("record"), int):
+        return "it doesn't say it's %s's, in a form this installer reads" % NAME
+    files = record.get("files")
+    if not isinstance(files, dict) or not files:
+        return "its list of files is missing or empty"
+    for path, digest_ in sorted(files.items(), key=lambda item: str(item[0])):
+        problem = path_problem(path)
+        if problem:
+            return "it lists a file it can't have installed: " + problem
+        if not isinstance(digest_, str) or not DIGEST.match(digest_):
+            return "the hash it gives for %r isn't a sha256" % path
+    for field, form in (("source", URL), ("ref", REF), ("version", RELEASE), ("commit", COMMIT)):
+        value = record.get(field)
+        if value is not None and (not isinstance(value, str) or (field != "source" and not form.match(value))):
+            return "its %s, %r, isn't one this installer writes" % (field, value)
+    if not isinstance(record.get("source"), str):
+        return "it names no source"
+    return None
+
+
 # Sources and versions.
-
-def normal_source(given):
-    """A source as the record keeps it: a local folder as an absolute path, anything else as given."""
-    expanded = os.path.expanduser(given)
-    return os.path.abspath(expanded) if os.path.isdir(expanded) else given
-
 
 def version_key(tag):
     return tuple(int(n) for n in RELEASE.match(tag).groups())
 
 
+def remote_refs(source, *names):
+    """A map from each ref the source has to its commit (git ls-remote), with only well-formed commits."""
+    found = {}
+    for line in git("ls-remote", "--", source, *names).splitlines():
+        sha, _, name = line.partition("\t")
+        if COMMIT.match(sha):
+            found[name] = sha
+    return found
+
+
 def releases(source):
     """The source's release tags, vMAJOR.MINOR.PATCH, each with its commit."""
     found = {}
-    for line in git("ls-remote", "--tags", source).splitlines():
-        sha, _, ref = line.partition("\t")
+    for ref, sha in remote_refs(source, "refs/tags/*").items():
         name = ref[len("refs/tags/"):]
         peeled = name.endswith("^{}")
         name = name[:-3] if peeled else name
@@ -163,27 +250,25 @@ def releases(source):
 
 
 class Target(object):
-    """What to install: a ref, its version (a release tag, or None), its commit, and a notice to print."""
+    """What to install: a ref to fetch, the name to show and record for it, its version (a release tag, or
+    None), its commit, and a notice to print."""
 
-    def __init__(self, ref, version, commit, notice=None):
+    def __init__(self, ref, version, commit, notice=None, shown=None):
         self.ref, self.version, self.commit, self.notice = ref, version, commit, notice
+        self.shown = shown or ref
 
     def label(self):
-        return "%s (%s)" % (self.version or self.ref, short(self.commit))
+        return "%s (%s)" % (self.version or self.shown, short(self.commit))
 
 
 def resolve(source, ref):
     """The Target that ref names on the source; with no ref, the latest release, or else the default branch."""
     if ref:
+        checked_ref(ref)
         # Exact names only, a tag's commit first: a pattern alone would also match a clone's refs/remotes/...
         names = ["refs/tags/%s^{}" % ref, "refs/tags/" + ref, "refs/heads/" + ref] + (["HEAD"] if ref == "HEAD" else [])
-        listed = {}
-        for line in (git("ls-remote", source, *names, check=False) or "").splitlines():
-            sha, _, name = line.partition("\t")
-            listed[name] = sha
-        commit = next((listed[n] for n in names if n in listed), None)
-        if commit is None and re.match(r"^[0-9a-f]{40}$", ref):
-            commit = ref
+        listed = remote_refs(source, *names)
+        commit = next((listed[n] for n in names if n in listed), ref if COMMIT.match(ref) else None)
         if commit is None:
             raise Failure("%s has no %s: give a release tag, a branch, or a full 40-character commit." % (source, ref))
         return Target(ref, ref if RELEASE.match(ref) else None, commit)
@@ -191,48 +276,56 @@ def resolve(source, ref):
     if tags:
         latest = max(tags, key=version_key)
         return Target(latest, latest, tags[latest])
-    head = git("ls-remote", "--symref", source, "HEAD")
+    head = git("ls-remote", "--symref", "--", source, "HEAD")
     branch, commit = "HEAD", None
     for line in head.splitlines():
         if line.startswith("ref: refs/heads/"):
-            branch = line[len("ref: refs/heads/"):].split("\t")[0]
-        elif line.endswith("\tHEAD"):
+            name = line[len("ref: refs/heads/"):].split("\t")[0]
+            branch = name if REF.match(name) else branch
+        elif line.endswith("\tHEAD") and COMMIT.match(line.split("\t")[0]):
             commit = line.split("\t")[0]
     if not commit:
         raise Failure("%s has no commits to install." % source)
     notice = ("There's no release of %s yet (no vMAJOR.MINOR.PATCH tag), so this is its default branch, %s, at "
               "%s. Update will move it to the first release." % (source, branch, short(commit)))
-    return Target(branch, None, commit, notice)
+    return Target("HEAD", None, commit, notice, shown=branch)
 
 
 def fetch(source, target, into):
-    """The skill's files at target, fetched into the folder into: a map from each one's path to its bytes."""
-    git("init", "-q", into)
-    git("-C", into, "fetch", "-q", "--depth", "1", source, target.ref)
-    git("-C", into, "-c", "advice.detachedHead=false", "checkout", "-q", "FETCH_HEAD")
-    target.commit = git("-C", into, "rev-parse", "HEAD").strip()
-    folder = os.path.join(into, *SKILL.split("/"))
-    if not os.path.isfile(os.path.join(folder, "SKILL.md")):
-        raise Failure("%s at %s has no %s/SKILL.md: it's older than the installer's layout, so install a "
-                      "release from v1.0.0 on." % (source, target.ref, SKILL))
-    return dict((path, read_bytes(os.path.join(folder, *path.split("/")))) for path in files_in(folder))
-
-
-def read_bytes(path):
-    with open(path, "rb") as f:
-        return f.read()
-
-
-def files_in(folder):
-    """The files in a skill's folder, as paths with / from it, sorted: not the record, nor bytecode."""
-    found = []
-    for top, dirs, names in os.walk(folder):
-        dirs[:] = sorted(d for d in dirs if d != BYTECODE)
-        for name in names:
-            path = os.path.relpath(os.path.join(top, name), folder).replace(os.sep, "/")
-            if path != RECORD:
-                found.append(path)
-    return sorted(found)
+    """The skill's files at target, read from the commit's objects in the folder into, not from a checkout:
+    a map from each one's path to its bytes and whether it's executable. Only plain files: a link or a
+    submodule in the skill's folder is refused, as is a path a copy can't safely hold."""
+    git("init", "-q", "--", into)
+    git("-C", into, "fetch", "-q", "--depth", "1", "--", source, target.ref)
+    commit = git("-C", into, "rev-parse", "--verify", "-q", "FETCH_HEAD^{commit}").strip()
+    if not COMMIT.match(commit):
+        raise Failure("%s at %s gave no commit." % (source, target.shown))
+    target.commit = commit
+    where = "%s at %s" % (source, target.label())
+    files, seen = {}, {}
+    for entry in git("-C", into, "ls-tree", "-r", "-z", commit, "--", SKILL + "/", raw=True).split(b"\0"):
+        if not entry:
+            continue
+        meta, _, raw_path = entry.partition(b"\t")
+        mode, kind, sha = meta.decode("ascii", "replace").split(" ")
+        path = raw_path.decode("utf-8", "replace")[len(SKILL) + 1:]
+        problem = path_problem(path)
+        if problem:
+            raise Failure("%s holds a file it won't install: %s." % (where, problem))
+        if mode not in ("100644", "100755") or kind != "blob":
+            raise Failure("%s has %s in %s, which isn't a plain file (a link or a submodule), so nothing was installed."
+                          % (where, path, SKILL))
+        if path.lower() in seen:
+            raise Failure("%s has both %s and %s, which one folder can't hold apart on every system."
+                          % (where, seen[path.lower()], path))
+        seen[path.lower()] = path
+        files[path] = (git("-C", into, "cat-file", "blob", sha, raw=True), mode == "100755")
+    if "SKILL.md" not in files:
+        raise Failure("%s has no %s/SKILL.md: it's older than the installer's layout, so install a release from "
+                      "v1.0.0 on." % (where, SKILL))
+    if not re.search(br"(?m)^name:\s*" + NAME.encode() + br"\s*$", files["SKILL.md"][0].split(b"\n---", 1)[0]):
+        raise Failure("%s has a SKILL.md that isn't %s's, so nothing was installed." % (where, NAME))
+    return files
 
 
 def digest(data):
@@ -241,24 +334,52 @@ def digest(data):
 
 # The copies.
 
+def read_bytes(path):
+    with open(path, "rb") as f:
+        return f.read()
+
+
+def files_in(folder):
+    """The files in a copy, as paths with / from it, sorted: not the record, nor bytecode. Raise NotOurs if
+    the folder holds a link (or, on Windows, a junction), which this installer never makes."""
+    found, real = [], os.path.realpath(folder)
+    for top, dirs, names in os.walk(folder):
+        for name in dirs + names:
+            full = os.path.join(top, name)
+            if os.path.islink(full) or not os.path.realpath(full).startswith(real + os.sep):
+                raise NotOurs("%s holds a link, %s, which this installer never makes: left alone."
+                              % (shown_path(folder), os.path.relpath(full, folder)))
+        dirs[:] = sorted(d for d in dirs if d != BYTECODE)
+        for name in names:
+            path = os.path.relpath(os.path.join(top, name), folder).replace(os.sep, "/")
+            if path != RECORD:
+                found.append(path)
+    return sorted(found)
+
+
 def read_record(folder):
+    """The copy's record, checked; None if it has none; raise NotOurs if it can't be trusted."""
     path = os.path.join(folder, RECORD)
     if not os.path.isfile(path):
         return None
     try:
         with open(path, encoding="utf-8") as f:
             record = json.load(f)
-    except ValueError:
-        return None
-    return record if isinstance(record, dict) and isinstance(record.get("files"), dict) else None
+    except (ValueError, UnicodeDecodeError):
+        record = "unreadable"
+    problem = "it isn't JSON" if record == "unreadable" else record_problem(record)
+    if problem:
+        raise NotOurs("%s has an %s this installer can't act on (%s): left alone. Move or delete the copy yourself."
+                      % (shown_path(folder), RECORD, problem))
+    return record
 
 
 def changes(folder, record):
     """What changed in a recorded copy since it was installed: files edited or gone, and files added."""
+    present = files_in(folder)
     edited = [p for p, h in sorted(record["files"].items())
-              if not os.path.isfile(os.path.join(folder, *p.split("/")))
-              or digest(read_bytes(os.path.join(folder, *p.split("/")))) != h]
-    added = [p for p in files_in(folder) if p not in record["files"]]
+              if p not in present or digest(read_bytes(os.path.join(folder, *p.split("/")))) != h]
+    added = [p for p in present if p not in record["files"]]
     return edited, added
 
 
@@ -291,9 +412,15 @@ def examine(folder, force):
     return record
 
 
+def umask():
+    mask = os.umask(0)
+    os.umask(mask)
+    return mask
+
+
 def put(folder, get_files, source, target, force, dry_run):
-    """Install the files get_files() gives (path to bytes), fetched only once a copy needs them, as the copy in
-    folder: built beside it, then swapped in, so a failure leaves the old copy whole. Returns what it did."""
+    """Install the files get_files() gives, fetched only once a copy needs them, as the copy in folder: built
+    beside it, then swapped in, so a failure leaves the old copy whole. Returns what it did."""
     record = examine(folder, force)
     if record and (record.get("commit"), record.get("version")) == (target.commit, target.version) and \
             changes(folder, record) == ([], []):
@@ -306,6 +433,7 @@ def put(folder, get_files, source, target, force, dry_run):
     if dry_run:
         return action
     files = get_files()
+    mask = umask()
     parent = os.path.dirname(folder)
     if not os.path.isdir(parent):
         os.makedirs(parent)
@@ -314,19 +442,23 @@ def put(folder, get_files, source, target, force, dry_run):
     try:
         hashes = {}
         for path in sorted(files, key=lambda p: p == "SKILL.md"):  # SKILL.md last, so a part copy isn't a skill.
+            data, executable = files[path]
             full = os.path.join(staging, *path.split("/"))
             if not os.path.isdir(os.path.dirname(full)):
                 os.makedirs(os.path.dirname(full))
             with open(full, "wb") as f:
-                f.write(files[path])
-            hashes[path] = digest(files[path])
-        new_record = {"record": RECORD_FORMAT, "skill": NAME, "source": source, "ref": target.ref,
+                f.write(data)
+            if executable:
+                os.chmod(full, 0o777 & ~mask)
+            hashes[path] = digest(data)
+        new_record = {"record": RECORD_FORMAT, "skill": NAME, "source": source, "ref": target.shown,
                       "version": target.version, "commit": target.commit,
                       "installed": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                       "files": hashes}
         with open(os.path.join(staging, RECORD), "w", encoding="utf-8") as f:
             json.dump(new_record, f, indent=2, sort_keys=True)
             f.write("\n")
+        os.chmod(staging, 0o777 & ~mask)  # As a folder mkdir makes, not mkdtemp's owner-only one.
         if os.path.exists(folder):
             retired = tempfile.mkdtemp(prefix=RETIRED, dir=parent)
             os.rmdir(retired)
@@ -401,11 +533,20 @@ def choose(agents, kind):
     return [(f, [a for a in agents if f in folders_of(a, kind)]) for f in best[1]]
 
 
-def project_top():
+def project_top(required=True):
     top = git("rev-parse", "--show-toplevel", check=False)
     if not top:
-        raise Failure("--project needs to run inside a git repo; this folder, %s, isn't in one." % os.getcwd())
+        if required:
+            raise Failure("--project needs to run inside a git repo; this folder, %s, isn't in one." % os.getcwd())
+        return None
     return os.path.normpath(top.strip())
+
+
+def in_project(folder, top):
+    """Whether a folder in the project is in it once links are followed: a link out of the project (as a
+    committed .agents that points into your home) never takes a copy out of it."""
+    real = os.path.realpath(top)
+    return os.path.realpath(folder).startswith(real + os.sep)
 
 
 def project_agents(top):
@@ -448,18 +589,19 @@ def no_agents(where):
 
 def copies(args):
     """The copies this installer made that update, check and uninstall work on: those --agent, --dir and
-    --project name, or else every one in any agent's folders and the current project's."""
+    --project name, or else every one in any agent's folders and the current project's. A project's folder
+    that a link takes out of the project is left out."""
     folders = [dir_target(d) for d in args.dir]
     everywhere = not named(args)
     if args.agent or everywhere:
         for agent in args.agent or [a[0] for a in AGENTS]:
             folders += [os.path.join(home(), *f.split("/") + [NAME]) for f in folders_of(agent, "user")]
     if args.project or everywhere:
-        top = project_top() if args.project else (git("rev-parse", "--show-toplevel", check=False) or "").strip()
+        top = project_top(required=bool(args.project))
         if top:
             for agent in args.agent or [a[0] for a in AGENTS]:
-                folders += [os.path.join(os.path.normpath(top), *f.split("/") + [NAME])
-                            for f in folders_of(agent, "project")]
+                folders += [f for f in (os.path.join(top, *p.split("/") + [NAME]) for p in folders_of(agent, "project"))
+                            if in_project(f, top)]
     unique, seen = [], set()
     for folder in folders:
         key = os.path.normcase(os.path.realpath(folder))
@@ -472,17 +614,24 @@ def copies(args):
 # The commands.
 
 def run_install(args):
+    source = checked_source(args.source or SOURCE)
     targets = install_targets(args)
-    source = normal_source(args.source or SOURCE)
+    if args.project:
+        top = project_top()
+        for folder, _ in targets:
+            if not in_project(folder, top):
+                raise Failure("%s leads out of this project through a link, so nothing was installed there."
+                              % shown_path(folder))
     target = resolve(source, args.ref)
     if target.notice:
         say(target.notice)
     say("%s refactor-pass %s from %s:" % ("Would install" if args.dry_run else "Installing", target.label(), source))
-    return put_all([(folder, agents, source) for folder, agents in targets], {source: target}, args)
+    return put_all([(folder, agents, source) for folder, agents in targets], {source: target}, args, False)
 
 
-def put_all(plan, targets, args):
-    """Put each (folder, agents, source) of plan at targets[source], fetching each source once."""
+def put_all(plan, targets, args, show_source):
+    """Put each (folder, agents, source) of plan at targets[source], fetching each source once, and only when a
+    copy needs it."""
     failed = 0
     fetched = {}
     work = tempfile.mkdtemp(prefix="refactor-pass-install-")
@@ -490,6 +639,7 @@ def put_all(plan, targets, args):
         for folder, agents, source in plan:
             target = targets[source]
             note = " (for %s)" % ", ".join(SHOWN[a] for a in agents) if agents else ""
+            note += from_where(source) if show_source else ""
 
             def get_files(source=source, target=target):
                 if source not in fetched:
@@ -525,18 +675,29 @@ def refused(refusal, args):
     return 1
 
 
+
+def source_of(record, args, folder):
+    """The source to update or check a copy against: --source, or the one its record names, if that may be one."""
+    if args.source:
+        return checked_source(args.source)
+    try:
+        return checked_source(record["source"])
+    except Failure:
+        raise NotOurs("%s's %s names a source, %r, that isn't an https, ssh or git URL, nor a folder that exists: "
+                      "left alone, and nothing fetched from it." % (shown_path(folder), RECORD, record["source"]))
+
+
 def run_update(args):
-    found = copies(args)
     plan, targets, failed = [], {}, 0
-    for folder in found:
+    for folder in copies(args):
         try:
             record = examine(folder, args.force)
+            if record is None:
+                continue
+            source = source_of(record, args, folder)
         except Refusal as refusal:
             failed += refused(refusal, args)
             continue
-        if record is None:
-            continue
-        source = normal_source(args.source) if args.source else record.get("source") or SOURCE
         if source not in targets:
             targets[source] = resolve(source, args.ref)
             if targets[source].notice:
@@ -547,20 +708,19 @@ def run_update(args):
             "" if named(args) else " in the agents' folders or this project"))
         return 1 if failed else 0
     say("%s to the latest:" % ("Would update" if args.dry_run else "Updating"))
-    return put_all(plan, targets, args) or (1 if failed else 0)
+    return put_all(plan, targets, args, True) or (1 if failed else 0)
 
 
 def run_check(args):
-    found = [f for f in copies(args) if os.path.lexists(f)]
     latest, failed, any_copy = {}, 0, False
-    for folder in found:
+    for folder in [f for f in copies(args) if os.path.lexists(f)]:
         try:
             record = examine(folder, True)
+            source = source_of(record, args, folder)
         except Refusal as refusal:
             failed += refused(refusal, args)
             continue
         any_copy = True
-        source = record.get("source") or SOURCE
         if source not in latest:
             latest[source] = resolve(source, args.ref)
         target = latest[source]
@@ -568,8 +728,8 @@ def run_check(args):
         state = "up to date" if record.get("commit") == target.commit else "update brings %s" % target.label()
         if edited or added:
             state += "; edited since it was installed"
-        say("%s: %s (%s), from %s; %s." % (shown_path(folder), record.get("version") or record.get("ref"),
-                                          short(record.get("commit")), source, state))
+        say("%s: %s (%s)%s; %s." % (shown_path(folder), record.get("version") or record.get("ref"),
+                                   short(record.get("commit")), from_where(source), state))
     if not any_copy and not failed:
         say("No copy of refactor-pass that this installer made was found.")
     return 1 if failed else 0
@@ -601,13 +761,16 @@ def main(argv=None):
     parser.add_argument("--project", action="store_true",
                         help="the current git repo's skills folder, for its agents, to commit")
     parser.add_argument("--ref", help="a release tag, a branch or a full commit, instead of the latest release")
-    parser.add_argument("--source", help="a clone URL or a local folder to install from (default: %s)" % SOURCE)
+    parser.add_argument("--source", help="an https, ssh or git URL, or a local folder, to install from "
+                        "(default: %s)" % SOURCE)
     parser.add_argument("--force", action="store_true",
                         help="replace or remove a copy whose files were edited, or that holds files it didn't install")
     parser.add_argument("--dry-run", action="store_true", help="print what it would do, and change nothing")
     args = parser.parse_args(argv)
     commands = {"install": run_install, "update": run_update, "check": run_check, "uninstall": run_uninstall}
     try:
+        if args.ref:
+            checked_ref(args.ref)
         return commands[args.command](args)
     except Failure as failure:
         say(str(failure))

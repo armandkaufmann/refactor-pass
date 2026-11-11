@@ -71,8 +71,10 @@ the rest.
   what they count.
 - `--ref REF`: a release tag such as `v1.0.0`, a branch, or a full commit,
   instead of the latest release.
-- `--source URL_OR_FOLDER`: install from another clone, or a local one (as
-  `--source . --ref HEAD` installs your clone's last commit).
+- `--source URL_OR_FOLDER`: install from another clone, by an https, ssh
+  or git URL, or from a folder (as `--source . --ref HEAD` installs your
+  clone's last commit). It reads the files from the commit, not from a
+  checkout, and installs only plain files, never a link.
 
 Later, with the same one line, or `install.py`, and a command after it, as
 in `curl -fsSL .../install.py | python3 - update`:
@@ -87,8 +89,9 @@ one, it installs the default branch and says so, and `update` moves it to
 the first release. Each copy holds a small `.install.json` with its source,
 version and a hash of each file, which these commands read. A copy whose
 files were edited since, or that holds files it didn't install, is left
-alone unless you add `--force`. A folder it didn't make, and a git clone,
-are always left alone. A new copy is built beside the old one and swapped
+alone unless you add `--force`. A folder it didn't make, one whose `.install.json` it can't
+trust (as one naming a file outside the copy), a git clone and a link are
+always left alone. A new copy is built beside the old one and swapped
 in, so a failed run leaves the old copy whole.
 
 Where each agent reads skills, from its own documentation:
