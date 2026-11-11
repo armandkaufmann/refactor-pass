@@ -144,7 +144,7 @@ Run it from the repo's top, or from anywhere with both paths:
 `-s <repo>/tests -t <repo>`. To test another copy of the scripts, such as
 an older commit's, set `REFACTOR_PASS_SCRIPTS` to its `scripts/` folder.
 
-Outside that run, `tests/tools/` holds three checks to run by hand:
+Outside that run, `tests/tools/` holds four checks to run by hand:
 
 - `compare_parsers.py` compares the functions `measure.py` finds with
   real parsers' (Python's `ast`, TypeScript's compiler, PHP's tokenizer,
@@ -152,6 +152,10 @@ Outside that run, `tests/tools/` holds three checks to run by hand:
   to exact commits, and fails where one falls below its recorded floors.
   It fetches each at its commit, or uses clones on disk (`--repos-dir`),
   and skips a language whose parser isn't installed.
+- `run_ons.py` checks Kotlin, C#, Rust, Java and GDScript, which have no
+  parser to compare with here, on 15 pinned repos: it counts the functions
+  that run on past their end, and the definitions a looser rule finds that
+  `measure.py` doesn't, against recorded ceilings.
 - `render_pages.py` renders checklist pages in headless Chrome and checks
   that each shows what its data holds.
 - `stress.py` runs a longer fuzz, the extreme inputs at full size, and

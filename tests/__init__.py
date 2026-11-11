@@ -15,5 +15,6 @@
   support.py          what they share: the scripts' folder, running them, and building git repos
 
 tools/ holds what the default run leaves out: the comparison with real parsers on pinned public repos, the
-headless-Chrome check of rendered pages, and a longer stress run.
+counts of run-on functions and unreported definitions where there's no parser, the headless-Chrome check of
+rendered pages, and a longer stress run.
 """
