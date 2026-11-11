@@ -12,6 +12,8 @@
   test_page.py        assets/page.html, read without a browser
   test_robustness.py  a short fuzz and extreme inputs
   test_documents.py   the documents against the scripts, and the code's hygiene
+  test_install.py     install.py, from source repos built here: what it installs and where, which version,
+                      update, check and uninstall, and every refusal leaving the target as it was
   support.py          what they share: the scripts' folder, running them, and building git repos
 
 Run it with python3 -B, which keeps Python from writing bytecode beside the tests and scripts. This file

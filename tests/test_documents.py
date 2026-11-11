@@ -10,6 +10,7 @@ instructions to an agent.
 import ast
 import os
 import re
+import subprocess
 import sys
 import unittest
 
@@ -84,6 +85,10 @@ class Help(unittest.TestCase):
         cls.help = {}
         for script in SCRIPTS:
             cls.help[script] = support.run(script, "--help")
+        installer = subprocess.run([sys.executable, os.path.join(ROOT, "install.py"), "--help"], capture_output=True,
+                                   env=support.environment())
+        cls.installer_help = support.Result(installer.returncode, support._text(installer.stdout),
+                                            support._text(installer.stderr))
         cls.tool_help = {}
         for name in sorted(os.listdir(TOOLS)):
             if name.endswith(".py"):
@@ -102,6 +107,8 @@ class Help(unittest.TestCase):
             with self.subTest(tool=tool):
                 self.assertEqual(result.code, 0, result)
                 self.assertIn("usage:", result.out)
+        self.assertEqual(self.installer_help.code, 0, self.installer_help)
+        self.assertTrue(self.installer_help.out.startswith("usage: install.py"), self.installer_help.out[:200])
 
     def test_docstrings_name_only_real_options(self):
         # A script's docstring may name another script's option, as check_page.py names heatmap.py --page.
@@ -118,7 +125,7 @@ class Help(unittest.TestCase):
 
     def test_documents_name_only_real_options(self):
         known = set()
-        for result in list(self.help.values()) + list(self.tool_help.values()):
+        for result in list(self.help.values()) + list(self.tool_help.values()) + [self.installer_help]:
             known |= usage_options(result.out)
         documents = [(path, read(path)) for path in markdown_files()] + [(support.TEMPLATE, page_text())]
         for path, text in documents:
@@ -200,7 +207,7 @@ class NothingAboutTheSuite(unittest.TestCase):
 
     def test_documents_agents_load(self):
         names = {"unittest", "test suite", "REFACTOR_PASS_SCRIPTS", "tests/", "the skill's tests",
-                 "this skill's tests", "the suite"}
+                 "this skill's tests", "the suite", "install.py", ".install.json"}
         for folder, dirs, files in os.walk(support.HERE):
             dirs[:] = [d for d in dirs if d != "__pycache__"]
             names.update(n for n in files if n.endswith(".py") and n != "__init__.py")
@@ -240,6 +247,7 @@ class Hygiene(unittest.TestCase):
 
     def python_files(self):
         files = [os.path.join(support.SCRIPTS, n) for n in sorted(os.listdir(support.SCRIPTS)) if n.endswith(".py")]
+        files.append(os.path.join(ROOT, "install.py"))
         for folder, dirs, names in os.walk(support.HERE):
             dirs[:] = [d for d in dirs if d != "__pycache__"]
             files += [os.path.join(folder, n) for n in sorted(names) if n.endswith(".py")]
