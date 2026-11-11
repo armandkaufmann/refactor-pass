@@ -512,6 +512,22 @@ class Untrusted(unittest.TestCase):
                 self.assertEqual(os.listdir(skills), [])
                 self.assertEqual(os.listdir(run.temp), [])
 
+    def test_line_ends_from_a_checkout_are_not_edits(self):
+        skills, copy = Refusals.installed(self)
+        for path in ("SKILL.md", "scripts/heatmap.py"):
+            full = os.path.join(copy, *path.split("/"))
+            with open(full, "rb") as f:
+                text = f.read()
+            with open(full, "wb") as f:
+                f.write(text.replace(b"\n", b"\r\n"))
+        checked = install("check", "--dir", skills)
+        self.assertEqual(checked.code, 0, checked)
+        self.assertNotIn("edited", checked.out)
+        updated = install("update", "--dir", skills)
+        self.assertEqual(updated.code, 0, updated)
+        self.assertIn("replaced v1.9.0", updated.out)
+
+
 class InstalledCopy(unittest.TestCase):
     """An installed copy works: its scripts run, the page template is found, and in a project it's left out."""
 

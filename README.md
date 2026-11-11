@@ -87,9 +87,10 @@ in `curl -fsSL .../install.py | python3 - update`:
 The latest release is the highest `vMAJOR.MINOR.PATCH` tag; until there is
 one, it installs the default branch and says so, and `update` moves it to
 the first release. Each copy holds a small `.install.json` with its source,
-version and a hash of each file, which these commands read. A copy whose
-files were edited since, or that holds files it didn't install, is left
-alone unless you add `--force`. A folder it didn't make, one whose `.install.json` it can't
+version and a hash of each file, which these commands read (a checkout's
+CRLF line ends don't count as an edit). A copy whose files were edited
+since, or that holds files it didn't install, is left alone unless you add
+`--force`. A folder it didn't make, one whose `.install.json` it can't
 trust (as one naming a file outside the copy), a git clone and a link are
 always left alone. A new copy is built beside the old one and swapped
 in, so a failed run leaves the old copy whole.

@@ -17,9 +17,9 @@ an https, ssh or git URL, or a folder that exists; files are read from its commi
 only plain files are installed.
 
 Each copy gets a small .install.json beside SKILL.md: where it came from, its version, and a hash of each
-file. A copy whose files were edited since, or that holds files it didn't install, is left alone unless
---force; a folder this installer didn't make, one whose .install.json it can't trust, a git clone and a link
-always are.
+file (of its text with CRLF line ends read as LF, so a checkout's line ends aren't an edit). A copy whose
+files were edited since, or that holds files it didn't install, is left alone unless --force; a folder this
+installer didn't make, one whose .install.json it can't trust, a git clone and a link always are.
 
 It runs with Python 3.7 or later and git, from a checkout or piped, as one line:
   curl -fsSL https://raw.githubusercontent.com/armandkaufmann/refactor-pass/main/install.py | python3 -
@@ -329,7 +329,9 @@ def fetch(source, target, into):
 
 
 def digest(data):
-    return hashlib.sha256(data).hexdigest()
+    """A file's hash: of its text with CRLF line ends read as LF, so that a checkout's line ends (Git for
+    Windows's, by default) don't make it an edit."""
+    return hashlib.sha256(data.replace(b"\r\n", b"\n")).hexdigest()
 
 
 # The copies.
