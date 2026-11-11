@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Armand Kaufmann. MIT License: https://github.com/armandkaufmann/refactor-pass
 """Check a refactor checklist page after an edit to its pass block.
 
 It checks that both data blocks parse, that every field is one the page

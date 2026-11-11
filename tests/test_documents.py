@@ -142,13 +142,23 @@ class Skill(unittest.TestCase):
         self.assertTrue(text.startswith("---\n"))
         front = text[4:text.index("\n---\n", 4)]
         fields = dict(line.split(": ", 1) for line in front.split("\n"))
-        self.assertEqual(sorted(fields), ["description", "name"])
+        self.assertEqual(sorted(fields), ["description", "license", "name"])
+        self.assertEqual(fields["license"], "MIT")
         self.assertRegex(fields["name"], r"^[a-z0-9]+(-[a-z0-9]+)*$")
         self.assertLessEqual(len(fields["name"]), 64)
         self.assertEqual(fields["name"], "refactor-pass")
         self.assertTrue(fields["description"].strip())
         self.assertLessEqual(len(fields["description"]), 1024)
         self.assertNotRegex(fields["description"], r"[<>]")
+
+    def test_each_script_names_its_licence(self):
+        copyright_line = next(line for line in read(os.path.join(ROOT, "LICENSE")).split("\n") if "Copyright" in line)
+        notice = "# %s. MIT License: https://github.com/armandkaufmann/refactor-pass" % copyright_line
+        for name in sorted(os.listdir(support.SCRIPTS)):
+            if name.endswith(".py"):
+                with self.subTest(script=name):
+                    head = read(os.path.join(support.SCRIPTS, name)).split("\n")[:2]
+                    self.assertIn(notice, head)
 
     def test_links_and_anchors(self):
         for path in markdown_files():

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Armand Kaufmann. MIT License: https://github.com/armandkaufmann/refactor-pass
 """How long a codebase's files and functions are, against the codebase itself.
 
 For each language in the scope, the 70th, 80th and 90th percentiles of file

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Armand Kaufmann. MIT License: https://github.com/armandkaufmann/refactor-pass
 """Where a repo's changes keep landing: a heatmap from git history.
 
 For every file still in the repo at HEAD and inside the scope, over a window

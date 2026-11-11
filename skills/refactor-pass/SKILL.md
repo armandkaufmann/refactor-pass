@@ -1,6 +1,7 @@
 ---
 name: refactor-pass
 description: Find what in a git repo needs refactoring, and what doesn't, the way developers used to feel it while coding by hand. It measures where changes keep landing (a heatmap of git history), what makes those files hard to change (code smells, each with its playbook of named refactorings) and what the next change would cost, then ranks refactors on a checklist worked through one item at a time. Use it whenever the user asks for a refactor pass; asks about tech debt, code health, hot spots or cleaning up; asks for refactor opportunities, or code that's cleaner, more maintainable, scalable or SOLID; asks what the worst part of the codebase is; says "we've made a lot of changes, anything to refactor?" or "before we start on the next feature, anything to fix first?"; or asks about one area ("should we refactor X?", "is this class doing too much?"). Use it even when they don't mention smells or churn. Also use it to carry on with a checklist this skill made ("what's next on the list", "start R4").
+license: MIT
 ---
 
 # Refactor pass

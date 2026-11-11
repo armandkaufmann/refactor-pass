@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Armand Kaufmann. MIT License: https://github.com/armandkaufmann/refactor-pass
 """Which of a repo's files a refactor pass counts, shared by heatmap.py and measure.py.
 
 The scope (folders or globs), the files never worth a refactor, copies of
