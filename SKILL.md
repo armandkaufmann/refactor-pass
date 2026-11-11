@@ -155,7 +155,11 @@ python3 <this skill's directory>/scripts/heatmap.py -C <repo> <scope ...>
 - **Bugs you notice** go on the list as F items, not fixed now. A bug not
   yet reproduced is a suspicion: title it as one ("Check: edits skip the
   weekend rule"), with the evidence in its note. Its first step is a
-  failing test; if none fails, it's skipped, with what you found.
+  failing test; if none fails, it's skipped, with what you found. A
+  behaviour you reproduced that may be intended is the user's call: an F
+  item, `waiting`, titled by what happens ("Refunds keep the fee"), with
+  the question in its note; it's fixed if they say it's a bug, and skipped
+  with their answer if not.
 
 ## 3. How much: the walkthrough
 
@@ -165,9 +169,10 @@ convincing.
 1. Find the next changes. A planned change beats an inferred one, so take
    them first from what the user said is coming ("before we start on chunk
    7"), then from the project's plan or roadmap, if it has one, then from
-   the commit messages: the kinds of change that come up most often ("add a
-   new report type", "add a setting", "add a screen"). Take the two or three
-   commonest kinds, not just one.
+   what the code announces (a deprecation notice, a TODO that names a
+   version), then from the commit messages: the kinds of change that come
+   up most often ("add a new report type", "add a setting", "add a
+   screen"). Take the two or three commonest kinds, not just one.
 2. For each kind, take the latest real commit of it and list what it
    touched (`git show --stat`). If it's older than the window, use it all
    the same and give its date; the walkthrough, on today's code, shows what
@@ -200,8 +205,10 @@ excuse, and what the walkthrough says is cheap.
 ## 5. Rank
 
 Give every item a stable ID, because the user will name items by it ("start
-R4"), possibly in a later session. The names in brackets are the item's
-fields on the checklist (step 6); F, L and D items say theirs in a `note`.
+R4"), possibly in a later session. IDs are names, not ranks: a carried-over
+item keeps its own, so a new R4 can come before R3, and the page lists items
+in the order you write them. The names in brackets are the item's fields on
+the checklist (step 6); F, L and D items say theirs in a `note`.
 
 - **R1, R2…** Refactors, in the suggested order. For each:
   - a title naming the missing idea, as an outcome ("Name the states of a
@@ -225,7 +232,9 @@ work: the heatmap and the walkthrough are the evidence. The smells'
 priorities say which kinds tend to matter. Long and complex code, and
 change spread across files, matter most. Coupling smells such as Feature
 Envy and Middle Man matter least, and are
-[fixed in passing](references/smells.md#fix-in-passing).
+[fixed in passing](references/smells.md#fix-in-passing). A healthy codebase
+gets a short list: one refactor, or none, is a result, and "nothing worth
+refactoring now" is a finding to report as plainly as any other.
 
 Order the list so that:
 - blockers come first: tests tied to internals that would make every later
@@ -247,13 +256,14 @@ nothing else, and says so. You write the `pass` block below it, whose
 `project`, `started`, `base` and `updated` are already filled in:
 
 - `summary`: the overall state in two or three sentences;
-- `items`: every item, with step 5's fields, a `status` (`todo`, `doing`,
-  `waiting` on the user, `done`, or `skipped` with the reason in its
-  outcome), and `commits` and `outcome`, empty for a new item; a carried-over
-  item keeps its `from`. Each item starts with its ID and status on one
-  line, `{"id": "R1", "status": "todo",`, with its other fields after, as
-  the comment above the blocks shows in full; not as a JSON pretty-printer
-  lays it out, since step 7's status updates edit that one line;
+- `items`: every item, in the suggested order, with step 5's fields, a
+  `status` (`todo`, `doing`, `waiting` on the user, `done`, or `skipped`
+  with the reason in its outcome), and `commits` and `outcome`, empty for a
+  new item; a carried-over item keeps its `from`. An item's first line
+  holds its ID and status, `{"id": "R1", "status": "todo",` and its title;
+  its other fields go on the lines after, as the comment above the blocks
+  shows. Not the whole item on one line, nor a JSON pretty-printer's
+  layout: step 7's status updates edit that first line;
 - `left_alone`: each with `what` and `why`;
 - `checks`: the project's checks, from its instructions, or what you'll
   check by hand if it has none;
@@ -283,7 +293,8 @@ Then reply with:
 
 - after an earlier pass, how its finished items' predictions held;
 - two or three sentences on the overall state, good parts included;
-- the top three to five hot spots as a small table (file, lines, commits);
+- the top three to five hot spots as a small table (file, lines as the
+  heatmap's `size` gives them, commits);
 - the R items as a numbered list: title, smells, size, risk, and the next
   change's cost today and after;
 - the F and D items in brief;

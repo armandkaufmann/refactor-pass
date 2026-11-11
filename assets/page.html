@@ -596,10 +596,12 @@ document.addEventListener("DOMContentLoaded", () => {
      refresh; leave it alone. You write the pass block, as SKILL.md steps 5 to 7
      say, and run scripts/check_page.py on this file after each edit.
 
-     Start each item with its id and status on one line, exactly as below,
-     and its other fields after them, so a status update is a one-line edit;
-     a JSON pretty-printer's layout won't do. Rn and Fn stand for real IDs,
-     such as R1 and F1:
+     Start each item on a line of its own with its id, status and title,
+     exactly as below, and put its other fields on the lines after it, so a
+     status update is a one-line edit: neither the whole item on one line
+     nor a JSON pretty-printer's layout. Write the items in the suggested
+     order, which is the order this page lists them in; an ID is a name, not
+     a rank. Rn and Fn stand for real IDs, such as R1 and F1:
        {"id": "Rn", "status": "todo", "title": "Name the states of a checkout",
         "eases": "adding a payment method",
         "smells": ["Hidden State Machine: 6 flags, 9 places set them (`checkout.py:40`)"],
@@ -609,7 +611,9 @@ document.addEventListener("DOMContentLoaded", () => {
         "size": "M", "risk": "Medium",
         "verify": "`make test`; the checkout snapshots",
         "commits": [], "outcome": ""}
-       {"id": "Fn", "status": "todo", "title": "…", "note": "…", "commits": [], "outcome": ""}
+       {"id": "Fn", "status": "todo", "title": "…",
+        "note": "…",
+        "commits": [], "outcome": ""}
      L and D items have the same fields as F. An item carried over from an
      earlier checklist adds "from": "2026-11-03", the date it first appeared.
      After an earlier pass, "earlier" says what came of its refactors:

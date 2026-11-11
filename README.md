@@ -76,10 +76,11 @@ With any other agent, clone it anywhere and ask the agent to read
 `SKILL.md` and follow it ("Read ~/refactor-pass/SKILL.md and do a refactor
 pass"); point it there again when you carry on in a new session.
 
-It needs git (2.31 or later) and Python 3.7 or later, with the standard
-library only. The scripts were tested with Python 3.9 and 3.14 on macOS;
-they're written to work on Windows too, where the command may be `python`
-or `py` rather than `python3`, but haven't been tested there.
+It needs git (2.15 or later, for `git rev-parse --is-shallow-repository`)
+and Python 3.7 or later, with the standard library only. The scripts were
+tested with Python 3.9 and 3.14 on macOS; they're written to work on
+Windows too, where the command may be `python` or `py` rather than
+`python3`, but haven't been tested there.
 
 ## Use
 
