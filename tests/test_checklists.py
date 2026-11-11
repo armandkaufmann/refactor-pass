@@ -103,8 +103,9 @@ class Pages(unittest.TestCase):
         page = os.path.join(repo.path, FOLDER, "2026-01-20.html")
         made = support.run("heatmap.py", "-C", repo.path, "--page", relative)
         self.assertEqual(made.code, 0, made)
-        self.assertTrue(made.out.startswith("Made %s, with the heatmap. Wrote a .gitignore beside it, so git leaves "
-                                            "the checklists out of commits.\n\n" % page), made.out)
+        self.assertTrue(support.slashes(made.out).startswith(support.slashes(
+            "Made %s, with the heatmap. Wrote a .gitignore beside it, so git leaves the checklists out of commits.\n\n"
+            % page)), made.out)
         self.assertEqual(read(os.path.join(repo.path, FOLDER, ".gitignore")),
                          "# Written by the refactor-pass skill: keeps its checklists out of commits.\n*\n")
         text = read(page)
@@ -225,21 +226,25 @@ class Worktrees(unittest.TestCase):
         page = os.path.join(main_folder, "2026-01-21.html")
         self.assertTrue(os.path.exists(page))
         self.assertFalse(os.path.exists(os.path.join(tree, FOLDER)))
-        self.assertIn("Made %s, with the heatmap." % page, result.out)
-        self.assertIn("This is a linked worktree, so a relative --page path is written in the main checkout's %s, "
-                      "which outlives it." % main_folder, result.out)
+        out = support.slashes(result.out)
+        self.assertIn(support.slashes("Made %s, with the heatmap." % page), out)
+        self.assertIn(support.slashes("This is a linked worktree, so a relative --page path is written in the main "
+                                      "checkout's %s, which outlives it." % main_folder), out)
 
         # A checklist kept in the worktree is read from the main checkout too.
         support.write_text(os.path.join(tree, FOLDER, "2026-01-22.html"), support.page_with(checklist(
             [refactor("R1", "done", [repo.short(marks[3])], "Done.")], started="2026-01-22")))
         result = support.run("heatmap.py", "-C", repo.path)
         self.assertIn("; left out: 1 recorded on refactor checklists\n", result.out)
-        self.assertIn("The checklists in %s are read too." % os.path.join(tree, FOLDER), result.out)
+        self.assertIn(support.slashes("The checklists in %s are read too." % os.path.join(tree, FOLDER)),
+                      support.slashes(result.out))
         listed = support.run("heatmap.py", "-C", repo.path, "--checklists")
-        self.assertIn("  %s: started 2026-01-22" % os.path.join(tree, FOLDER, "2026-01-22.html"), listed.out)
+        self.assertIn(support.slashes("  %s: started 2026-01-22" % os.path.join(tree, FOLDER, "2026-01-22.html")),
+                      support.slashes(listed.out))
         self.assertIn("  %s: started 2026-01-21" % os.path.join(FOLDER, "2026-01-21.html"), listed.out)
         from_tree = support.run("heatmap.py", "-C", tree, "--checklists")
-        self.assertIn("The newest is %s." % os.path.join(tree, FOLDER, "2026-01-22.html"), from_tree.out)
+        self.assertIn(support.slashes("The newest is %s." % os.path.join(tree, FOLDER, "2026-01-22.html")),
+                      support.slashes(from_tree.out))
 
 
 SKILL_FILES = ["SKILL.md", "scripts/heatmap.py", "scripts/scoping.py", "scripts/measure.py", "references/smells.md",

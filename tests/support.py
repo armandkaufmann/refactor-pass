@@ -349,6 +349,12 @@ def write_text(path, text):
     return path
 
 
+def slashes(text):
+    """Paths in text with forward slashes on Windows, where git writes a repo's top that way and Python
+    joins paths with backslashes; text as it is elsewhere."""
+    return text.replace("\\", "/") if WINDOWS else text
+
+
 def heatmap_rows(out):
     """The heatmap's table, from its output: per file, its columns as a dict."""
     rows, table = {}, False

@@ -218,7 +218,8 @@ class Scopes(unittest.TestCase):
         other = support.new_folder("elsewhere")
         result = support.run("heatmap.py", "-C", self.repo.path, other)
         self.assertEqual(result.code, 1, result)
-        self.assertIn("the scope %s is outside the repo, %s." % (other, self.repo.path), result.err)
+        self.assertIn(support.slashes("the scope %s is outside the repo, %s." % (other, self.repo.path)),
+                      support.slashes(result.err))
 
     def test_measure_reads_scopes_the_same_way(self):
         result = support.run("measure.py", "-C", os.path.join(self.repo.path, "src"), "big.py")
