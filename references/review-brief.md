@@ -45,9 +45,13 @@ nearly every change edits, or two files that always change together, is
 where the next change will hurt. Find out why changes keep landing here.
 
 **The size of the codebase.** <measure.py's percentiles for this language:
-file and function length at the 70th, 80th and 90th.> Call something big
-against these, not against a rule from a book. Lengths there are code
-lines, without blank and comment-only lines.
+file and function length at the 70th, 80th and 90th, and any note that
+they lean on one file.> Call something big when it reaches the 80th and is
+past the floor, over 45 code lines for a function and 220 for a file;
+worth a closer look at the 70th. measure.py's bands apply that rule. Where
+the percentiles lean on one file, use the reference points in smells.md's
+Measuring section too. Lengths are code lines, without blank and
+comment-only lines.
 
 **Your scope:** <the files or directories>.
 

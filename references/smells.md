@@ -99,11 +99,21 @@ priority below.
 Judge sizes against the codebase, within one language, not against a rule
 from a book. Metric distributions differ a lot between languages and
 projects, and they have long tails, so some code will always be big. The
-established method (Alves et al.) takes the codebase's own upper percentiles:
-the 70th, 80th and 90th, weighted by lines of code. So: find the codebase's
-90th percentile for the measure (tests left out), call something big when
-it's past that, and keep an absolute floor so a codebase of tiny functions
-doesn't flag a 25-line one.
+established method (Alves et al.) derives thresholds from upper percentiles
+of a benchmark's code, weighted by lines: the 70th, 80th and 90th, which
+mark bands of moderate, high and very high risk. Here the codebase is its
+own benchmark. So: find its percentiles for the measure (tests left out),
+and call something big when it reaches the 80th, very big at the 90th, and
+worth a closer look at the 70th. Keep an absolute floor too, the "Look
+closer" column below, so a codebase of tiny functions doesn't flag a
+25-line one.
+
+Don't make the 90th the only line. Weighted by lines, the code past it is a
+tenth of the whole, so in a small codebase that's a file or two, and the
+next biggest can sit just under it. For the same reason, the file a
+percentile falls in reaches it, since some of its lines are past it. Where
+one file holds a tenth of a language's lines it's its own 90th, and the
+reference points below are the better guide.
 
 Reference points, mostly from Java benchmarks, for a floor or a small
 codebase:
@@ -139,7 +149,8 @@ Give it the heatmap's scope; it sets test files aside as the heatmap does,
 so they stay out of the percentiles. It gives each language's 70th, 80th
 and 90th percentiles of file and function length, weighted by lines as
 Alves et al. do, then each file's code lines (blank and comment-only lines
-left out), functions, longest function and deepest nesting. Nesting is
+left out) and band, functions, longest function and deepest nesting. The
+bands apply the rule above, floor included. Nesting is
 measured by indentation, which tracks the classical complexity metrics
 closely (Hindle et al.) and is free in any language. `--show` lists one
 file's functions. It finds functions by each language's keyword or shape, so it
@@ -173,7 +184,7 @@ and you read it before saying anything.
   branch. A fix in one branch broke another. You scrolled up to remember what
   a variable meant by now.
 - **Count:** length, branches, deepest nesting and variables, against the
-  codebase's 90th percentile (see [Measuring](#measuring)). Also: blocks with
+  codebase's bands (see [Measuring](#measuring)). Also: blocks with
   a comment saying what they do, loops doing two things, and how often
   `git log -L` shows the function changing.
 - **Not a smell when:** it reads top to bottom. "The key here is not function

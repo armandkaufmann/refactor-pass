@@ -30,7 +30,9 @@ skill's catalogue of smells, and in its scripts.
   (ICSM 2010): https://doi.org/10.1109/ICSM.2010.5609747. Its table IV
   gives the thresholds quoted: unit size 30, 44 and 74 lines and McCabe 6,
   8 and 14 at the 70th, 80th and 90th percentiles; unit interfacing 2, 3
-  and 4 parameters at the 80th, 90th and 95th.
+  and 4 parameters at the 80th, 90th and 95th. Its section IV uses the
+  three percentiles as bands of risk: low up to the 70th, moderate to the
+  80th, high to the 90th, and very high past it.
 - Oliveira, Valente & Lima, "Extracting Relative Thresholds for Source Code
   Metrics" (CSMR-WCRE 2014).
 - Hindle, Godfrey & Holt, "Reading Beside the Lines: Indentation as a Proxy

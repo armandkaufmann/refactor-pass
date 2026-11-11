@@ -4,20 +4,30 @@
 For each language in the scope, the 70th, 80th and 90th percentiles of file
 length and function length, weighted by lines as Alves et al. do it: the
 90th is the length that 90% of the code is in files (or functions) no longer
-than. Then, per file, longest first:
+than. Alves et al. use the three as bands of rising risk, and so does this:
+a file or function is in the 70th, 80th or 90th band when it's at least as
+long as that percentile and past the floor, over 220 code lines for a file
+and 45 for a function (the catalogue's reference points, in its Measuring
+section), so that a codebase of small files flags none of them. The 80th
+and 90th bands are big; the 70th is worth a closer look. The file or
+function a percentile falls in is in its band, since part of its lines are
+past it; in a small codebase that's often the biggest few. Then, per file,
+longest first:
 
   lines     its code lines: blank lines and lines that are only a comment
             are left out
+  band      its band among the language's files, or - below the 70th
   funcs     the functions found in it
-  longest   its longest function, in code lines, with its name and line
-  >90th     how many of its functions are longer than the language's 90th
+  longest   its longest function, in code lines; its name and line follow
+            the file's path
+  long      how many of its functions are in the 80th or 90th band
   deepest   its deepest nesting inside a function, by indentation: 1 is a
             block inside the function's body, such as an if, and 2 a block
             inside that. Indentation tracks the classical complexity
             metrics closely (Hindle et al., 2008)
 
 --show FILE lists that file's functions instead, with each one's line,
-length and deepest nesting.
+length, deepest nesting and band.
 
 Functions are found by each language's definition keyword (def, func, fn,
 fun, function, and Swift's init, deinit and subscript) or, for C, C++, Java
@@ -38,8 +48,9 @@ It points at code to read; it doesn't judge it. What it gets wrong:
     as code or not, depending on how it starts;
   - nesting by indentation counts a continuation line (a call or literal
     split over lines) as deeper, except inside brackets left open;
-  - in a small codebase one long file or function can be its own 90th; the
-    output says when.
+  - in a small codebase one long file or function can hold a tenth of the
+    lines and so be its own 90th; the output says when, and then the
+    catalogue's reference points are a better guide than the bands.
 
 Usage:
   measure.py [options] [SCOPE ...]
@@ -111,6 +122,10 @@ LANGUAGES = [
 ]
 BY_EXTENSION = dict((ext, lang) for lang in LANGUAGES for ext in lang[1].split())
 OPEN, CLOSE = "([{", ")]}"
+# The floors, in code lines: the "Look closer" reference points in the catalogue's Measuring section
+# (smells.md). Nothing at or below them is in a band, however the codebase compares.
+FLOOR = {"file": 220, "function": 45}
+PERCENTS = (70, 80, 90)
 
 
 def skeleton(lines, comments, quotes):
@@ -279,7 +294,20 @@ def functions(path, text):
     return sum(counted), found, name
 
 
-def weighted(lengths, percents=(70, 80, 90)):
+def band(length, cuts, kind):
+    """The highest of the 70th, 80th and 90th percentiles (cuts) that length reaches, past kind's floor,
+    or None. The thing a percentile falls in reaches it, since some of its lines are past it."""
+    if length <= FLOOR[kind]:
+        return None
+    reached = [percent for percent, cut in zip(PERCENTS, cuts) if cut and length >= cut]
+    return reached[-1] if reached else None
+
+
+def band_name(percent):
+    return "%dth" % percent if percent else "-"
+
+
+def weighted(lengths, percents=PERCENTS):
     """The lengths that each percent of all the lines are in things no longer than (Alves et al.)."""
     lengths = sorted(lengths)
     total = sum(lengths)
@@ -351,20 +379,24 @@ def main():
         files, funcs = by_language[language]
         files.append((lines, path))
         funcs.extend((f[3], "%s:%d %s" % (path, f[1], f[0])) for f in found)
-    nineties = dict((language, weighted([n for n, _ in funcs])[2]) for language, (_, funcs) in by_language.items()
-                    if funcs)
+    # Per language, the percentiles of its files' lengths and its functions'.
+    cuts = dict((language, (weighted([n for n, _ in files]), weighted([n for n, _ in funcs])))
+                for language, (files, funcs) in by_language.items())
 
     def lopsided(language, kind, things):
         """A note when one file or function holds a tenth of the lines, and so is its own 90th."""
         total = sum(n for n, _ in things)
         if len(things) > 1 and max(things)[0] * 10 >= total:
-            return ("%s: %s holds %d%% of the %s lines, so the percentiles lean on it; use the reference points "
-                    "in the catalogue's Measuring section too." % (language, max(things)[1],
-                                                                  100 * max(things)[0] // total, kind))
+            return ("%s: %s holds %d%% of the %s lines, so the percentiles lean on it; judge by the reference "
+                    "points in the catalogue's Measuring section too." % (language, max(things)[1],
+                                                                         100 * max(things)[0] // total, kind))
 
     print("%s, scope: %s" % (os.path.basename(repo), " ".join(args.scope) or "(everything)"))
     print("Lines are code lines: blank lines and lines that are only a comment are left out.")
     print("Weighted by lines: 90% of the code is in files, or functions, no longer than the 90th.")
+    print("Bands: a file or function at least as long as a percentile, and over the floor of %d lines for a file "
+          "and %d for a function, is in its band. The 80th and 90th are big; the 70th, worth a closer look."
+          % (FLOOR["file"], FLOOR["function"]))
     if not args.keep_tests:
         print("Test files: %s." % ("%d set aside from the percentiles and the table" % len(tests)
                                    if tests else "none in the scope"))
@@ -375,15 +407,22 @@ def main():
     notes = []
     for language, (files, funcs) in sorted(by_language.items(), key=lambda kv: -sum(n for n, _ in kv[1][0])):
         print("%-11s %6d %6d   %5d %5d %5d   %5d %5d %5d" % tuple(
-            [language, len(files), len(funcs)] + weighted([n for n, _ in files]) + weighted([n for n, _ in funcs])))
+            [language, len(files), len(funcs)] + cuts[language][0] + cuts[language][1]))
         notes += [lopsided(language, "file", files), lopsided(language, "function", funcs)]
     for note in notes:
         if note:
             print(note)
     if no_rule:
-        print("Lines only, with no rule to find functions: %d files (%s)." % (
-            sum(no_rule.values()), ", ".join("%s %d" % kv for kv in no_rule.most_common(8))))
+        print("Lines only, with no rule to find functions: %d file%s (%s)." % (
+            sum(no_rule.values()), "" if sum(no_rule.values()) == 1 else "s",
+            ", ".join("%s %d" % kv for kv in no_rule.most_common(8))))
     print()
+
+    def file_band(language, lines):
+        return band(lines, cuts[language][0], "file") if language in cuts else None
+
+    def function_band(language, length):
+        return band(length, cuts[language][1], "function") if language in cuts else None
 
     if shows:
         for path in shows:
@@ -394,27 +433,29 @@ def main():
             if language is None:
                 print("%s: %d code lines; no rule to find functions in this language.\n" % (path, lines))
                 continue
-            print("%s: %s, %d code lines, %d functions (%s)" % (
-                path, language, lines, len(found),
-                "the %s 90th: %d lines a function" % (language, nineties[language]) if language in nineties
-                else "no %s function in the scope, so no 90th to compare with" % language))
-            print("%6s %6s %8s  function" % ("line", "lines", "deepest"))
+            print("%s: %s, %d code lines, band %s, %d functions (%s)" % (
+                path, language, lines, band_name(file_band(language, lines)), len(found),
+                "%s functions: 70th %d, 80th %d, 90th %d lines" % ((language,) + tuple(cuts[language][1]))
+                if language in cuts else "no %s file in the scope, so no percentiles to compare with" % language))
+            print("%6s %6s %8s %5s  function" % ("line", "lines", "deepest", "band"))
             for name, first, last, length, deepest in found:
-                past = "   past the 90th" if language in nineties and length > nineties[language] else ""
-                print("%6d %6d %8d  %s%s" % (first, length, deepest, name, past))
+                print("%6d %6d %8d %5s  %s" % (first, length, deepest,
+                                               band_name(function_band(language, length)), name))
             print()
         return
 
     rows = sorted(((p,) + m for p, m in measured.items() if p in in_paths), key=lambda r: (-r[1], r[0]))
-    print("%6s %6s %-24s %6s %8s  file" % ("lines", "funcs", "longest", ">90th", "deepest"))
+    print("%6s %5s %6s %8s %5s %8s  file (its longest function)" % ("lines", "band", "funcs", "longest", "long",
+                                                                    "deepest"))
     for path, lines, found, language in rows[:args.top]:
         if language is None:
-            print("%6d %6s %-24s %6s %8s  %s (lines only)" % (lines, "-", "-", "-", "-", path))
+            print("%6d %5s %6s %8s %5s %8s  %s (lines only)" % (lines, "-", "-", "-", "-", "-", path))
             continue
         longest = max(found, key=lambda f: f[3]) if found else None
-        print("%6d %6d %-24s %6d %8d  %s" % (
-            lines, len(found), "%d %s:%d" % (longest[3], longest[0][:14], longest[1]) if longest else "-",
-            sum(1 for f in found if f[3] > nineties[language]), max([0] + [f[4] for f in found]), path))
+        print("%6d %5s %6d %8s %5d %8d  %s%s" % (
+            lines, band_name(file_band(language, lines)), len(found), longest[3] if longest else "-",
+            sum(1 for f in found if (function_band(language, f[3]) or 0) >= 80), max([0] + [f[4] for f in found]),
+            path, " (%s:%d)" % (longest[0], longest[1]) if longest else ""))
     if len(rows) > args.top:
         print("  ... %d more files" % (len(rows) - args.top))
 
