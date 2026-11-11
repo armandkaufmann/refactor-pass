@@ -255,6 +255,11 @@ class Install(unittest.TestCase):
         self.assertIn("curl -fsSL %s | python3 -" % url, self.install)
         self.assertIn("irm %s | python -" % url, self.install)
 
+    def test_the_installer_is_ascii(self):
+        # Piped, it passes through the shell as text: Windows PowerShell 5.1 pipes ASCII to a program by default.
+        with open(os.path.join(ROOT, "install.py"), "rb") as f:
+            f.read().decode("ascii")
+
     def test_the_table_of_agents_is_the_installers(self):
         import runpy
         agents = runpy.run_path(os.path.join(ROOT, "install.py"))["AGENTS"]
