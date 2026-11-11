@@ -101,7 +101,9 @@ MODIFIERS = r"(?:(?:public|private|protected|internal|static|final|abstract|sync
 NOT_A_TYPE = r"(?!(?:return|if|for|foreach|while|switch|catch|else|do|new|throw|case|delete|await|using|lock|goto|" \
              r"sizeof|typeof|nameof|yield|import|package|namespace)\b)"
 # A type is words and the punctuation of generics, arrays and pointers, or a tuple such as C#'s (int, string).
-C_HEAD = (r"^\s*" + NOT_A_TYPE + MODIFIERS + r"(?:(?:[\w<>\[\],.?*&:]+|\([\w<>\[\],.?\s]+\))\s+)+"
+# A line that starts with a : (not C++'s ::) or a , goes on from the one before, as a constructor's initializers
+# do, or C#'s : base(...).
+C_HEAD = (r"^\s*(?!:(?!:)|,)" + NOT_A_TYPE + MODIFIERS + r"(?:(?:[\w<>\[\],.?*&:]+|\([\w<>\[\],.?\s]+\))\s+)+"
           r"[*&]*([A-Za-z_~][\w~]*(?:::~?\w+)*)\s*\(")
 C_SHAPE = C_HEAD + r"[^;]*$"
 # C# also writes a method's body as an expression after =>, on its own line with its ;.
