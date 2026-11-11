@@ -97,21 +97,52 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import scoping  # noqa: E402
 
 MODIFIERS = r"(?:(?:public|private|protected|internal|static|final|abstract|synchronized|native|virtual|override|" \
-            r"sealed|async|extern|inline|unsafe|partial|new|const|constexpr|explicit|friend|default|open)\s+)*"
+            r"sealed|async|extern|inline|unsafe|partial|new|const|constexpr|explicit|friend|default|open|" \
+            r"extern\s+\"s*\")\s+)*"
 NOT_A_TYPE = r"(?!(?:return|if|for|foreach|while|switch|catch|else|do|new|throw|case|delete|await|using|lock|goto|" \
              r"sizeof|typeof|nameof|yield|import|package|namespace)\b)"
+# Nor is a name: a keyword a statement opens with before its (, as in a labelled one (again: switch (c) {), but
+# not a word C# alone keeps, as lock, a method's name elsewhere.
+NOT_A_NAME = r"(?!(?:return|if|for|foreach|while|switch|catch|else|do|new|throw|case|delete|await|goto|sizeof|" \
+             r"typeof)\b)"
 # A type is words and the punctuation of generics, arrays and pointers, or a tuple such as C#'s (int, string).
 # A line that starts with a : (not C++'s ::) or a , goes on from the one before, as a constructor's initializers
 # do, or C#'s : base(...).
-C_HEAD = (r"^\s*(?!:(?!:)|,)" + NOT_A_TYPE + MODIFIERS + r"(?:(?:[\w<>\[\],.?*&:]+|\([\w<>\[\],.?\s]+\))\s+)+"
-          r"[*&]*([A-Za-z_~][\w~]*(?:::~?\w+)*)\s*\(")
-C_SHAPE = C_HEAD + r"[^;]*$"
+# The name isn't a keyword either, as in a labelled statement (again: switch (c) {), and doesn't follow class,
+# record or the like, as C#'s class Name(int id) and Java's record Point(int x) do (C's struct x *f() can).
+# Each part of a name can take type arguments, as C#'s Get<T>( and C++'s SkipList<Key, Cmp>::Insert( do; and in
+# C# a part is an interface's, as in IDisposable.Dispose(.
+TYPE_ARGUMENTS = r"(?:<[^<>;(){}=]*(?:<[^<>;(){}=]*>[^<>;(){}=]*)*>)?"
+# Before it all, Java's annotations (@Test, @SuppressWarnings("x")) and C#'s attributes ([InlineData(1)]).
+ANNOTATIONS = r"(?:@[\w.]+(?:\((?:[^()]|\([^()]*\))*\))?\s+|\[(?:[^\[\]()]|\((?:[^()]|\([^()]*\))*\))*\]\s*)*"
+# C++'s template <...> before a definition on its line, whatever its parameters hold (= false, enable_if(...)).
+TEMPLATE = r"(?:template\s*<[^;{}]*?>\s*)?"
+C_NAME = r"[\w~]*" + TYPE_ARGUMENTS + r"(?:(?:::~?|\.)\w+" + TYPE_ARGUMENTS + r")*"
+C_HEAD = (r"^\s*(?!:(?!:)|,)" + TEMPLATE + ANNOTATIONS + NOT_A_TYPE + MODIFIERS +
+          r"(?:(?:[\w<>\[\],.?*&:]+|\([\w<>\[\],.?\s]+\))\s+)+"
+          r"[*&]*" + NOT_A_NAME + r"(?<!\bclass )(?<!\bstruct )(?<!\brecord )(?<!\binterface )(?<!\benum )"
+          r"(?<!\bunion )"
+          r"([A-Za-z_~]" + C_NAME + r")\s*\(")
+# After the name and its (: no ; before a body's {, which may hold the whole body, as in int f() { return 1; }.
+SIGNATURE_REST = r"[^;{]*(?:\{.*)?$"
+C_SHAPE = C_HEAD + SIGNATURE_REST
 # C# also writes a method's body as an expression after =>, on its own line with its ;.
 EXPRESSION_BODIED = r"|" + C_HEAD + r"[^;]*\)\s*=>"
 # Java and C# also write a constructor with no modifier, so with nothing before its name.
-CONSTRUCTOR = r"|^\s*([A-Z]\w*)\s*\([^;]*$"
+CONSTRUCTOR = r"|^\s*" + ANNOTATIONS + r"([A-Z]\w*)\s*\(" + SIGNATURE_REST
 # C and C++ also put the type on the line above, with the name at the margin.
-C_SHAPES = C_SHAPE + r"|^" + NOT_A_TYPE + r"([A-Za-z_][\w~]*(?:::~?\w+)*)\s*\([^;]*$"
+C_SHAPES = C_SHAPE + r"|^" + NOT_A_NAME + r"([A-Za-z_]" + C_NAME + r")\s*\(" + SIGNATURE_REST
+# C++ also writes an operator (bool operator==(...), operator int(), auto operator()(...)), whose name is
+# operator and what follows it, and a constructor or a destructor in its class with no type (Stats() {,
+# virtual ~Rep() {), whose name isn't in capitals, as a macro that annotates a signature is.
+CPP_SHAPES = (r"^\s*" + TEMPLATE + MODIFIERS + r"(?:(?:[\w<>\[\],.*&:]+)\s+)*[*&]*(?:\w+" + TYPE_ARGUMENTS + r"::)*"
+              r"(operator\s*(?:\(\)|[^\w\s(][^\s(]*|[A-Za-z_][\w\s:<>*&]*?))\s*\(" + SIGNATURE_REST + "|" +
+              C_SHAPES + r"|^\s*" + TEMPLATE + r"(?:(?:explicit|inline|constexpr|virtual)\s+)*" + NOT_A_TYPE +
+              r"(?![A-Z][A-Z0-9_]*\s*\()(~?[A-Za-z_]\w*)\s*\(" + SIGNATURE_REST)
+# A .h file is C's header or C++'s: C++'s when its code holds what C has none of, as a class, a namespace, a
+# template, an access label or std::.
+CPP_IN_HEADER = re.compile(r"^\s*(?:template\s*<|namespace(?:\s+[\w:]+)?\s*\{|(?:public|private|protected)\s*:|"
+                           r"class\s+\w)|\bstd::", re.M)
 
 # JavaScript and TypeScript: how a definition's line starts, up to the bracket that opens its parameters
 # (or its type parameters). What follows the parameters then says whether it's a function (js_function).
@@ -526,7 +557,7 @@ LANGUAGES = [
     ("Java", ".java", C_SHAPE + CONSTRUCTOR, "brackets", "// /*", "char"),
     ("C#", ".cs", C_SHAPE + CONSTRUCTOR + EXPRESSION_BODIED, "brackets", "// /*", "char"),
     ("C", ".c .h", C_SHAPES, "brackets", "// /*", "char"),
-    ("C++", ".cpp .cc .cxx .hpp .hh", C_SHAPES, "brackets", "// /*", "char"),
+    ("C++", ".cpp .cc .cxx .hpp .hh", CPP_SHAPES, "brackets", "// /*", "char"),
 ]
 BY_EXTENSION = dict((ext, lang) for lang in LANGUAGES for ext in lang[1].split())
 OPEN, CLOSE = "([{", ")]}"
@@ -962,12 +993,15 @@ SIGNATURE_NEXT = re.compile(r"\s*(?:[{:=,.?|&>)\]]|->|=>|(?:where|throws|rethrow
 SIGNATURE_MACRO = re.compile(r"\s*[A-Z][A-Z0-9_]{2,}\b")
 
 
-def body_by_brackets(code, inside, start, column=0):
+def body_by_brackets(code, inside, start, column=0, initialized=False):
     """The last line of a function's body, by matching brackets from code[start][column] on, where its
     definition starts or, if it's known, its body; None if no body follows, as for a declaration, or if
     its brackets never close. A block ends where its brace closes; an expression, such as an arrow
-    function's, at the end of a line outside brackets that it doesn't go on from (goes_on)."""
+    function's, at the end of a line outside brackets that it doesn't go on from (goes_on). With
+    initialized, as in C++, a constructor's initializers after its : can be braces, as in : size_{n} {,
+    which open right after a name or a >, unlike its body's."""
     depth = carried = 0
+    initializers = False  # Past a constructor's : in C++, so a { after a name is an initializer's.
     expression = False
     arrow = False  # An arrow ended the last line, so this one says which kind of body it is.
     signed = False  # A parameter list has closed, so a body or the rest of the signature comes next.
@@ -984,9 +1018,11 @@ def body_by_brackets(code, inside, start, column=0):
             scan = ""
         for j, c in enumerate(scan):
             if not expression and depth == 0:
-                if c == "{":  # A block: it ends where its brace closes.
-                    end = closes.get((i, j + offset))
+                if c == "{" and not (initializers and re.match(r"[\w>]", line[j - 1:j])):  # A block: it ends
+                    end = closes.get((i, j + offset))  # where its brace closes.
                     return end[0] if end else None
+                elif c == ":" and initialized and signed and ":" not in (line[j - 1:j], line[j + 1:j + 2]):
+                    initializers = True
                 elif line.startswith("=>", j):
                     rest = line[j + 2:].strip()
                     expression, arrow = bool(rest) and not rest.startswith("{"), not rest
@@ -1054,19 +1090,56 @@ def docstrings(code, inside, continued):
     return found
 
 
-def by_pattern(pattern):
+TYPE_ARGUMENTS_IN = re.compile(r"(?<=\w)" + TYPE_ARGUMENTS[3:-2])
+
+
+def by_pattern(pattern, listed=False):
     """A language's way of finding its definitions from a regular expression: the name is whichever
-    group matched, and the body is looked for from the start of the line."""
+    group matched, and the body is looked for from the start of the line. With listed, as in the C family,
+    a line after one that ends with a , or with a : after a ) goes on with a list, as a constructor's
+    initializers do (: cache_(...),  db_(nullptr),), so it holds no definition; one after public: may."""
     pattern = re.compile(pattern)
 
     def find(code, i):
         match = pattern.match(code[i])
         name = next((g for g in match.groups() if g), None) if match else None
-        return (name, (i, 0)) if name else None
+        if not name:
+            return None
+        if listed:
+            previous = next((code[k].rstrip() for k in range(i - 1, max(-1, i - 4), -1) if code[k].strip()), "")
+            before_colon = previous[:-1].rstrip() if previous.endswith(":") else None
+            if previous.endswith(",") or before_colon == "" or (before_colon or "").endswith(")"):
+                return None
+        before = code[i][:next(match.start(n) for n in range(1, len(match.groups()) + 1) if match.group(n))]
+        if before.count("[") > before.count("]"):  # Inside an attribute, as C#'s [assembly: Foo()].
+            return None
+        if re.match(r"\w", name) and not name.startswith("operator"):
+            name = TYPE_ARGUMENTS_IN.sub("", name)  # Get<T> is Get, SkipList<Key, Cmp>::Insert SkipList::Insert.
+        return name, (i, 0)
     return find
 
 
+def c_function(pattern):
+    """C's and C++'s way of finding definitions: by their shapes, and also a name alone at the margin whose
+    parameters open the next line, as dtoa.c writes them (jvp_strtod, then (struct ...) below)."""
+    find = by_pattern(pattern, listed=True)
+    alone = re.compile(r"^" + NOT_A_TYPE + r"([A-Za-z_]\w*)\s*$")
+
+    def find_c(code, i):
+        found = find(code, i)
+        name = alone.match(code[i]) if not found else None
+        if name:
+            following = next((k for k in range(i + 1, min(len(code), i + 3)) if code[k].strip()), None)
+            if following is not None and code[following].lstrip().startswith("("):
+                return name.group(1), (i, 0)
+        return found
+    return find_c
+
+
 FIND = dict((lang[0], lang[2] if callable(lang[2]) else by_pattern(lang[2])) for lang in LANGUAGES)
+FIND["C"], FIND["C++"] = c_function(C_SHAPES), c_function(CPP_SHAPES)
+FIND["Java"], FIND["C#"] = [by_pattern(dict((lang[0], lang[2]) for lang in LANGUAGES)[name], listed=True)
+                            for name in ("Java", "C#")]
 
 
 def functions(path, text):
@@ -1079,6 +1152,9 @@ def functions(path, text):
     else:
         code, inside = skeleton(lines, comments, language[5] if language else "", language and language[0] == "PHP",
                                 language and language[0])
+        if language and language[0] == "C" and path.lower().endswith(".h") and CPP_IN_HEADER.search("\n".join(code)):
+            language = BY_EXTENSION[".hpp"]
+            code, inside = skeleton(lines, comments, language[5], False, language[0])
     counted = [bool(c.strip()) for c in code]
     if not language:
         return sum(counted), None, None
@@ -1104,7 +1180,7 @@ def functions(path, text):
         if not defined:
             continue
         if ending == "brackets":
-            last = body_by_brackets(code, inside, *defined[1])
+            last = body_by_brackets(code, inside, *defined[1], initialized=name == "C++")
             if last is None:
                 continue
         else:
