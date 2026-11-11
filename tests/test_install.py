@@ -94,6 +94,17 @@ def install(*args, **options):
                home, temp)
 
 
+_installer = {}
+
+
+def installer():
+    """install.py's functions, loaded once in this process (its main doesn't run), to try its checks directly."""
+    if not _installer:
+        import runpy
+        _installer.update(runpy.run_path(INSTALLER, run_name="install"))
+    return _installer
+
+
 def home_with(*agents):
     """A home folder where these agents' own folders are, as if installed."""
     home = support.new_folder("home")
@@ -443,35 +454,75 @@ class Untrusted(unittest.TestCase):
         with open(os.path.join(copy, RECORD), "w", encoding="utf-8") as f:
             json.dump(entry, f)
 
+    def test_paths_records_sources_and_refs_it_wont_take(self):
+        # install.py's own checks, on more forms than the tests below run through the installer.
+        checks = installer()
+        for path in ("../victim.txt", "/victim.txt", "..\\victim.txt", "C:victim.txt", "a/../../victim.txt",
+                     "./SKILL.md", "a//b.md", "scripts/.git/config", "aux.md", "notes.md ", "notes\x01.md", ""):
+            with self.subTest(path=path):
+                self.assertIsNotNone(checks["path_problem"](path))
+                entry = {"skill": "refactor-pass", "record": 1, "source": "x", "files": {path: "0" * 64}}
+                self.assertIn("lists a file it can't have installed", checks["record_problem"](entry))
+        for path in ("SKILL.md", "scripts/heatmap.py", "references/smells.md", "a-b_c.d/e f.md"):
+            self.assertIsNone(checks["path_problem"](path), path)
+        good = {"skill": "refactor-pass", "record": 1, "source": "x", "ref": "v1.0.0", "version": "v1.0.0",
+                "commit": "a" * 40, "files": {"SKILL.md": "0" * 64}}
+        self.assertIsNone(checks["record_problem"](good))
+        for changes in ({"files": ["SKILL.md"]}, {"files": {}}, {"files": {"SKILL.md": 5}}, {"version": 5},
+                        {"files": {"SKILL.md": "0" * 63}}, {"version": "1.0"}, {"commit": "abc"}, {"source": 7},
+                        {"ref": "--upload-pack=x"}, {"skill": "other"}, {"record": "1"}):
+            with self.subTest(changes=changes):
+                self.assertIsNotNone(checks["record_problem"](dict(good, **changes)))
+        self.assertIsNotNone(checks["record_problem"](["not", "an", "object"]))
+        for source in ("--upload-pack=touch x;", "-u touch x", "ext::sh -c touch% x", "fd::0", "file:///etc",
+                       "ssh://-oProxyCommand=touch%20x/y", "http://example.com/x", "git@-oProxyCommand:x", ""):
+            with self.subTest(source=source):
+                self.assertRaises(checks["Failure"], checks["checked_source"], source)
+        for source in ("https://github.com/armandkaufmann/refactor-pass", "git@github.com:a/b.git",
+                       "ssh://git@github.com/a/b", "git://example.com/a/b", Sources.tagged()):
+            self.assertEqual(checks["checked_source"](source), source)
+        for ref in ("--upload-pack=x", "-x", "v1..0", "a b", "x.lock", "main/"):
+            self.assertRaises(checks["Failure"], checks["checked_ref"], ref)
+        for ref in ("v1.0.0", "main", "HEAD", "a" * 40, "release/v2"):
+            self.assertEqual(checks["checked_ref"](ref), ref)
+
     def test_a_record_naming_a_file_outside_the_copy(self):
+        # A refusal leaves the copy as it was, so one copy serves every case: each form against the command
+        # that deletes files, and one form against every command.
+        skills, copy = Refusals.installed(self)
+        victim = os.path.join(skills, "victim.txt")
+        with open(victim, "wb") as f:
+            f.write(b"keep me\n")
+        cases = [("../victim.txt", ["uninstall"]), ("../victim.txt", ["update", "--force"]),
+                 ("../victim.txt", ["check"])]
         for name in ("../victim.txt", "/victim.txt", "..\\victim.txt", "C:victim.txt", "a/../../victim.txt"):
-            with self.subTest(name=name):
-                skills, copy = Refusals.installed(self)
-                victim = os.path.join(skills, "victim.txt")
-                with open(victim, "wb") as f:
-                    f.write(b"keep me\n")
-                files = record(copy)["files"]
+            cases.append((name, ["uninstall", "--force"]))
+        installed = record(copy)["files"]
+        for name, command in cases:
+            with self.subTest(name=name, command=command):
+                files = dict(installed)
                 files[name] = hashlib.sha256(b"keep me\n").hexdigest()
                 self.write_record(copy, files=files)
                 before = tree(copy)
-                for command in (["uninstall"], ["uninstall", "--force"], ["update", "--force"], ["check"]):
-                    run = install(*(command + ["--dir", skills]))
-                    self.assertEqual(run.code, 1, run)
-                    self.assertQuietRefusal(run, "can't act on (it lists a file it can't have installed")
-                    self.assertEqual(read(victim), b"keep me\n")
-                    self.assertEqual(tree(copy), before)
+                run = install(*(command + ["--dir", skills]))
+                self.assertEqual(run.code, 1, run)
+                self.assertQuietRefusal(run, "can't act on (it lists a file it can't have installed")
+                self.assertEqual(read(victim), b"keep me\n")
+                self.assertEqual(tree(copy), before)
 
     def test_a_malformed_record_is_a_refusal(self):
+        skills, copy = Refusals.installed(self)
+        sound = read(os.path.join(copy, RECORD))
         for changes in ({"files": ["SKILL.md"]}, {"files": {}}, {"files": {"SKILL.md": 5}}, {"version": 5},
                         {"commit": "abc"}, {"source": 7}, {"ref": "--upload-pack=x"}, {"skill": "other"}):
             with self.subTest(changes=changes):
-                skills, copy = Refusals.installed(self)
+                with open(os.path.join(copy, RECORD), "wb") as f:  # One fault at a time, on the record it wrote.
+                    f.write(sound)
                 self.write_record(copy, **changes)
                 run = install("uninstall", "--dir", skills)
                 self.assertEqual(run.code, 1, run)
                 self.assertQuietRefusal(run, "this installer can't act on")
                 self.assertTrue(os.path.isfile(os.path.join(copy, "SKILL.md")))
-        skills, copy = Refusals.installed(self)
         with open(os.path.join(copy, RECORD), "wb") as f:
             f.write(b"{not json")
         self.assertQuietRefusal(install("check", "--dir", skills), "(it isn't JSON)")
