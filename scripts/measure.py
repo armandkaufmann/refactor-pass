@@ -546,14 +546,16 @@ LANGUAGES = [
     ("Go", ".go", r"^func\s+(?:\([^)]*\)\s*)?(\w+)", "brackets", "// /*", "char"),
     ("Rust", ".rs", r"^\s*(?:pub(?:\([\w:]+\))?\s+)?(?:(?:const|async|unsafe|extern\s+\"\w+\")\s+)*fn\s+(\w+)",
      "brackets", "// /*", "char"),
-    # Not a fun interface, which is an interface.
+    # After annotations (@Test) and modifiers, not a fun interface, which is an interface; maybe with a receiver
+    # (Map<K, V>.f) and a name in backquotes (`returns 200`).
     ("Kotlin", ".kt .kts", r"^\s*(?:(?:public|private|protected|internal|override|open|abstract|final|suspend|"
-     r"inline|operator|infix|tailrec|external)\s+)*fun\s+(?!interface\b)(?:<[^>]*>\s*)?(?:[\w.]+\.)?(\w+)",
-     "brackets", "// /*",
+     r"inline|operator|infix|tailrec|external|actual|expect)\s+|@[\w.:]+(?:\((?:[^()]|\([^()]*\))*\))?\s*)*"
+     r"fun\s+(?!interface\b)(?:<[^>]*>\s*)?(?:[\w.]+(?:<[^()=]*>)?\??\.)?(\w+|`[^`]+`)", "brackets", "// /*",
      "char"),
     ("Swift", ".swift", r"^\s*(?:(?:public|private|fileprivate|internal|open|static|class|override|final|mutating|"
      r"nonmutating|convenience|required|nonisolated|dynamic|@\w+(?:\([^()]*\))?)\s+)*"
-     r"(?:func\s+(\w+)|(init)[?!]?\s*[(<]|(deinit)\b|(subscript)\s*[(<])", "brackets", "// /*", ""),
+     r"(?:func\s+(\w+|`[^`]+`|[^\s\w(`]+(?=\s*[(<]))|(init)[?!]?\s*[(<]|(deinit)\b|(subscript)\s*[(<])",
+     "brackets", "// /*", ""),
     ("Java", ".java", C_SHAPE + CONSTRUCTOR, "brackets", "// /*", "char"),
     ("C#", ".cs", C_SHAPE + CONSTRUCTOR + EXPRESSION_BODIED, "brackets", "// /*", "char"),
     ("C", ".c .h", C_SHAPES, "brackets", "// /*", "char"),
@@ -1179,6 +1181,9 @@ def functions(path, text):
         defined = find(code, start) if not inside[start] else None
         if not defined:
             continue
+        if defined[0].startswith("`"):  # A name in backquotes, whose text the skeleton has as a string's.
+            written = re.search(r"\bfunc?\s+[^`]*(`[^`]+`)", lines[start])
+            defined = (written.group(1) if written else defined[0]), defined[1]
         if ending == "brackets":
             last = body_by_brackets(code, inside, *defined[1], initialized=name == "C++")
             if last is None:
