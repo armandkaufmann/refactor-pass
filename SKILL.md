@@ -268,9 +268,9 @@ nothing else, and says so. You write the `pass` block below it, whose
 
 After each edit, run `python3 <this skill's directory>/scripts/check_page.py
 <page>`, which catches a broken bracket, a misspelt field, a duplicate ID or
-an item that doesn't start on one line. If your environment can publish or
-preview HTML pages, publish the same file and give the link; otherwise give
-the path to open in a browser.
+an item whose first line isn't its ID and status, and warns of a field left
+empty. If your environment can publish or preview HTML pages, publish the
+same file and give the link; otherwise give the path to open in a browser.
 
 **Where it lives.** `.refactor-pass/` is at the repo's top, with a
 `.gitignore` the heatmap writes, so the folder is never committed and the

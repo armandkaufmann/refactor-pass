@@ -13,7 +13,9 @@ is S, M or L and its risk Low, Medium or High, as the page shows them.
 
 It prints a line per kind of item, then any problems: errors (the page or a
 later pass would go wrong) and warnings (something the skill asks for is
-missing, or more than one item in progress). It exits 1 on an error, and
+missing or left empty, such as a refactor's plan, an item's note or the
+whole pass block, or more than one item in progress). It exits 1 on an
+error, and
 says so plainly for a page that doesn't exist or is still the blank
 template, which heatmap.py --page fills in. Reads the page only.
 
@@ -105,6 +107,18 @@ def date(where, value, errors):
         errors.append("%s should be a date written as 2026-11-10, not %r." % (where, value))
 
 
+def filled(value):
+    """Whether a field holds something: text that isn't blank, a list with something in it, or an object (a
+    cost) with every value filled."""
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, list):
+        return any(filled(v) for v in value)
+    if isinstance(value, dict):
+        return bool(value) and all(filled(v) for v in value.values())
+    return value is not None
+
+
 def one_of(where, value, allowed, errors):
     if value not in allowed:
         errors.append("%s should be %s or %s, not %r." % (where, ", ".join(allowed[:-1]), allowed[-1], value))
@@ -117,7 +131,7 @@ def check_item(item, page, seen, errors, warnings, spread):
         return
     if ident in seen:
         errors.append("%s is used twice; an ID always means one item." % ident)
-    seen.add(ident)
+    seen[ident] = seen.get(ident, 0) + 1
     fields(ident, item, REFACTOR if ident[0] == "R" else OTHER, errors, optional=("from",))
     if "from" in item:
         date("%s's from" % ident, item["from"], errors)
@@ -138,6 +152,13 @@ def check_item(item, page, seen, errors, warnings, spread):
     if bad:
         errors.append("%s: commits are hashes of 7 to 40 hex digits, one per commit; not %s."
                       % (ident, ", ".join(repr(c) for c in bad)))
+    # Fields left empty: the page would show a blank where the skill asks for something.
+    wanted = ("title", "eases", "smells", "cost", "plan", "files", "verify") if ident[0] == "R" else ("title", "note")
+    empty = [key for key in wanted if key in item and not filled(item[key])]
+    if empty:
+        warnings.append("%s has %s empty: fill %s in, as SKILL.md step 5 says."
+                        % (ident, " and ".join([", ".join(empty[:-1]), empty[-1]] if len(empty) > 1 else empty),
+                           "it" if len(empty) == 1 else "them"))
     if status == "done" and not commits and ident[0] != "D":  # A decision can be done without a commit.
         warnings.append("%s is done with no commits, so a later pass will count its work in the heatmap." % ident)
     if status in ("done", "skipped") and not item.get("outcome"):
@@ -159,6 +180,11 @@ def check(text):
                 "from it, with the project, the dates and the heatmap filled in."], [], []
     if not fields("The pass block", data, PASS, errors):
         return errors, warnings, []
+    if not filled(data.get("summary")) and not data.get("items"):
+        warnings.append("The pass block isn't written yet: it has no summary and no items. SKILL.md step 6 says "
+                        "what goes in it.")
+    elif not filled(data.get("summary")):
+        warnings.append("The pass block has no summary: say the overall state in two or three sentences.")
     texts("The checks", data.get("checks"), errors)
     for key in ("started", "updated"):
         date("The pass block's " + key, data.get(key), errors)
@@ -173,12 +199,14 @@ def check(text):
             if fields("earlier.results[%d]" % i, result, RESULT, errors) and isinstance(result.get("cost"), dict):
                 fields("earlier.results[%d].cost" % i, result["cost"], COST, errors)
     items = data.get("items") if isinstance(data.get("items"), list) else []
-    seen, spread = set(), []
+    seen, spread = {}, []
     for i, item in enumerate(items):
         if isinstance(item, dict) and isinstance(item.get("id"), str):
             check_item(item, text, seen, errors, warnings, spread)
         else:
             errors.append("items[%d] should be an object with an id such as \"R1\"." % i)
+    # An ID used twice has its own error; its first line is then rightly found twice.
+    spread = [ident for ident in spread if seen.get(ident) == 1]
     if spread:
         status = next(i for i in items if isinstance(i, dict) and i.get("id") == spread[0]).get("status")
         errors.append('%s should%s start with its ID and status on one line, and nowhere else in the page, so a '
