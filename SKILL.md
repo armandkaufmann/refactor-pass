@@ -41,7 +41,8 @@ restraint half of the intuition, and the report shows it.
 **Two sizes of question.** A pass covers the whole repo: steps 1 to 7. A
 question about one area ("should we refactor X?") runs the same steps on
 that area only. It skips the checklist unless there are several items, and
-its answer can be "no". If `.refactor-pass/` already holds a checklist, read
+its answer can be "no". Either way, first run step 1's script with
+`--checklists` alone: if it lists a checklist from an earlier pass, read
 [After an earlier pass](#after-an-earlier-pass) first.
 
 ## 1. Where: the heatmap
@@ -216,22 +217,21 @@ Order the list so that:
 
 ## 6. Write the checklist and report
 
-Run step 1's command again with `--page .refactor-pass/<YYYY-MM-DD>.html`.
-It makes the checklist from [assets/page.html](assets/page.html) and writes
-the heatmap into its `heatmap` block; run again, it refreshes the heatmap
-and nothing else. In a linked worktree, `.refactor-pass/` is the main
-checkout's, which outlives the worktree, and the heatmap says where. If a
-sandbox won't let you write there, ask the user to allow it, or give
-`--page` an absolute path in the worktree. If the checklist will be deleted
-with a worktree or a cloud sandbox, tell the user. You write the `pass`
-block below it, whose `project`, `started`, `base` and `updated` are already
-filled in:
+Run step 1's command again with `--page .refactor-pass/<YYYY-MM-DD>.html`,
+by today's date. It makes the checklist from
+[assets/page.html](assets/page.html) and writes the heatmap into its
+`heatmap` block; run again, it refreshes the heatmap and nothing else. You
+write the `pass` block below it, whose `project`, `started`, `base` and
+`updated` are already filled in:
 
 - `summary`: the overall state in two or three sentences;
 - `items`: every item, with step 5's fields, a `status` (`todo`, `doing`,
   `waiting` on the user, `done`, or `skipped` with the reason in its
   outcome), and `commits` and `outcome`, empty for a new item; a carried-over
-  item keeps its `from`;
+  item keeps its `from`. Each item starts with its ID and status on one
+  line, `{"id": "R1", "status": "todo",`, with its other fields after, as
+  the comment above the blocks shows in full; not as a JSON pretty-printer
+  lays it out, since step 7's status updates edit that one line;
 - `left_alone`: each with `what` and `why`;
 - `checks`: the project's checks, from its instructions, or what you'll
   check by hand if it has none;
@@ -241,14 +241,18 @@ filled in:
   has come yet), and a `note`. Otherwise `null`;
 - `log`: each with a `date` and `text`, newest first.
 
-The comment above the blocks shows an item in full. After each edit, run
-`python3 <this skill's directory>/scripts/check_page.py <page>`, which
-catches a broken bracket, a misspelt field or a duplicate ID. Add
-`.refactor-pass/`, if it isn't there, to the file `git -C <repo> rev-parse
---path-format=absolute --git-path info/exclude` names, so the folder is never
-committed by accident but the project's `.gitignore` stays untouched. If
-your environment can publish or preview HTML pages, publish the same file
-and give the link; otherwise give the path to open in a browser.
+After each edit, run `python3 <this skill's directory>/scripts/check_page.py
+<page>`, which catches a broken bracket, a misspelt field, a duplicate ID or
+an item that doesn't start on one line. If your environment can publish or
+preview HTML pages, publish the same file and give the link; otherwise give
+the path to open in a browser.
+
+**Where it lives.** `.refactor-pass/` is at the repo's top, with a
+`.gitignore` the heatmap writes, so the folder is never committed and the
+project's own `.gitignore` stays untouched. In a linked worktree, a relative
+`--page` path is the main checkout's, which outlives the worktree. If a
+sandbox won't let you write there, the heatmap says what to do. If the
+checklist will go with a worktree or a cloud sandbox, tell the user.
 
 Then reply with:
 
@@ -267,8 +271,8 @@ Don't change any code until the user picks.
 ## 7. Working through the list
 
 - **One item at a time, when the user names it.** Read the newest checklist
-  in `.refactor-pass/` first, including when you're picking up in a new
-  session: its plans may be days old.
+  first (`--checklists` finds it), including when you're picking up in a
+  new session: its plans may be days old.
 - **Two hats.** A refactoring step changes structure and no behaviour. Never
   mix it with a fix or a feature, in the same commit or the same step. If you
   find a bug, note it as an F item.
@@ -311,17 +315,19 @@ Don't change any code until the user picks.
 
 ## After an earlier pass
 
-If `.refactor-pass/` holds a checklist, build on the newest. The heatmap
-leaves out the commits recorded on the checklists, so the refactoring just
-done doesn't make its own files look hot. If it warns that a recorded commit
-isn't reachable from HEAD, the work was squash-merged or rebased: record the
+`heatmap.py --checklists` lists every checklist, newest first: the main
+checkout's and any worktree's. Build on the newest. The heatmap leaves out
+the commits recorded on all of them, so the refactoring just done doesn't
+make its own files look hot. If it warns that a recorded commit isn't
+reachable from HEAD and the work was squash-merged or rebased, record the
 hash that landed it instead, and run the heatmap again before reading it.
-`--since <its base>` shows what has landed since; if that's little, say so.
-Items not done or skipped carry over, checked again as in step 4, keeping
-their IDs and `from`, the date of the checklist they first appeared on. A
-Later item that has turned hot becomes a new R item. New items number on
-from the highest ID of each letter. For each refactor finished on the newest
-checklist, find the first real change of the kind it eased after its last
-commit, list what it touched (`git show --stat`), and set that beside the
-cost the item predicted, in `earlier`. That is the "it's easier now" half of
-the feeling, so the report leads with it, misses included.
+`--since <its base>` shows what has landed since; when that's nothing but
+the pass's own work, it says so, and so should you. Items not done or
+skipped carry over, checked again as in step 4, keeping their IDs and
+`from`, the date of the checklist they first appeared on. A Later item that
+has turned hot becomes a new R item. New items number on from the highest
+ID of each letter. For each refactor finished on the newest checklist, find
+the first real change of the kind it eased after its last commit, list what
+it touched (`git show --stat`), and set that beside the cost the item
+predicted, in `earlier`. That is the "it's easier now" half of the feeling,
+so the report leads with it, misses included.

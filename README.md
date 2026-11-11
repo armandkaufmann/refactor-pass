@@ -26,7 +26,8 @@ fix.
 - **A walkthrough** of the next likely change: every file it would touch
   today, and after the refactor proposed.
 - **A ranked checklist**, written as an HTML page in `.refactor-pass/` in
-  the repo (kept out of commits through git's local exclude file). It holds
+  the repo (kept out of commits by a `.gitignore` inside that folder, so
+  your own `.gitignore` is left alone). It holds
   refactors, small fixes, items for later, decisions for you, and what was
   left alone and why. Your agent works through it one item at a time, when
   you name an item, and changes no code until you do.
@@ -84,7 +85,7 @@ python3 scripts/heatmap.py -C ~/code/my-app src tests
 ```
 
 - `scripts/heatmap.py`: where a repo's changes keep landing, from git
-  history.
+  history; with `--checklists`, where the checklists are.
 - `scripts/measure.py`: how long a codebase's files and functions are,
   against the codebase itself.
 - `scripts/check_page.py`: checks a checklist page after an edit.

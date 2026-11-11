@@ -575,8 +575,10 @@ document.addEventListener("DOMContentLoaded", () => {
      refresh; leave it alone. You write the pass block, as SKILL.md steps 5 to 7
      say, and run scripts/check_page.py on this file after each edit.
 
-     Start each item with its id and status, as below, so a status update is
-     a one-line edit. Rn and Fn stand for real IDs, such as R1 and F1:
+     Start each item with its id and status on one line, exactly as below,
+     and its other fields after them, so a status update is a one-line edit;
+     a JSON pretty-printer's layout won't do. Rn and Fn stand for real IDs,
+     such as R1 and F1:
        {"id": "Rn", "status": "todo", "title": "Name the states of a checkout",
         "eases": "adding a payment method",
         "smells": ["Hidden State Machine: 6 flags, 9 places set them (`checkout.py:40`)"],

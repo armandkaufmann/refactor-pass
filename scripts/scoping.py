@@ -30,6 +30,13 @@ TEST_FOLDERS = ["test", "tests", "__tests__", "__mocks__", "spec", "specs", "tes
 MARKER = re.compile(r"^test_|[._](?:test|spec|cy)(?=\.)|(?:Tests?|IT|Spec)(?=\.[^.]+$)")
 
 
+def run(repo, *args):
+    """A git command's output as text, or None if it failed. Git writes paths in UTF-8 whatever the
+    system's code page, so they're read as UTF-8."""
+    result = subprocess.run(["git", "-C", repo] + list(args), capture_output=True)
+    return result.stdout.decode("utf-8", errors="replace") if result.returncode == 0 else None
+
+
 def in_scope(path, scopes):
     if not scopes:
         return True

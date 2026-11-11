@@ -44,18 +44,25 @@ reasons it keeps changing.
 History is followed across renames, so a file moved or renamed in the window
 keeps the changes it had under its old name. Merge commits are skipped, and so
 are bots' commits, those the repo lists in .git-blame-ignore-revs (bulk
-reformats), and those recorded on the items of the checklists in
-.refactor-pass/ (a refactor pass's own work, which would make the files it
-just refactored look hot). A recorded commit that isn't reachable from HEAD,
-as after a squash merge or a rebase, gets a warning. A left out commit counts
-toward nothing but its renames, and growth, being two sizes, includes what
-it did. Binary files are left out. In a shallow clone, the commits where its
-history stops look as if they add every file, so they are left out too, and
-the output says so.
+reformats), and those recorded on the items of the checklists (a refactor
+pass's own work, which would make the files it just refactored look hot).
+A recorded commit that isn't reachable from HEAD, as after a squash merge or
+a rebase, gets a warning. A left out commit counts toward nothing but its
+renames, and growth, being two sizes, includes what it did. Binary files are
+left out. In a shallow clone, the commits where its history stops look as if
+they add every file, so they are left out too, and the output says so. A window left empty, as with --since a pass's base just
+after the pass, is a result, not an error: the output says what was left
+out, and --page leaves the page as it was.
 
-In a linked worktree, which may be removed once its work is done, the
-checklists are the main checkout's: they are read from its .refactor-pass/,
-and a relative --page path is written there.
+The checklists live in .refactor-pass/ at the top of the repo. In a linked
+worktree, which may be removed once its work is done, a relative --page path
+is written in the main checkout's .refactor-pass/, which outlives it. Every
+worktree's .refactor-pass/ is read, wherever this runs, since a sandbox may
+have kept a pass out of the main checkout. --checklists lists them all,
+newest first, and where a new one goes. --page also writes a .gitignore into
+a .refactor-pass/ folder that has none and holds nothing git tracks, so the
+checklists stay out of commits and the project's own .gitignore is left
+alone. If the page can't be written, as in a sandbox, it says what to do.
 
 Usage:
   heatmap.py [options] [SCOPE ...]
@@ -63,7 +70,7 @@ Usage:
 SCOPE is a folder or a glob (src, lib, 'app/**/*.py'), from the repo's top or
 from the folder -C names; with none, every file counts. A scope that matches
 no tracked file is an error. Reads git and the checklists; writes nothing but
---page's file.
+--page's file and that .gitignore.
 
 Examples:
   heatmap.py src tests
@@ -72,6 +79,7 @@ Examples:
   heatmap.py --since "3 months ago" src
   heatmap.py --page .refactor-pass/2026-11-10.html src
   heatmap.py --show src/app/main.py
+  heatmap.py --checklists
 """
 
 import argparse
@@ -97,6 +105,8 @@ SHA = re.compile(r"[0-9a-f]{7,40}")
 # The checklist page: its template, and the tag that opens each data block.
 TEMPLATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir, "assets", "page.html")
 BLOCK = '<script type="application/json" id="%s">'
+FOLDER = ".refactor-pass"
+KIND_NAMES = {"R": "refactors", "F": "small fixes", "L": "later", "D": "your call"}
 
 
 def git(repo, *args):
@@ -174,22 +184,59 @@ def shallow_edge(repo):
     return set(open(path).read().split()) if os.path.isfile(path) else set()
 
 
-def checklist_folder(repo):
-    """Where the checklists live, and a note when that isn't plain. In a linked worktree, which may be
-    removed once its work is done, it's the main checkout's .refactor-pass/, if there is a main checkout."""
-    here = os.path.join(repo, ".refactor-pass")
+def checklist_places(repo):
+    """Where a relative --page path goes, every worktree's .refactor-pass/ folder, and a note when the
+    first isn't plain. In a linked worktree, which may be removed once its work is done, a new checklist
+    goes in the main checkout, if there is one; the others are read too, since a sandbox may have kept a
+    pass out of the main checkout."""
     git_dir = os.path.realpath(os.path.join(repo, git(repo, "rev-parse", "--git-dir").strip()))
     common = os.path.realpath(os.path.join(repo, git(repo, "rev-parse", "--git-common-dir").strip()))
-    if git_dir == common:
-        return here, None
-    first = git(repo, "worktree", "list", "--porcelain").split("\n\n")[0].split("\n")
-    main = first[0][len("worktree "):] if first[0].startswith("worktree ") else ""
-    if "bare" in first or not os.path.isdir(main):
-        return here, ("This is a linked worktree with no main checkout, so the checklists live in %s, "
-                      "which goes when the worktree is removed." % here)
-    folder = os.path.join(main, ".refactor-pass")
-    return folder, ("This is a linked worktree, so the checklists are the main checkout's, in %s, "
-                    "which outlives it." % folder)
+    trees, main = [], None
+    for index, entry in enumerate(git(repo, "worktree", "list", "--porcelain").split("\n\n")):
+        lines = entry.strip().split("\n")
+        if not lines[0].startswith("worktree ") or "bare" in lines:
+            continue
+        path = lines[0][len("worktree "):]
+        if os.path.isdir(path):
+            trees.append(path)
+            main = path if index == 0 else main
+    home, note = repo, None
+    if git_dir != common:
+        if main:
+            home = main
+            note = ("This is a linked worktree, so a relative --page path is written in the main checkout's "
+                    "%s, which outlives it." % os.path.join(main, FOLDER))
+        else:
+            note = ("This is a linked worktree with no main checkout, so a relative --page path is written in "
+                    "%s, which goes when the worktree is removed." % os.path.join(repo, FOLDER))
+    folders, seen = [], set()
+    for top in [home, repo] + trees:
+        folder = os.path.join(top, FOLDER)
+        if os.path.realpath(folder) not in seen:
+            seen.add(os.path.realpath(folder))
+            folders.append(folder)
+    return home, folders, note
+
+
+def checklist_pages(folders):
+    """The checklist pages in the folders, in order."""
+    pages = []
+    for folder in folders:
+        if os.path.isdir(folder):
+            pages += [os.path.join(folder, n) for n in sorted(os.listdir(folder)) if n.endswith(".html")]
+    return pages
+
+
+def shown(path, home, repo):
+    """A path as the output gives it: from the repo's top when it's inside, as in a plain checkout; in
+    full from a linked worktree, where a relative --page path means the main checkout's."""
+    if os.path.realpath(home) != os.path.realpath(repo):
+        return os.path.abspath(path)
+    try:
+        inside = os.path.relpath(path, repo)
+    except ValueError:  # On Windows, another drive.
+        return path
+    return path if inside == os.pardir or inside.startswith(os.pardir + os.sep) else inside
 
 
 def block_span(text, name):
@@ -202,23 +249,66 @@ def block_span(text, name):
     return (start, end) if end >= 0 else None
 
 
-def checklist_commits(folder):
-    """The commits recorded on the items of the checklists in folder, as (checklist, item, commit),
-    and the checklists it couldn't read."""
-    records, unreadable = [], []
-    names = sorted(os.listdir(folder)) if os.path.isdir(folder) else []
-    for name in names:
-        if not name.endswith(".html"):
-            continue
-        text = open(os.path.join(folder, name), encoding="utf-8", errors="replace").read()
+def read_pass(page):
+    """A checklist page's pass block, or None if it can't be read."""
+    try:
+        text = open(page, encoding="utf-8", errors="replace").read()
         span = block_span(text, "pass")
-        try:
-            items = json.loads(text[span[0]:span[1]])["items"]
-            records += [(name, str(item.get("id")), str(c)) for item in items for c in item.get("commits", [])
-                        if SHA.fullmatch(str(c))]
-        except (TypeError, ValueError, KeyError, AttributeError):
-            unreadable.append(name)
+        data = json.loads(text[span[0]:span[1]])
+    except (OSError, TypeError, ValueError):
+        return None
+    return data if isinstance(data, dict) and isinstance(data.get("items"), list) else None
+
+
+def checklist_commits(pages):
+    """The commits recorded on the items of the checklist pages, as (page, item, commit), and the pages
+    whose items couldn't be read."""
+    records, unreadable = [], []
+    for page in pages:
+        data = read_pass(page)
+        if data is None:
+            unreadable.append(page)
+            continue
+        records += [(page, str(item.get("id")), str(c)) for item in data["items"] if isinstance(item, dict)
+                    for c in (item.get("commits") if isinstance(item.get("commits"), list) else [])
+                    if SHA.fullmatch(str(c))]
     return records, unreadable
+
+
+def list_checklists(home, folders, repo):
+    """Print every checklist, newest first, with its dates and its items' statuses, and where a new
+    one goes."""
+    rows = []
+    for page in checklist_pages(folders):
+        data = read_pass(page) or {}
+        named = re.match(r"\d{4}-\d{2}-\d{2}", os.path.basename(page))
+        started = str(data.get("started") or (named.group(0) if named else ""))
+        rows.append((started, str(data.get("updated") or ""), os.path.getmtime(page), page, data))
+    rows.sort(reverse=True)
+    if not rows:
+        print("No checklist yet: none in %s." % " or ".join(shown(f, home, repo) + os.sep for f in folders))
+    else:
+        print("Checklists, newest first:")
+    for started, updated, _, page, data in rows:
+        if not data:
+            print("  %s: its pass block doesn't parse; check_page.py says where." % shown(page, home, repo))
+            continue
+        items = [i for i in data["items"] if isinstance(i, dict)]
+        kinds = []
+        for prefix in "RFLD":
+            mine = [str(i.get("status")) for i in items if str(i.get("id", "")).startswith(prefix)]
+            if mine:
+                counts = Counter(mine)
+                kinds.append("%s %d (%s)" % (KIND_NAMES[prefix], len(mine),
+                                             ", ".join("%d %s" % (n, s) for s, n in sorted(counts.items()))))
+        print("  %s: started %s, updated %s, from %s; %s" % (
+            shown(page, home, repo), started or "?", updated or "?", data.get("base") or "?",
+            "; ".join(kinds) or "no items yet"))
+    if rows:
+        print("The newest is %s." % shown(rows[0][3], home, repo))
+    print("A new checklist goes in %s: --page %s writes one there, named by today's date." % (
+        shown(os.path.join(home, FOLDER), home, repo) + os.sep,
+        os.path.join(FOLDER, datetime.now().strftime("%Y-%m-%d.html"))))
 
 
 def not_landed(repo, shas):
@@ -281,7 +371,8 @@ def page_json(value):
 
 def write_page(path, heatmap, project):
     """Put the heatmap into a checklist page, made from the template if it doesn't exist yet.
-    Only the heatmap block changes, so the items are left as they were."""
+    Only the heatmap block changes, so the items are left as they were. In a .refactor-pass folder
+    with no .gitignore, and nothing git tracks, write one that keeps the folder out of commits."""
     new = not os.path.exists(path)
     text = open(TEMPLATE if new else path, encoding="utf-8").read()
     if new:
@@ -296,12 +387,22 @@ def write_page(path, heatmap, project):
     if not span:
         sys.exit("%s has no heatmap block; is it a checklist made from assets/page.html?" % path)
     text = text[:span[0]] + "\n" + page_json(heatmap) + "\n" + text[span[1]:]
-    if os.path.dirname(path):
-        os.makedirs(os.path.dirname(path), exist_ok=True)
+    folder = os.path.dirname(os.path.abspath(path))
+    os.makedirs(folder, exist_ok=True)
     with open(path + ".tmp", "w", encoding="utf-8") as f:
         f.write(text)
     os.replace(path + ".tmp", path)
-    return new
+    ignore = os.path.join(folder, ".gitignore")
+    wrote = False
+    if os.path.basename(folder) == FOLDER and not os.path.exists(ignore):
+        if scoping.run(folder, "ls-files", "--", "."):
+            print("%s holds files git tracks, so it's left without a .gitignore: new checklists in it will show "
+                  "in git status." % folder)
+        else:
+            with open(ignore, "w", encoding="utf-8") as f:
+                f.write("# Written by the refactor-pass skill: keeps its checklists out of commits.\n*\n")
+            wrote = True
+    return new, wrote
 
 
 def main():
@@ -342,19 +443,26 @@ def main():
     parser.add_argument("--keep-ignore-revs", action="store_true",
                         help="count the commits listed in .git-blame-ignore-revs too")
     parser.add_argument("--keep-pass-commits", action="store_true",
-                        help="count the commits recorded on the checklists in .refactor-pass/ too")
+                        help="count the commits recorded on the checklists too")
     parser.add_argument("--max-files", type=int, default=25,
                         help="commits changing more files than this, tests aside, are left out of the pairs, since "
                              "a sweeping rename or reformat pairs everything with everything (default 25)")
     parser.add_argument("--page", metavar="PATH",
-                        help="also put the heatmap into this checklist page (a relative path is in the repo, or in "
-                             "the main checkout from a linked worktree), making it from the skill's "
+                        help="also put the heatmap into this checklist page (a relative path is from the repo's "
+                             "top, or the main checkout's from a linked worktree), making it from the skill's "
                              "assets/page.html if it doesn't exist; only the page's heatmap block changes")
     parser.add_argument("--show", action="append", default=[], metavar="FILE",
                         help="print this file's commits in the window (its name today), instead of the heatmap")
+    parser.add_argument("--checklists", action="store_true",
+                        help="list the checklists in every worktree's .refactor-pass/, newest first, with their "
+                             "items' statuses and where a new one goes, and stop; needs no scope")
     args = parser.parse_args()
 
     repo = git(args.repo, "rev-parse", "--show-toplevel").strip()
+    home, folders, where = checklist_places(repo)
+    if args.checklists:
+        list_checklists(home, folders, repo)
+        return
     if subprocess.run(["git", "-C", repo, "rev-parse", "--verify", "--quiet", "HEAD"],
                       capture_output=True).returncode != 0:
         sys.exit("%s has no commits yet, so there's no history to read." % os.path.basename(repo))
@@ -369,33 +477,58 @@ def main():
     shallow = ("This is a shallow clone, so its history stops at %s (%s); that commit looks as if it adds "
                "every file, so it's left out. `git fetch --unshallow` fetches the rest of the history."
                % (describe(cut[0])["sha"], describe(cut[0])["date"])) if cut else ""
-    if not everything:
-        sys.exit("No commits in the window." + (" " + shallow if shallow else ""))
 
     def matching(prefixes):
         return set(c[0] for c in everything if any(c[0].startswith(p) for p in prefixes))
 
-    folder, where = checklist_folder(repo)
-    shown = os.path.relpath(folder, repo) if folder == os.path.join(repo, ".refactor-pass") else folder
+    pages = checklist_pages(folders)
+    others = sorted(set(os.path.dirname(p) for p in pages) - {os.path.join(home, FOLDER)})
+    if others:
+        where = ((where + " ") if where else "") + "The checklists in %s are read too." % " and ".join(
+            "this worktree's %s" % FOLDER if f == os.path.join(repo, FOLDER) else f for f in others)
     asked = matching([s.strip() for s in args.exclude_commits.split(",") if s.strip()])
     listed = set() if args.keep_ignore_revs else matching(ignore_revs(repo)) - asked
-    records, unreadable = ([], []) if args.keep_pass_commits else checklist_commits(folder)
-    for name in unreadable:
-        print("Couldn't read the items of %s, so its commits are counted." % os.path.join(shown, name),
-              file=sys.stderr)
+    records, unreadable = ([], []) if args.keep_pass_commits else checklist_commits(pages)
+    for page in unreadable:
+        print("Couldn't read the items of %s, so its commits are counted; check_page.py says why."
+              % shown(page, home, repo), file=sys.stderr)
     lost = not_landed(repo, [sha for _, _, sha in records]) if records else set()
-    for name, ident in sorted(set((n, i) for n, i, sha in records if sha in lost)):
-        shas = sorted(sha for n, i, sha in records if (n, i) == (name, ident) and sha in lost)
-        print("%s, %s: %s %s reachable from HEAD, so the heatmap counts that work. If it was squash-merged or "
-              "rebased, find the commit that landed it and record that hash instead."
-              % (os.path.join(shown, name), ident, " and ".join(shas),
-                 "isn't a commit" if len(shas) == 1 else "aren't commits"), file=sys.stderr)
+    for page, ident in sorted(set((p, i) for p, i, sha in records if sha in lost)):
+        shas = sorted(sha for p, i, sha in records if (p, i) == (page, ident) and sha in lost)
+        print("%s, %s: %s %s reachable from HEAD. If that work was squash-merged or rebased onto this branch, "
+              "the heatmap counts it under the hash that landed it: record that hash instead. If it's on a "
+              "branch not merged yet, none of it is counted here." % (
+                  shown(page, home, repo), ident, " and ".join(shas), "isn't" if len(shas) == 1 else "aren't"),
+              file=sys.stderr)
     recorded = matching(set(sha for _, _, sha in records)) - asked - listed
     bots = set() if args.keep_bots else set(c[0] for c in everything if BOT.search(c[4])) - asked - listed - recorded
     excluded = asked | listed | recorded | bots
     commits = [c for c in everything if c[0] not in excluded]
+    left_out = [(len(asked), "asked", ""), (len(listed), "in .git-blame-ignore-revs", "--keep-ignore-revs"),
+                (len(recorded), "recorded on refactor checklists", "--keep-pass-commits"),
+                (len(bots), "by bots", "--keep-bots")]
+    page = None
+    if args.page:
+        page = args.page if os.path.isabs(args.page) else os.path.join(home, args.page)
+
     if not commits:
-        sys.exit("Every commit in the window is left out.")
+        # Nothing left to count is a result, as just after a pass with --since its base: say what was left out.
+        if not everything:
+            print(("Nothing has landed since %s: the window has no commits." % args.since if args.since
+                   else "No commits in the window.") + (" " + shallow if shallow else ""))
+        else:
+            reasons = ", ".join("%d %s" % (n, why) for n, why, _ in left_out if n)
+            flags = [flag for n, _, flag in left_out if n and flag] + (["drop them from --exclude-commits"]
+                                                                        if asked else [])
+            print("%s: the window's %s left out (%s). To count them, %s." % (
+                "Nothing else has landed since %s" % args.since if args.since else "Nothing to count",
+                "commit is" if len(everything) == 1 else "%d commits are all" % len(everything), reasons,
+                " or ".join(flags)))
+        if page:
+            print("No heatmap to put on %s, so %s." % (
+                page, "it's left as it was" if os.path.exists(page) else "it isn't made"))
+        return
+
     newer = set(c[0] for c in commits[:(len(commits) + 1) // 2])
     # Just before the window: --since's revision, or the oldest commit's parent (none at the root).
     base = since_rev or git(repo, "rev-list", "--parents", "-n", "1", everything[-1][0]).split()[1:2]
@@ -544,23 +677,31 @@ def main():
             print()
         return
     scope = args.scope or ["(everything)"]
-    if args.page:
+    if page:
         options = {"top": args.top, "pairs": args.pairs, "max_files": args.max_files, "min_shared": args.min_shared,
                    "min_revs": args.min_revs, "min_degree": args.min_degree}
         heatmap = {"head": head, "scope": scope, "window": window, "options": options, "total_files": len(rows),
                    "files": rows[:args.top], "groups": [r for r in together if "files" in r],
                    "pairs": [r for r in together if "a" in r], "tests": tied[:args.pairs]}
-        page = args.page if os.path.isabs(args.page) else os.path.join(os.path.dirname(folder), args.page)
-        made = write_page(page, heatmap, os.path.basename(os.path.dirname(folder)))
-        print("%s %s, with the heatmap.\n" % ("Made" if made else "Updated", page))
+        try:
+            made, ignore = write_page(page, heatmap, os.path.basename(home))
+        except OSError as e:
+            sandboxed = ("ask the user to let you write there, or give --page an absolute path in this worktree, "
+                         "such as %s, and tell the user the checklist goes when the worktree is removed unless "
+                         "they copy it out" % os.path.join(repo, FOLDER, os.path.basename(page))) \
+                if os.path.realpath(home) != os.path.realpath(repo) else \
+                "ask the user to let you write there, or give --page a path you can write and tell them where it is"
+            sys.exit("Couldn't write %s: %s.\nIf a sandbox keeps you out of that folder, %s." % (
+                page, e.strerror or e, sandboxed))
+        print("%s %s, with the heatmap.%s\n" % ("Made" if made else "Updated", page,
+                                                " Wrote a .gitignore beside it, so git leaves the checklists out "
+                                                "of commits." if ignore else ""))
 
     print("%s at %s, scope: %s" % (os.path.basename(repo), head, " ".join(scope)))
-    left_out = [(len(asked), "asked"), (len(listed), "in .git-blame-ignore-revs"),
-                (len(recorded), "recorded on refactor checklists"), (len(bots), "by bots")]
-    left_out = ", ".join("%d %s" % (n, why) for n, why in left_out if n)
+    reasons = ", ".join("%d %s" % (n, why) for n, why, _ in left_out if n)
     print("Window: %d commits, %s (%s) back to %s (%s)%s" % (
         len(commits), window["newest"]["sha"], window["newest"]["date"], window["oldest"]["sha"],
-        window["oldest"]["date"], "; left out: " + left_out if left_out else ""))
+        window["oldest"]["date"], "; left out: " + reasons if reasons else ""))
     print("Newer half from %s. Ordered by commits times size." % window["newer_half_from"])
     if not args.keep_tests:
         print("Test files: %s." % ("%d changed in the window, set aside from the table and the pairs" % len(tests)

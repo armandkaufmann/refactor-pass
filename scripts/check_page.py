@@ -13,8 +13,9 @@ is S, M or L and its risk Low, Medium or High, as the page shows them.
 
 It prints a line per kind of item, then any problems: errors (the page or a
 later pass would go wrong) and warnings (something the skill asks for is
-missing, or more than one item in progress). It exits 1 on an error. Reads
-the page only.
+missing, or more than one item in progress). It exits 1 on an error, and
+says so plainly for a page that doesn't exist or is still the blank
+template, which heatmap.py --page fills in. Reads the page only.
 
 Usage:
   check_page.py PAGE
@@ -109,7 +110,7 @@ def one_of(where, value, allowed, errors):
         errors.append("%s should be %s or %s, not %r." % (where, ", ".join(allowed[:-1]), allowed[-1], value))
 
 
-def check_item(item, page, seen, errors, warnings):
+def check_item(item, page, seen, errors, warnings, spread):
     ident = item["id"]
     if not re.fullmatch(r"[RFLD][1-9][0-9]*", ident):
         errors.append("%s: an ID is R, F, L or D and a number, such as R1." % ident)
@@ -127,8 +128,7 @@ def check_item(item, page, seen, errors, warnings):
     if status not in STATUSES:
         errors.append("%s: status %r isn't one of %s." % (ident, status, ", ".join(STATUSES)))
     elif page.count('{"id": "%s", "status": "%s"' % (ident, status)) != 1:
-        errors.append('%s should start {"id": "%s", "status": "%s", on one line and nowhere else in the page, '
-                      "so a status update is a one-line edit." % (ident, ident, status))
+        spread.append(ident)
     if isinstance(item.get("cost"), dict):
         fields(ident + ".cost", item["cost"], COST, errors)
     for key in ("smells", "plan", "files"):
@@ -153,6 +153,10 @@ def check(text):
         warnings.append("No heatmap yet: heatmap.py --page puts it in.")
     if data is None:
         return errors, warnings, []
+    if heatmap is None and not errors and isinstance(data, dict) and not data.get("items") \
+            and not any(data.get(k) for k in ("project", "started", "base", "updated")):
+        return ["This is the blank template, not a checklist yet: heatmap.py --page PATH makes a checklist "
+                "from it, with the project, the dates and the heatmap filled in."], [], []
     if not fields("The pass block", data, PASS, errors):
         return errors, warnings, []
     texts("The checks", data.get("checks"), errors)
@@ -169,12 +173,19 @@ def check(text):
             if fields("earlier.results[%d]" % i, result, RESULT, errors) and isinstance(result.get("cost"), dict):
                 fields("earlier.results[%d].cost" % i, result["cost"], COST, errors)
     items = data.get("items") if isinstance(data.get("items"), list) else []
-    seen = set()
+    seen, spread = set(), []
     for i, item in enumerate(items):
         if isinstance(item, dict) and isinstance(item.get("id"), str):
-            check_item(item, text, seen, errors, warnings)
+            check_item(item, text, seen, errors, warnings, spread)
         else:
             errors.append("items[%d] should be an object with an id such as \"R1\"." % i)
+    if spread:
+        status = next(i for i in items if isinstance(i, dict) and i.get("id") == spread[0]).get("status")
+        errors.append('%s should%s start with its ID and status on one line, and nowhere else in the page, so a '
+                      'status update is a one-line edit: {"id": "%s", "status": "%s", ... Write each item\'s first '
+                      "line like that, with its other fields after it, as in the page's comment; a JSON "
+                      "pretty-printer, which puts every field on a line of its own, won't do."
+                      % (", ".join(spread), "" if len(spread) == 1 else " each", spread[0], status))
     doing = [str(i.get("id")) for i in items if isinstance(i, dict) and i.get("status") == "doing"]
     if len(doing) > 1:
         warnings.append("%s are in progress at once; the list is worked one item at a time, so set the others "
@@ -189,7 +200,14 @@ def main():
                                      epilog=__doc__.split("\n\n", 1)[1])
     parser.add_argument("page", help="the checklist page")
     args = parser.parse_args()
-    errors, warnings, items = check(open(args.page, encoding="utf-8").read())
+    try:
+        text = open(args.page, encoding="utf-8").read()
+    except FileNotFoundError:
+        sys.exit("There's no %s. heatmap.py --page %s makes it, from the skill's assets/page.html."
+                 % (args.page, args.page))
+    except (OSError, UnicodeDecodeError) as e:
+        sys.exit("Couldn't read %s: %s." % (args.page, getattr(e, "strerror", None) or e))
+    errors, warnings, items = check(text)
     errors, warnings = list(dict.fromkeys(errors)), list(dict.fromkeys(warnings))  # Once each, in order.
     for prefix in "RFLD":
         mine = [i for i in items if str(i.get("id", "")).startswith(prefix)]
