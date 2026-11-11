@@ -99,8 +99,11 @@ python3 <this skill's directory>/scripts/heatmap.py -C <repo> <scope ...>
   area.
   - Files from different layers that pair strongly, or a group across
     layers, usually mean one feature spread across them (Shotgun Surgery).
-  - Check whether one of a pair imports the other. Files that always change
-    together with no import between them have a hidden dependency, the
+  - Check what links each pair. An import, a call, or a contract something
+    names (a route, a schema, the type file between a controller and its
+    page) is a visible dependency: one feature across a boundary. Files
+    that change together with no such link, such as two copies of a rule
+    or two lists kept in step by hand, have a hidden dependency, the
     strongest kind of coupling.
   - A file that pairs with many others is a hub every change passes through.
   - A test listed as changing with several files besides its own is tied to
@@ -140,8 +143,10 @@ python3 <this skill's directory>/scripts/heatmap.py -C <repo> <scope ...>
   [Smells travel together](references/smells.md#smells-travel-together).
 - **Check what tests reach the hot code**: see
   [Untested Code](references/smells.md#untested-code).
-- **Bugs you notice** go on the list as small fixes. Don't fix them now: each
-  needs reproducing first, in its own commit.
+- **Bugs you notice** go on the list as F items, not fixed now. A bug not
+  yet reproduced is a suspicion: title it as one ("Check: edits skip the
+  weekend rule"), with the evidence in its note. Its first step is a
+  failing test; if none fails, it's skipped, with what you found.
 
 ## 3. How much: the walkthrough
 
@@ -154,8 +159,10 @@ convincing.
    the commit messages: the kinds of change that come up most often ("add a
    new report type", "add a setting", "add a screen"). Take the two or three
    commonest kinds, not just one.
-2. For each kind, take a real recent commit of it and list what it touched
-   (`git show --stat`). If the project's docs or agent instructions have a
+2. For each kind, take the latest real commit of it and list what it
+   touched (`git show --stat`). If it's older than the window, use it all
+   the same and give its date; the walkthrough, on today's code, shows what
+   has moved since. If the project's docs or agent instructions have a
    recipe for that change, count its steps. A five-step recipe for adding
    one thing is an admission.
 3. Walk through the next one, without writing it. List every file you'd
@@ -197,8 +204,7 @@ fields on the checklist (step 6); F, L and D items say theirs in a `note`.
   - the files, size (S, M or L) and risk (Low, Medium or High) (`files`,
     `size`, `risk`);
   - how to check that behaviour didn't change (`verify`).
-- **F1…** Small fixes found along the way, each its own commit. A bug gets a
-  failing test first.
+- **F1…** Small fixes found along the way, each its own commit.
 - **L1…** Later: smelly but cold, or worth doing when the code nearby is next
   touched.
 - **D1…** The user's call: changes to how they work, such as a docs
