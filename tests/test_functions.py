@@ -165,6 +165,10 @@ class CodeLines(unittest.TestCase):
         self.check("a.rb", "# one\nx = 1\n", 1)
         self.check("a.php", "<?php\n# one\n// two\n#[Attr]\nfunction f() {}\n", 3)
 
+    def test_rubys_block_comments(self):
+        # =begin ... =end is a comment, whatever its lines start with; and after __END__ comes data.
+        self.check("a.rb", "def f\n  1\nend\n=begin\nnotes about f\n# more notes\n=end\nx = 1\n__END__\ndata\n", 4)
+
     def test_a_language_with_no_rule_counts_lines(self):
         measure = support.load("measure")
         lines, functions, language = measure.functions("notes.txt", "a\n\n# b\n// c\nd\n")

@@ -57,5 +57,10 @@
  "names.ts": [["function$x", 7, 9, 3], ["functionRef", 10, 12, 3], ["real", 14, 16, 3], ["y", 17, 19, 3]],
  "functional.ts": [],
  "Counter.vue": [["save", 10, 12, 3], ["reset", 14, 16, 3]],
- "Greeting.svelte": [["greet", 4, 6, 3], ["shout", 8, 8, 1]]
+ "Greeting.svelte": [["greet", 4, 6, 3], ["shout", 8, 8, 1]],
+ "lexing.rb": [["accept", 6, 8, 3], ["quoted", 10, 12, 3], ["heredoc", 14, 19, 6], ["at_the_margin", 21, 25, 5],
+               ["interpolated", 27, 29, 3], ["globals", 31, 33, 3], ["last", 40, 42, 3]],
+ "methods.rb": [["[]", 2, 4, 3], ["[]=", 6, 8, 3], ["<<", 10, 12, 3], ["==", 14, 16, 3], ["-@", 18, 20, 3],
+                ["secret", 22, 24, 3], ["schedule", 26, 26, 1], ["flush", 27, 27, 1], ["load", 29, 37, 9],
+                ["initialize", 41, 41, 1], ["call", 42, 42, 1], ["each", 46, 48, 3]]
 }

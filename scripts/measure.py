@@ -504,7 +504,9 @@ def js_in_class(code, i):
 LANGUAGES = [
     ("Python", ".py", r"^\s*(?:async\s+)?def\s+(\w+)", "indent", "#", ""),
     ("GDScript", ".gd", r"^\s*(?:static\s+)?func\s+(\w+)", "indent", "#", ""),
-    ("Ruby", ".rb", r"^\s*def\s+(?:self\.)?([\w?!=]+)", "end", "#", "spans"),
+    # A def after a word, as private def, with a receiver (self., @@cache.) and an operator's name ([], <<).
+    ("Ruby", ".rb", r"^\s*(?:[a-z_]\w*\s+)*def\s+(?:(?:self|@@?\w+|[A-Za-z_][\w:]*)\s*\.\s*)?([A-Za-z_]\w*[?!=]?|"
+     r"\[\]=?|<=>|===?|=~|!=|!~|<<|>>|<=|>=|\*\*|[+\-~!]@?|[*/%<>^&|`])", "end", "#", "ruby"),
     ("JavaScript", ".js .jsx .mjs .cjs", js_function, "brackets", "// /*", "regex"),
     ("TypeScript", ".ts .tsx .mts .cts", js_function, "brackets", "// /*", "regex"),
     ("Vue", ".vue .svelte", js_function, "brackets", "// /*", "regex"),
@@ -620,6 +622,174 @@ def skeleton(lines, comments, quotes, attributes=False):
     return out, began_inside
 
 
+# Ruby's literals: a heredoc's opening (<<~ID, <<-ID, <<ID, the ID maybe quoted), a % literal (%w[...],
+# %r{...}, %(...)), a global variable whose name is punctuation ($", $'), and an operator's name, as after def
+# or in a symbol (:<<, :/, :[]).
+RUBY_HEREDOC = re.compile(r"<<([~-])?(?:([\"'`])([^\"'`\n]+)\2|([A-Za-z_]\w*))")
+RUBY_PERCENT = re.compile(r"%([qQwWiIrsx]?)([^\w\s])")
+RUBY_GLOBAL = re.compile(r"\$(?:[!@&`'+~=/\\,;.<>_*$?:\"]|-\w|\d+)")
+RUBY_OPERATOR = r"\[\]=?|<=>|===?|=~|!=|!~|<<|>>|<=|>=|\*\*|[+\-~!]@?|[*/%<>^&|`]"
+RUBY_DEF_NAME = re.compile(r"(?<![\w$@.:])def\s+(?:(?:self|@@?\w+|[A-Za-z_][\w:]*)\s*\.\s*)?$")
+RUBY_SYMBOL_OPERATOR = re.compile(r":(?:%s)" % RUBY_OPERATOR)
+# The words after which a value can start, so that a /, a % or a ? opens a literal.
+RUBY_VALUE_AFTER = re.compile(r"(?<![\w$@.:])(?:if|unless|elsif|while|until|and|or|not|when|in|return|then|do|"
+                              r"else|case|yield|raise|next|break|puts|print|p|begin)$")
+RUBY_PAIRS = {"(": ")", "[": "]", "{": "}", "<": ">"}
+
+
+def ruby_value_may_start(line, i):
+    """Whether a value can start at line[i] in Ruby, so that a /, % or ? there opens a literal rather than
+    being an operator: at the start of the line, after an operator, an opening bracket, a comma or a word
+    such as if or return; or after a method's name and a space, as in split /,/, when no space follows."""
+    before = line[:i].rstrip()
+    if not before:
+        return True
+    if before[-1] in "(,=!&|?:;{[+-*/%<>~^" or RUBY_VALUE_AFTER.search(before):
+        return True
+    after = line[i + 1:i + 2]
+    return (before[-1].isalnum() or before[-1] in "_?!") and i > 0 and line[i - 1].isspace() and \
+        bool(after) and not after.isspace() and after != "="
+
+
+def ruby_skeleton(lines):
+    """skeleton() for Ruby, whose literals need more than quotes: regular expressions (/.../, %r{...}), %
+    literals (%w[...], %q(...)), heredocs, whose text follows on the lines after the one that opens them,
+    #{...} inside strings, characters such as ?", globals such as $", =begin ... =end comments and
+    __END__. Each literal's text becomes s, and its delimiters "."""
+    out, began_inside = [], []
+    stack = []  # What's open: ["literal", closer, opener, nesting, interpolates] or ["code", braces] in #{...}.
+    waiting, heredocs = [], []  # Heredocs opened on this line, and those whose text the next lines are.
+    comment = ended = False
+    for line in lines:
+        if ended or comment:
+            out.append("")
+            began_inside.append(True)
+            if comment and re.match(r"=end\b", line):
+                comment = False
+            continue
+        if heredocs:
+            out.append("s" * len(line.rstrip()) if line.strip() else "")
+            began_inside.append(True)
+            closer, indented = heredocs[0]
+            if (line.strip() if indented else line.rstrip()) == closer:
+                heredocs.pop(0)
+            continue
+        if not stack and re.match(r"=begin\b", line):
+            comment = True
+            out.append("")
+            began_inside.append(False)
+            continue
+        if not stack and line.rstrip() == "__END__":
+            ended = True
+            out.append("")
+            began_inside.append(False)
+            continue
+        began_inside.append(bool(stack))
+        code = []
+        i, n = 0, len(line)
+        while i < n:
+            c = line[i]
+            top = stack[-1] if stack else None
+            if top is not None and top[0] == "literal":
+                _, closer, opener, nesting, interpolates = top
+                if c == "\\":
+                    code.append("s" * len(line[i:i + 2]))
+                    i += 2
+                elif interpolates and line.startswith("#{", i):
+                    code.append("ss")
+                    stack.append(["code", 0])
+                    i += 2
+                elif opener and c == opener:
+                    top[3] += 1
+                    code.append("s")
+                    i += 1
+                elif c == closer and nesting:
+                    top[3] -= 1
+                    code.append("s")
+                    i += 1
+                elif c == closer:
+                    stack.pop()
+                    code.append('"')
+                    i += 1
+                else:
+                    code.append("s")
+                    i += 1
+                continue
+            nested = top is not None  # In a #{...}: lexed as code, written as string.
+            mark = (lambda text: "s" * len(text)) if nested else (lambda text: text)
+            before = line[:i]
+            if c == "#":
+                break  # A comment, to the end of the line.
+            if RUBY_DEF_NAME.search(before):
+                name = re.match(RUBY_OPERATOR, line[i:])
+                if name and c in "[]<=>!~+-*/%^&|`":
+                    code.append(mark(name.group(0)))
+                    i += name.end()
+                    continue
+            symbol = RUBY_SYMBOL_OPERATOR.match(line, i) if c == ":" and not before.endswith(":") else None
+            if symbol and not line.startswith("::", i):
+                code.append(mark(symbol.group(0)))
+                i = symbol.end()
+                continue
+            if c in "\"'`":
+                stack.append(["literal", c, None, 0, c != "'"])
+                code.append('"')
+                i += 1
+                continue
+            if c == "$":
+                variable = RUBY_GLOBAL.match(line, i)
+                if variable:
+                    code.append(mark("$v" + "v" * (len(variable.group(0)) - 2)))
+                    i = variable.end()
+                    continue
+            if c == "<" and line.startswith("<<", i):
+                heredoc = RUBY_HEREDOC.match(line, i)
+                bare = heredoc and not heredoc.group(1) and not heredoc.group(2)
+                if heredoc and not (bare and (not heredoc.group(4)[0].isupper() or not ruby_value_may_start(line, i))):
+                    waiting.append((heredoc.group(3) or heredoc.group(4), bool(heredoc.group(1))))
+                    code.append(mark('""'))
+                    i = heredoc.end()
+                    continue
+            if c == "%" and ruby_value_may_start(line, i):
+                literal = RUBY_PERCENT.match(line, i)
+                if literal:
+                    kind, delimiter = literal.groups()
+                    stack.append(["literal", RUBY_PAIRS.get(delimiter, delimiter),
+                                  delimiter if delimiter in RUBY_PAIRS else None, 0, kind in "QWIrx"])
+                    code.append('"')
+                    i = literal.end()
+                    continue
+            if c == "/" and ruby_value_may_start(line, i):
+                stack.append(["literal", "/", None, 0, True])
+                code.append('"')
+                i += 1
+                continue
+            if c == "?" and (not before.rstrip() or before.rstrip()[-1] in "(,=[{" or
+                             RUBY_VALUE_AFTER.search(before.rstrip())):
+                character = re.match(r"\?(?:\\.|[^\s\w])(?!\w)", line[i:])
+                if character:
+                    code.append(mark("s" * len(character.group(0))))
+                    i += character.end()
+                    continue
+            if nested and c == "{":
+                top[1] += 1
+            elif nested and c == "}":
+                if top[1] == 0:
+                    stack.pop()
+                    code.append("s")
+                    i += 1
+                    continue
+                top[1] -= 1
+            code.append(mark(c))
+            i += 1
+        if not began_inside[-1] and re.match(r"\s*<<[~-]?[\"'`A-Za-z_]", line) and waiting:
+            began_inside[-1] = True  # A heredoc's opening that starts its line, at any indentation, goes on.
+        heredocs.extend(waiting)
+        waiting = []
+        out.append("".join(code))
+    return out, began_inside
+
+
 def regex_may_start(code, out):
     """Whether a / in JavaScript, after the line's code so far (code, as pieces) or else the last line's,
     opens a regular expression rather than dividing: it comes after an operator, an opening bracket or an
@@ -667,23 +837,30 @@ def signature_end(code, start):
     return start
 
 
-def body_by_indent(lines, code, skip, start, with_end):
+def body_by_indent(lines, code, inside, open_brackets, start, with_end):
     """The last line of the function defined at start, by indentation. Its body starts after its
     signature, whose last line a formatter puts at the definition's own indentation, as in ) -> int:.
-    A line in skip continues a string or open brackets, so its indentation says nothing."""
+    A line inside a string, or inside brackets opened after the definition began, continues another, so
+    its indentation says nothing; and the brackets the definition is in, as in Class.new { def ... },
+    end it when they close."""
     width = indent_of(lines[start])
     last = signature_end(code, start)
     for i in range(last + 1, len(lines)):
         if not code[i].strip():
             continue
-        if skip[i]:
+        if inside[i] or open_brackets[i] > open_brackets[start]:
             last = i
             continue
+        if open_brackets[i] < open_brackets[start]:
+            break
         if indent_of(lines[i]) <= width:
             # Its end is at its own indentation: one further out ends the class around a method that has none,
-            # written on one line.
-            if with_end and code[i].strip() == "end" and indent_of(lines[i]) == width:
+            # written on one line. So are a rescue, an else and an ensure of the whole method's.
+            word = re.match(r"(end|rescue|ensure|else)\b", code[i].strip()) if with_end else None
+            if word and indent_of(lines[i]) == width:
                 last = i
+                if word.group(1) != "end":
+                    continue
             break
         last = i
     return last
@@ -790,7 +967,10 @@ def functions(path, text):
     language = BY_EXTENSION.get(os.path.splitext(path)[1].lower())
     lines = text.split("\n")
     comments = language[4] if language else "# //"
-    code, inside = skeleton(lines, comments, language[5] if language else "", language and language[0] == "PHP")
+    if language and language[0] == "Ruby":
+        code, inside = ruby_skeleton(lines)
+    else:
+        code, inside = skeleton(lines, comments, language[5] if language else "", language and language[0] == "PHP")
     counted = [bool(c.strip()) for c in code]
     if not language:
         return sum(counted), None, None
@@ -800,9 +980,10 @@ def functions(path, text):
     # nesting. Braces are brackets too where indentation makes the blocks.
     opening = "([{" if ending != "brackets" else "(["
     closing = "".join(CLOSE[OPEN.index(c)] for c in opening)
-    continued, depth = [], 0
+    continued, open_brackets, depth = [], [], 0
     for line in code:
         continued.append(depth > 0)
+        open_brackets.append(depth)
         depth = max(0, depth + sum(line.count(c) for c in opening) - sum(line.count(c) for c in closing))
     if name == "Python":  # Docstrings are documentation, as comments are.
         for i in docstrings(code, inside, continued):
@@ -819,7 +1000,7 @@ def functions(path, text):
             if last is None:
                 continue
         else:
-            last = body_by_indent(lines, code, skip, start, ending == "end")
+            last = body_by_indent(lines, code, inside, open_brackets, start, ending == "end")
         base = indent_of(lines[start])
         depths = [(indent_of(lines[i]) - base) // unit - 1 for i in range(start + 1, last + 1)
                   if counted[i] and not inside[i] and not continued[i]]

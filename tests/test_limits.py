@@ -31,7 +31,6 @@ CASES = {
                                     "function g() {\n  return 2\n}\n"),
     "heredoc comment": ("a.php", "<?php\nfunction f() {\n    $sql = <<<SQL\nSELECT 1\n# not a comment\nSQL;\n"
                                  "    return $sql;\n}\n"),
-    "block comment": ("a.rb", "def f\n  1\nend\n=begin\nnotes about f\n# more notes\n=end\n"),
     "continuation": ("a.py", "def f(a, b):\n    total = a + \\\n            b\n    return total\n"),
     "bare jsx": ("a.tsx", "const Row = () =>\n  <tr>\n    <td>a</td>\n  </tr>\nconst next = 1\n"),
 }
@@ -90,11 +89,6 @@ class KnownLimits(unittest.TestCase):
         # Each line of the string is code, as a multi-line string's lines are; one that starts like a
         # comment is taken for one.
         self.assertEqual(spans("heredoc comment"), [["f", 2, 8, 7]])
-
-    @unittest.expectedFailure
-    def test_a_block_comments_text(self):
-        # Ruby's =begin ... =end is a comment: none of its lines is code, whatever they start with.
-        self.assertEqual(measured("block comment")[0], 3)
 
     @unittest.expectedFailure
     def test_nesting_of_a_continuation_line(self):
