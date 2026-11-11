@@ -119,12 +119,12 @@ def home():
 
 
 def git(*args, **options):
-    """Run git with no prompt (stdin may be this script), only the transports a source may use, and none of
-    the user's variables that would point it at another repo; return its output as text, or as bytes with
-    raw=True; raise Failure if it fails, or return None with check=False."""
+    """Run git with no prompt (stdin may be this script, so git gets only the bytes given as input), only the
+    transports a source may use, and none of the user's variables that would point it at another repo; return
+    its output as text, or as bytes with raw=True; raise Failure if it fails, or return None with check=False."""
     env = dict((k, v) for k, v in os.environ.items() if k not in GIT_PLACES)
     env.update(GIT_TERMINAL_PROMPT="0", GIT_PROTOCOL_FROM_USER="0", GIT_ALLOW_PROTOCOL="file:git:https:ssh")
-    result = subprocess.run(["git"] + list(args), cwd=options.get("cwd"), stdin=subprocess.DEVNULL,
+    result = subprocess.run(["git"] + list(args), cwd=options.get("cwd"), input=options.get("input", b""),
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
     if result.returncode != 0:
         if options.get("check", True):
@@ -302,7 +302,7 @@ def fetch(source, target, into):
         raise Failure("%s at %s gave no commit." % (source, target.shown))
     target.commit = commit
     where = "%s at %s" % (source, target.label())
-    files, seen = {}, {}
+    entries, seen = [], {}
     for entry in git("-C", into, "ls-tree", "-r", "-z", commit, "--", SKILL + "/", raw=True).split(b"\0"):
         if not entry:
             continue
@@ -319,12 +319,31 @@ def fetch(source, target, into):
             raise Failure("%s has both %s and %s, which one folder can't hold apart on every system."
                           % (where, seen[path.lower()], path))
         seen[path.lower()] = path
-        files[path] = (git("-C", into, "cat-file", "blob", sha, raw=True), mode == "100755")
+        entries.append((path, sha, mode == "100755"))
+    files = read_blobs(into, entries, where)
     if "SKILL.md" not in files:
         raise Failure("%s has no %s/SKILL.md: it's older than the installer's layout, so install a release from "
                       "v1.0.0 on." % (where, SKILL))
     if not re.search(br"(?m)^name:\s*" + NAME.encode() + br"\s*$", files["SKILL.md"][0].split(b"\n---", 1)[0]):
         raise Failure("%s has a SKILL.md that isn't %s's, so nothing was installed." % (where, NAME))
+    return files
+
+
+def read_blobs(repo, entries, where):
+    """The blobs that entries (path, hash, executable) name, read with one git cat-file --batch: a map from
+    each path to its bytes and whether it's executable."""
+    out = git("-C", repo, "cat-file", "--batch", raw=True, input="".join(sha + "\n" for _, sha, _ in entries).encode())
+    files, at = {}, 0
+    for path, sha, executable in entries:
+        end = out.find(b"\n", at)
+        header = out[at:end].decode("ascii", "replace").split(" ")
+        if end < 0 or len(header) != 3 or header[0] != sha or header[1] != "blob" or not header[2].isdigit():
+            raise Failure("%s: git couldn't read %s." % (where, path))
+        size = int(header[2])
+        data, at = out[end + 1:end + 1 + size], end + 1 + size + 1
+        if len(data) != size or out[at - 1:at] != b"\n":
+            raise Failure("%s: git couldn't read %s." % (where, path))
+        files[path] = (data, executable)
     return files
 
 
