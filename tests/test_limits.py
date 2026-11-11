@@ -4,7 +4,8 @@ Where the help calls something wrong, the test asserts what would be right and i
 if a change to measure.py fixes the limit, the test passes unexpectedly, the run fails, and the help needs
 the line taken out. Where a limit is a choice the help describes (a nested function counted twice, an
 anonymous function counted in the one around it), the test asserts today's behaviour, so the help stays
-true. The last test checks the help still lists each of them.
+true. The last test checks the help still lists each of them. One limit the help doesn't list yet, found
+while writing these, is marked as such.
 """
 
 import unittest
@@ -32,6 +33,7 @@ CASES = {
                                  "    return $sql;\n}\n"),
     "block comment": ("a.rb", "def f\n  1\nend\n=begin\nnotes about f\n# more notes\n=end\n"),
     "continuation": ("a.py", "def f(a, b):\n    total = a + \\\n            b\n    return total\n"),
+    "bare jsx": ("a.tsx", "const Row = () =>\n  <tr>\n    <td>a</td>\n  </tr>\nconst next = 1\n"),
 }
 
 
@@ -97,6 +99,12 @@ class KnownLimits(unittest.TestCase):
     @unittest.expectedFailure
     def test_nesting_of_a_continuation_line(self):
         self.assertEqual([f[4] for f in measured("continuation")[1]], [0])
+
+    @unittest.expectedFailure
+    def test_an_arrow_returning_jsx_with_no_brackets_around_it(self):
+        # Not in the help's list: the body ends at its first line, since a JSX tag isn't an operator that an
+        # expression goes on after. Brackets around the JSX, as formatters write it, are read right.
+        self.assertEqual(spans("bare jsx"), [["Row", 1, 4, 4]])
 
     def test_each_case_runs_without_an_error(self):
         # An expected failure would hide an exception, so each case runs here on its own too.
