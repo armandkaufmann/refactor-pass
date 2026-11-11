@@ -1,0 +1,614 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Refactor pass</title>
+<style>
+/* One reading column; each item is a row with its status mark in a gutter on the left.
+   Self-contained: no external requests, so it works opened from disk. */
+:root {
+  --bg: #f3f4f8;
+  --surface: #ffffff;
+  --ink: #1b1d24;
+  --muted: #5b6172;
+  --rule: #dcdfe8;
+  --accent: #3d59a1;
+  --accent-soft: #e4e9f6;
+  --accent-mid: #a9b8de;
+  --done: #2c7a4f;
+  --done-soft: #e1f1e7;
+  --doing: #a8650f;
+  --doing-soft: #f8ecd8;
+  --wait: #7a4fa8;
+  --wait-soft: #eee6f7;
+  --error: #b42318;
+  --error-soft: #fbe9e7;
+  --code-bg: #eceef4;
+  --font-display: "IBM Plex Sans Condensed", "Roboto Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --step--1: 0.8125rem;
+  --step-0: 0.9375rem;
+  --step-1: 1.125rem;
+  --step-2: 1.4rem;
+  --step-3: 2.1rem;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #111217;
+    --surface: #1b1d24;
+    --ink: #e6e8ef;
+    --muted: #9ba1b3;
+    --rule: #2f3341;
+    --accent: #8fa8e8;
+    --accent-soft: #232b44;
+    --accent-mid: #3e4d78;
+    --done: #63c98e;
+    --done-soft: #17291f;
+    --doing: #e6b25a;
+    --doing-soft: #2e2414;
+    --wait: #c4a2ea;
+    --wait-soft: #2a2036;
+    --error: #f97066;
+    --error-soft: #3a1714;
+    --code-bg: #242733;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #111217;
+  --surface: #1b1d24;
+  --ink: #e6e8ef;
+  --muted: #9ba1b3;
+  --rule: #2f3341;
+  --accent: #8fa8e8;
+  --accent-soft: #232b44;
+  --accent-mid: #3e4d78;
+  --done: #63c98e;
+  --done-soft: #17291f;
+  --doing: #e6b25a;
+  --doing-soft: #2e2414;
+  --wait: #c4a2ea;
+  --wait-soft: #2a2036;
+  --error: #f97066;
+  --error-soft: #3a1714;
+  --code-bg: #242733;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: var(--step-0);
+  line-height: 1.55;
+  padding-inline: 16px;
+}
+.page {
+  max-width: 50rem;
+  margin: 0 auto;
+  padding-block: 40px 72px;
+  display: grid;
+  gap: 40px;
+}
+/* Grid children may shrink below their content, so a wide table scrolls in its own box, not the page. */
+.page > *, section > * { min-width: 0; }
+h1, h2, h3 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  text-wrap: balance;
+  margin: 0;
+  line-height: 1.2;
+}
+h1 { font-size: var(--step-3); letter-spacing: -0.01em; }
+h2 { font-size: var(--step-2); }
+h3 { font-size: var(--step-1); font-weight: 600; }
+p { margin: 0; }
+a { color: var(--accent); }
+code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  background: var(--code-bg);
+  padding: 0.05em 0.35em;
+  border-radius: 4px;
+  overflow-wrap: anywhere;
+}
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+.muted { color: var(--muted); }
+[hidden] { display: none !important; }
+
+/* Header */
+header { display: grid; gap: 14px; }
+.lede { color: var(--muted); max-width: 62ch; }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 18px; font-family: var(--font-mono); font-size: var(--step--1); color: var(--muted); }
+.meta b { color: var(--ink); font-weight: 500; }
+.error { padding: 14px 16px; border-radius: 10px; background: var(--error-soft); color: var(--error); white-space: pre-wrap; font-family: var(--font-mono); font-size: var(--step--1); }
+
+/* Progress */
+.progress { display: grid; gap: 12px; padding: 18px 20px; background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; }
+.progress-row { display: grid; grid-template-columns: 9rem 1fr auto; align-items: center; gap: 14px; }
+.progress-row .label { font-weight: 500; }
+.progress-row .count { font-family: var(--font-mono); font-size: var(--step--1); color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.segments { display: flex; gap: 4px; min-width: 0; }
+.segments span { flex: 1; height: 10px; border-radius: 3px; background: var(--rule); }
+.segments span.done { background: var(--done); }
+.segments span.doing { background: var(--doing); }
+.segments span.waiting { background: var(--wait); }
+.segments span.skipped { background: transparent; border: 1px dashed var(--muted); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: var(--step--1); color: var(--muted); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.legend i.skipped { border: 1px dashed var(--muted); }
+
+/* Hot spots */
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 8px 10px 8px 0; border-bottom: 1px solid var(--rule); vertical-align: middle; }
+th { font-family: var(--font-mono); font-size: var(--step--1); font-weight: 400; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; white-space: nowrap; }
+th.bar-col { white-space: normal; min-width: 7rem; }
+td.num, th.num { text-align: right; }
+/* A path may break after a slash, never inside a name, so the table fits a narrow screen. */
+td.path code { overflow-wrap: normal; }
+td.num { font-family: var(--font-mono); font-size: var(--step--1); white-space: nowrap; }
+.bar { position: relative; height: 8px; min-width: 7rem; background: var(--code-bg); border-radius: 4px; }
+.bar span { position: absolute; inset: 0 auto 0 0; border-radius: 4px; }
+.bar .all { background: var(--accent-mid); }
+.bar .recent { background: var(--accent); }
+details { display: grid; gap: 10px; }
+summary { cursor: pointer; color: var(--muted); font-size: var(--step--1); }
+.pairs { margin: 0; padding-left: 1.1rem; display: grid; gap: 4px; }
+.pairs li::marker { color: var(--muted); }
+
+/* Sections and items */
+section { display: grid; gap: 16px; }
+.section-head { display: grid; gap: 6px; }
+.section-head p { color: var(--muted); max-width: 64ch; }
+ol.items, ul.items { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; border-top: 1px solid var(--rule); }
+.item { display: grid; grid-template-columns: 2.25rem 1fr; gap: 0 12px; padding-block: 18px; border-bottom: 1px solid var(--rule); }
+.mark { width: 26px; height: 26px; margin-top: 1px; }
+.mark circle, .mark path { fill: none; stroke-width: 2; }
+.item[data-status="todo"] .mark circle { stroke: var(--muted); }
+.item[data-status="doing"] .mark circle { stroke: var(--doing); }
+.item[data-status="doing"] .mark path { fill: var(--doing); stroke: none; }
+.item[data-status="done"] .mark circle { stroke: var(--done); fill: var(--done); }
+.item[data-status="done"] .mark path { stroke: var(--surface); }
+.item[data-status="waiting"] .mark circle { stroke: var(--wait); stroke-dasharray: 3 3; }
+.item[data-status="waiting"] .mark path { fill: var(--wait); stroke: none; }
+.item[data-status="skipped"] .mark circle, .item[data-status="skipped"] .mark path { stroke: var(--muted); }
+.body { display: grid; gap: 10px; min-width: 0; }
+.title-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; }
+.title-row .id { font-family: var(--font-mono); font-size: var(--step--1); color: var(--muted); }
+.item[data-status="done"] h3, .item[data-status="skipped"] h3 { color: var(--muted); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font-family: var(--font-mono); font-size: 0.75rem; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--rule); color: var(--muted); white-space: nowrap; }
+.chip.status { border-color: transparent; font-weight: 500; }
+.chip.status.todo { background: var(--code-bg); color: var(--muted); }
+.chip.status.doing { background: var(--doing-soft); color: var(--doing); }
+.chip.status.done { background: var(--done-soft); color: var(--done); }
+.chip.status.waiting { background: var(--wait-soft); color: var(--wait); }
+.chip.status.skipped { background: transparent; border: 1px dashed var(--muted); }
+.why { margin: 0; padding-left: 1.1rem; display: grid; gap: 4px; }
+.why li::marker { color: var(--muted); }
+.plan { display: grid; grid-template-columns: 6.5rem 1fr; gap: 4px 12px; margin: 0; }
+.plan dt { font-family: var(--font-mono); font-size: var(--step--1); color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; padding-top: 2px; }
+.plan dd { margin: 0; min-width: 0; }
+.plan ol { margin: 0; padding-left: 1.2rem; display: grid; gap: 2px; }
+.cost { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; padding: 10px 12px; border-radius: 8px; background: var(--accent-soft); }
+.cost b { font-weight: 500; }
+.cost .eyebrow { color: inherit; grid-column: 1 / -1; }
+.outcome { padding: 10px 12px; border-radius: 8px; background: var(--done-soft); display: grid; gap: 4px; }
+.outcome.doing { background: var(--doing-soft); }
+.outcome.waiting { background: var(--wait-soft); }
+.outcome.skipped { background: var(--code-bg); }
+.outcome .eyebrow { color: inherit; }
+.eyebrow .sha, .eyebrow code { text-transform: none; letter-spacing: 0; }
+
+/* Compact rows: fixes, later, your call, since the last pass, left alone */
+.item.compact { padding-block: 12px; }
+.item.compact .mark { width: 22px; height: 22px; }
+.item.compact .body { gap: 6px; }
+.item.compact p { color: var(--muted); }
+.plain { list-style: none; margin: 0; padding: 0; display: grid; border-top: 1px solid var(--rule); }
+.plain li { display: grid; gap: 4px; padding-block: 12px; border-bottom: 1px solid var(--rule); min-width: 0; }
+.plain li p { color: var(--muted); }
+
+/* How each step is checked */
+.checks { display: grid; gap: 10px; padding: 18px 20px; background: var(--accent-soft); border-radius: 10px; }
+.checks ul { margin: 0; padding-left: 1.1rem; display: grid; gap: 4px; }
+
+/* Log */
+.log { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.log li { display: grid; grid-template-columns: 6.5rem 1fr; gap: 12px; }
+.log time { font-family: var(--font-mono); font-size: var(--step--1); color: var(--muted); padding-top: 2px; font-variant-numeric: tabular-nums; }
+
+@media (max-width: 560px) {
+  .progress-row { grid-template-columns: 1fr auto; }
+  .progress-row .segments { grid-column: 1 / -1; grid-row: 2; }
+  .plan { grid-template-columns: 1fr; }
+  .plan dt { padding-top: 6px; }
+  .log li { grid-template-columns: 1fr; gap: 2px; }
+  .item { grid-template-columns: 1.9rem 1fr; gap: 0 10px; }
+  .bar-col { display: none; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .segments span { transition: background-color 0.3s ease; }
+}
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <div class="eyebrow" id="eyebrow">Refactor checklist</div>
+    <h1 id="heading">Refactor pass</h1>
+    <p class="lede" id="summary"></p>
+    <div class="meta" id="meta"></div>
+  </header>
+
+  <div class="error" id="error" hidden></div>
+
+  <div class="progress" id="progress" aria-label="Progress" hidden></div>
+
+  <section id="earlier" hidden>
+    <div class="section-head">
+      <h2>Since the last pass</h2>
+      <p id="earlier-lede">What each finished refactor said the next change would cost, against what the next real change of that kind touched.</p>
+    </div>
+    <ul class="plain" id="earlier-list"></ul>
+  </section>
+
+  <section id="hotspots">
+    <div class="section-head">
+      <h2>Where changes land</h2>
+      <p id="window"></p>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>File</th><th class="num">Lines</th><th class="num">Commits</th><th class="num">Newer half</th><th class="num">Growth</th><th class="bar-col" style="width:30%">Commits, newer half solid</th></tr></thead>
+        <tbody id="files-top"></tbody>
+      </table>
+    </div>
+    <details id="files-more" hidden>
+      <summary id="files-more-label"></summary>
+      <div class="table-wrap">
+        <table><tbody id="files-rest"></tbody></table>
+      </div>
+    </details>
+    <div id="pairs-wrap" hidden>
+      <h3>Changed together</h3>
+      <ul class="pairs" id="pairs"></ul>
+    </div>
+    <div id="tied-wrap" hidden>
+      <h3>Tests that change with several files</h3>
+      <ul class="pairs" id="tied"></ul>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>Refactors</h2>
+      <p>In the suggested order. Each one names the change it makes cheaper, and what that change costs today and would cost after.</p>
+    </div>
+    <ol class="items" id="refactors"></ol>
+  </section>
+
+  <section id="fixes-section" hidden>
+    <div class="section-head">
+      <h2>Small fixes</h2>
+      <p>Found along the way. Each gets its own commit; a bug gets a failing test first.</p>
+    </div>
+    <ul class="items" id="fixes"></ul>
+  </section>
+
+  <section id="later-section" hidden>
+    <div class="section-head">
+      <h2>Later</h2>
+      <p>Smelly but cold, or worth doing when the code nearby is next touched, not on their own.</p>
+    </div>
+    <ul class="items" id="later"></ul>
+  </section>
+
+  <section id="decisions-section" hidden>
+    <div class="section-head">
+      <h2>Your call</h2>
+      <p>Changes to how the project works. The trade-off, not a decision.</p>
+    </div>
+    <ul class="items" id="decisions"></ul>
+  </section>
+
+  <section id="left-alone-section" hidden>
+    <div class="section-head">
+      <h2>Looked at and left alone</h2>
+      <p>What looked like a candidate and isn't worth touching, and why.</p>
+    </div>
+    <ul class="plain" id="left-alone"></ul>
+  </section>
+
+  <div class="checks" id="checks-box" hidden>
+    <h2>How each step is checked</h2>
+    <ul id="checks"></ul>
+  </div>
+
+  <section id="log-section" hidden>
+    <div class="section-head">
+      <h2>Log</h2>
+    </div>
+    <ol class="log" id="log"></ol>
+  </section>
+</div>
+
+<script>
+const STATUS_LABEL = { todo: "To do", doing: "In progress", waiting: "Waiting on you", done: "Done", skipped: "Skipped" };
+const KINDS = [
+  { prefix: "R", label: "Refactors", list: "refactors" },
+  { prefix: "F", label: "Small fixes", list: "fixes" },
+  { prefix: "L", label: "Later", list: "later" },
+  { prefix: "D", label: "Your call", list: "decisions" },
+];
+const HEATMAP_ROWS_SHOWN = 10;
+
+function $(id) { return document.getElementById(id); }
+function esc(text) {
+  return String(text == null ? "" : text)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+// `code` spans become <code>, and web addresses become links.
+function rich(text) {
+  return esc(text)
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, '$1<a href="$2">$2</a>');
+}
+function list(value) { return Array.isArray(value) ? value : (value ? [value] : []); }
+// Dates are written as 2026-11-03 and shown as 3 Nov 2026; anything else is shown as written.
+function day(text) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text || "");
+  if (!m) return esc(text || "");
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return `${Number(m[3])} ${months[Number(m[2]) - 1]} ${m[1]}`;
+}
+function number(n) { return Number(n).toLocaleString("en-GB"); }
+// A file's path as code that may break after a slash, so a narrow screen breaks it between names.
+function path(p) { return `<code>${esc(p).replace(/\//g, "/<wbr>")}</code>`; }
+function short(sha) { return esc(String(sha).slice(0, 7)); }
+
+function readBlock(id) {
+  const text = $(id).textContent.trim();
+  try {
+    return text ? JSON.parse(text) : null;
+  } catch (e) {
+    throw new Error(`The ${id} block doesn't parse: ${e.message}. Run scripts/check_page.py on this file to find where.`);
+  }
+}
+
+function mark(status) {
+  const inner = {
+    doing: '<path d="M13 3 a10 10 0 0 1 0 20 z"/>',
+    done: '<path d="M8 13.5 l3.5 3.5 l6.5 -7.5" stroke-linecap="round" stroke-linejoin="round"/>',
+    waiting: '<path d="M11.2 13 a1.8 1.8 0 1 0 3.6 0 a1.8 1.8 0 1 0 -3.6 0 z"/>',
+    skipped: '<path d="M6 20 L20 6"/>',
+  }[status] || "";
+  return `<svg class="mark" viewBox="0 0 26 26" aria-hidden="true"><circle cx="13" cy="13" r="10"/>${inner}</svg>`;
+}
+function statusChip(status) {
+  return `<span class="chip status ${esc(status)}">${esc(STATUS_LABEL[status] || status)}</span>`;
+}
+function fromChip(item) {
+  return item.from ? `<span class="chip">from ${day(item.from)}</span>` : "";
+}
+function outcome(item) {
+  if (!item.outcome) return "";
+  const commits = list(item.commits);
+  const head = item.status === "done" && commits.length ? `Done in <span class="sha">${commits.map(short).join(", ")}</span>` : esc(STATUS_LABEL[item.status] || item.status);
+  return `<div class="outcome ${esc(item.status)}"><span class="eyebrow">${head}</span><p>${rich(item.outcome)}</p></div>`;
+}
+
+function renderRefactor(item) {
+  const cost = item.cost || {};
+  return `<li class="item" data-status="${esc(item.status)}" id="${esc(item.id)}">
+    ${mark(item.status)}
+    <div class="body">
+      <div class="title-row"><span class="id">${esc(item.id)}</span><h3>${rich(item.title)}</h3></div>
+      <div class="chips">${statusChip(item.status)}<span class="chip">size ${esc(item.size)}</span><span class="chip">risk ${esc(item.risk)}</span>${fromChip(item)}</div>
+      ${outcome(item)}
+      <div class="cost"><span class="eyebrow">Next change: ${rich(item.eases)}</span><b>Today</b><span>${rich(cost.today)}</span><b>After</b><span>${rich(cost.after)}</span></div>
+      <ul class="why">${list(item.smells).map(s => `<li>${rich(s)}</li>`).join("")}</ul>
+      <dl class="plan">
+        <dt>Plan</dt><dd><ol>${list(item.plan).map(s => `<li>${rich(s)}</li>`).join("")}</ol></dd>
+        <dt>Files</dt><dd>${list(item.files).map(path).join(", ")}</dd>
+        <dt>Checked by</dt><dd>${rich(item.verify)}</dd>
+      </dl>
+    </div>
+  </li>`;
+}
+// The note comes before the outcome here: it says what was found, and the outcome answers it.
+function renderCompact(item) {
+  return `<li class="item compact" data-status="${esc(item.status)}" id="${esc(item.id)}">
+    ${mark(item.status)}
+    <div class="body">
+      <div class="title-row"><span class="id">${esc(item.id)}</span><h3>${rich(item.title)}</h3>${statusChip(item.status)}${fromChip(item)}</div>
+      <p>${rich(item.note)}</p>
+      ${outcome(item)}
+    </div>
+  </li>`;
+}
+
+function progressRow(label, items) {
+  const done = items.filter(i => i.status === "done").length;
+  const segments = items.map(i => `<span class="${esc(i.status)}" title="${esc(i.id)}: ${esc(STATUS_LABEL[i.status] || i.status)}"></span>`).join("");
+  return `<div class="progress-row"><span class="label">${label}</span><div class="segments">${segments}</div><span class="count">${done} of ${items.length} done</span></div>`;
+}
+
+function renderHeatmap(heat) {
+  if (!heat) {
+    $("window").innerHTML = "No heatmap yet. <code>scripts/heatmap.py --page</code> puts it here.";
+    return;
+  }
+  const w = heat.window;
+  const leftOut = [
+    [w.excluded_checklists, "recorded on refactor checklists"],
+    [w.excluded_asked, "asked"],
+    [w.excluded_ignore_revs, "in .git-blame-ignore-revs"],
+    [w.excluded_bots, "by bots"],
+  ].filter(x => x[0]).map(x => `${number(x[0])} ${x[1]}`);
+  const since = w.since ? ` (since ${esc(w.since)})` : "";
+  let text = `${number(w.commits)} commits in <code>${esc(heat.scope.join(" "))}</code>, ${day(w.oldest.date)} to ${day(w.newest.date)}${since}, at ${short(heat.head)}. ` +
+    `The newer half starts ${day(w.newer_half_from)}. Files are ordered by commits times lines.`;
+  if (leftOut.length) text += ` Left out: ${leftOut.join(", ")}.`;
+  if (w.tests_aside) text += ` ${number(w.tests_aside)} test files changed too, and are set aside from the table and the pairs.`;
+  if (w.shallow) text += " The clone is shallow, so its history stops just before the oldest commit here.";
+  $("window").innerHTML = text;
+  const most = Math.max(1, ...heat.files.map(f => f.commits));
+  const row = f => `<tr><td class="path">${path(f.path)}</td><td class="num">${number(f.size)}</td><td class="num">${f.commits}</td><td class="num">${f.recent}</td><td class="num">${f.growth > 0 ? "+" : ""}${number(f.growth)}</td>` +
+    `<td class="bar-col"><div class="bar" role="img" aria-label="${f.commits} commits, ${f.recent} in the newer half"><span class="all" style="width:${100 * f.commits / most}%"></span><span class="recent" style="width:${100 * f.recent / most}%"></span></div></td></tr>`;
+  $("files-top").innerHTML = heat.files.slice(0, HEATMAP_ROWS_SHOWN).map(row).join("");
+  const rest = heat.files.slice(HEATMAP_ROWS_SHOWN);
+  if (rest.length) {
+    $("files-rest").innerHTML = rest.map(row).join("");
+    $("files-more-label").textContent = `${rest.length} more of the ${number(heat.total_files)} files changed in the window`;
+    $("files-more").hidden = false;
+  }
+  // Pairs, and groups of files that all pair with each other, strongest first.
+  const names = paths => paths.map(path).join(", ").replace(/, (?=[^,]*$)/, " and ");
+  const together = list(heat.groups).concat(list(heat.pairs)).sort((x, y) => y.shared - x.shared || y.degree - x.degree);
+  if (together.length) {
+    $("pairs").innerHTML = together.map(p => {
+      const degree = `degree ${Math.round(p.degree * 100)}%`;
+      if (!p.files) return `<li>${names([p.a, p.b])}: ${p.shared} commits together, ${degree}</li>`;
+      const [least, most] = p.pairs || [p.shared, p.shared];
+      const spread = least === most && most === p.shared ? "" : `; each pair ${least}${least === most ? "" : ` to ${most}`}`;
+      return `<li>${names(p.files)}: ${p.shared} commits changed all ${p.files.length}${spread}, ${degree}</li>`;
+    }).join("");
+    $("pairs-wrap").hidden = false;
+  }
+  if (w.too_big_for_pairs) {
+    $("pairs-wrap").hidden = false;
+    const one = w.too_big_for_pairs === 1;
+    $("pairs").insertAdjacentHTML("beforeend", `<li class="muted">${number(w.too_big_for_pairs)} commit${one ? "" : "s"} changed more than ${heat.options.max_files} files and ${one ? "is" : "are"} left out of the pairs.</li>`);
+  }
+  const tied = list(heat.tests);
+  if (tied.length) {
+    $("tied").innerHTML = tied.map(t => `<li>${path(t.test)} changes with ${t.files.length} production files besides its own: ` +
+      `${t.files.map((f, i) => `${path(f.path)} (${f.shared}${i ? "" : " commits"})`).join(", ")}</li>`).join("");
+    $("tied-wrap").hidden = false;
+  }
+}
+
+function renderEarlier(earlier) {
+  if (!earlier) return;
+  $("earlier-lede").innerHTML += earlier.checklist ? ` From <code>${esc(earlier.checklist)}</code>.` : "";
+  const results = list(earlier.results);
+  if (!results.length) $("earlier-list").innerHTML = `<li><p>No refactor was finished on it.</p></li>`;
+  else $("earlier-list").innerHTML = results.map(r => {
+    const cost = r.cost || {};
+    const actual = r.change ? `<p><b>Next real change:</b> ${rich(r.change)}. It touched ${rich(r.actual)}.</p>` : `<p>No change of this kind yet.</p>`;
+    return `<li><div class="title-row"><span class="id">${esc(r.id)}</span><h3>${rich(r.title)}</h3></div>
+      <p><b>Predicted for ${rich(r.eases)}:</b> before, ${rich(cost.today)}; after, ${rich(cost.after)}.</p>${actual}${r.note ? `<p>${rich(r.note)}</p>` : ""}</li>`;
+  }).join("");
+  $("earlier").hidden = false;
+}
+
+function render() {
+  const heat = readBlock("heatmap");
+  const pass = readBlock("pass") || {};
+  if (pass.project) {
+    document.title = `${pass.project} refactor pass`;
+    $("eyebrow").textContent = `${pass.project} · refactor checklist`;
+    $("heading").textContent = `${pass.project} refactor pass`;
+  }
+  $("summary").innerHTML = rich(pass.summary || "");
+  const meta = [];
+  if (pass.started) meta.push(`<span>Started <b>${day(pass.started)}</b></span>`);
+  if (pass.base) meta.push(`<span>From <b>${short(pass.base)}</b></span>`);
+  if (pass.updated) meta.push(`<span>Updated <b>${day(pass.updated)}</b></span>`);
+  $("meta").innerHTML = meta.join("");
+
+  const items = list(pass.items);
+  const rows = [];
+  for (const kind of KINDS) {
+    const mine = items.filter(i => String(i.id).charAt(0) === kind.prefix);
+    if (kind.prefix === "R") {
+      $(kind.list).innerHTML = mine.length ? mine.map(renderRefactor).join("") : `<li class="item compact"><span></span><p class="muted">None.</p></li>`;
+    } else {
+      $(kind.list).innerHTML = mine.map(renderCompact).join("");
+      $(`${kind.list}-section`).hidden = !mine.length;
+    }
+    if (mine.length) rows.push(progressRow(kind.label, mine));
+  }
+  if (rows.length) {
+    $("progress").innerHTML = rows.join("") +
+      `<div class="legend"><span><i style="background:var(--done)"></i>Done</span><span><i style="background:var(--doing)"></i>In progress</span><span><i style="background:var(--wait)"></i>Waiting on you</span><span><i style="background:var(--rule)"></i>To do</span><span><i class="skipped"></i>Skipped</span></div>`;
+    $("progress").hidden = false;
+  }
+
+  renderEarlier(pass.earlier);
+  renderHeatmap(heat);
+
+  const leftAlone = list(pass.left_alone);
+  $("left-alone").innerHTML = leftAlone.map(x => `<li><b>${rich(x.what)}</b><p>${rich(x.why)}</p></li>`).join("");
+  $("left-alone-section").hidden = !leftAlone.length;
+  const checks = list(pass.checks);
+  $("checks").innerHTML = checks.map(c => `<li>${rich(c)}</li>`).join("");
+  $("checks-box").hidden = !checks.length;
+  const log = list(pass.log);
+  $("log").innerHTML = log.map(l => `<li><time>${day(l.date)}</time><p>${rich(l.text)}</p></li>`).join("");
+  $("log-section").hidden = !log.length;
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  try {
+    render();
+  } catch (e) {
+    $("error").textContent = e.message;
+    $("error").hidden = false;
+  }
+});
+</script>
+
+<!-- The data. heatmap.py --page writes the heatmap block, and rewrites it on a
+     refresh; leave it alone. You write the pass block, as SKILL.md steps 5 to 7
+     say, and run scripts/check_page.py on this file after each edit.
+
+     Start each item with its id and status, as below, so a status update is
+     a one-line edit. Rn and Fn stand for real IDs, such as R1 and F1:
+       {"id": "Rn", "status": "todo", "title": "Name the states of a checkout",
+        "eases": "adding a payment method",
+        "smells": ["Hidden State Machine: 6 flags, 9 places set them (`checkout.py:40`)"],
+        "cost": {"today": "5 files, 2 switches", "after": "1 file"},
+        "plan": ["Pin today's behaviour with tests", "Replace Primitive with Object: one state field"],
+        "files": ["src/checkout.py", "src/payment.py"],
+        "size": "M", "risk": "Medium",
+        "verify": "`make test`; the checkout snapshots",
+        "commits": [], "outcome": ""}
+       {"id": "Fn", "status": "todo", "title": "…", "note": "…", "commits": [], "outcome": ""}
+     L and D items have the same fields as F. An item carried over from an
+     earlier checklist adds "from": "2026-11-03", the date it first appeared.
+     Statuses: todo, doing, waiting (on the user), done, skipped. Size: S, M
+     or L; risk: Low, Medium or High. Dates as 2026-11-03. In text, `code`
+     shows as code. -->
+<script type="application/json" id="heatmap">
+null
+</script>
+<script type="application/json" id="pass">
+{
+ "project": "",
+ "started": "",
+ "base": "",
+ "updated": "",
+ "summary": "",
+ "checks": [],
+ "earlier": null,
+ "items": [
+ ],
+ "left_alone": [],
+ "log": []
+}
+</script>
+</body>
+</html>
