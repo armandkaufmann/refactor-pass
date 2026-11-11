@@ -1132,11 +1132,13 @@ SIGNATURE_GOES_ON = re.compile(r"(?:[|&:.,<(\[{=]|->|=>|\b(?:where|extends|imple
 SIGNATURE_NEXT = re.compile(r"\s*(?:[{:=,.?|&>)\]]|->|=>|(?:where|throws|rethrows|async|noexcept|requires|"
                             r"extends|implements|try)\b)")
 SIGNATURE_MACRO = re.compile(r"\s*[A-Z][A-Z0-9_]{2,}\b")
-# In C++ the next line can also start with a qualifier, as in const LOCKS_REQUIRED(mu) {.
+# In C++ the next line can also start with a qualifier, as in const LOCKS_REQUIRED(mu) {; and in Java a throws
+# at a line's end goes on with its exceptions on the next (Swift's throws ends a signature).
 SIGNATURE_NEXT_CPP = re.compile(r"\s*(?:const|volatile|override|final)\b")
+SIGNATURE_GOES_ON_JAVA = re.compile(r"\bthrows$")
 
 
-def body_by_brackets(code, inside, start, column=0, cpp=False, opened=None):
+def body_by_brackets(code, inside, start, column=0, language=None, opened=None):
     """The last line of a function's body, by matching brackets from code[start][column] on, where its
     definition starts or, if it's known, its body; None if no body follows, as for a declaration, or if
     its brackets never close. A block ends where its brace closes; an expression, such as an arrow
@@ -1144,6 +1146,7 @@ def body_by_brackets(code, inside, start, column=0, cpp=False, opened=None):
     constructor's initializers after its : run to its body's {, whatever lines they hold (a directive, a
     macro), and can be braces, as in : size_{n} {, which open right after a name or a >, unlike its body's.
     The line where a block opens is added to opened, if given."""
+    cpp = language == "C++"
     depth = carried = 0
     initializers = False  # Past a constructor's : in C++, so a { after a name is an initializer's.
     expression = False
@@ -1187,7 +1190,8 @@ def body_by_brackets(code, inside, start, column=0, cpp=False, opened=None):
                 signed = signed or (depth == 0 and c == ")")
         if signed and not expression and not arrow and not initializers and depth == 0 and not column and \
                 line.strip() and not line.lstrip().startswith("#") and \
-                not SIGNATURE_GOES_ON.search(line.rstrip()[-12:]):
+                not SIGNATURE_GOES_ON.search(line.rstrip()[-12:]) and \
+                not (language == "Java" and SIGNATURE_GOES_ON_JAVA.search(line.rstrip()[-12:])):
             # A body's { follows its signature on the same line or the next, unless the next goes on with it
             # (where, throws, ->, :...); else it's a declaration with none, as an interface's method.
             following = next((n for n in code[i + 1:i + 20] if n.strip() and not n.lstrip().startswith("#")), "")
@@ -1338,7 +1342,7 @@ def functions(path, text):
             defined = (written.group(1) if written else defined[0]), defined[1]
         if ending == "brackets":
             opened = []
-            last = body_by_brackets(code, inside, *defined[1], cpp=name == "C++", opened=opened)
+            last = body_by_brackets(code, inside, *defined[1], language=name, opened=opened)
             if last is None:
                 continue
             if name == "C++" and opened:

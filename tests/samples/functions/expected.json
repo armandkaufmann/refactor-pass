@@ -102,5 +102,6 @@
  "session.cpp": [["pair", 4, 4, 1], ["tie", 5, 5, 1], ["helper", 12, 12, 1], ["slot", 13, 13, 1],
                  ["Session::Session", 20, 22, 3], ["Session::~Session", 24, 26, 3], ["Session::run", 29, 31, 3],
                  ["Config::Config", 41, 44, 4], ["Version::Version", 54, 58, 5], ["use", 60, 71, 12]],
- "Integers.swift": [["setMultipleIntegers", 4, 41, 38], ["after", 43, 45, 3]]
+ "Integers.swift": [["setMultipleIntegers", 4, 41, 38], ["after", 43, 45, 3]],
+ "Walker.java": [["checkIfCancelled", 5, 10, 6], ["after", 15, 16, 2]]
 }
