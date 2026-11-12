@@ -336,9 +336,9 @@ def outputs(repo, env=None):
     """The heatmap, and --show for each of its files, as run with env added to the environment: each as its
     exit code, its output and its errors."""
     env = env or {}
-    found = [support.run("heatmap.py", "-C", repo.path, env=env)]
-    for path in ("a.py", "b.txt", "e.py", "f.py"):
-        found.append(support.run("heatmap.py", "-C", repo.path, "--show", path, env=env))
+    found = [support.run("heatmap.py", "-C", repo.path, env=env),
+             support.run("heatmap.py", "-C", repo.path, "--show", "a.py", "--show", "b.txt", "--show", "e.py",
+                         "--show", "f.py", env=env)]
     return [(r.code, r.out, r.err) for r in found]
 
 
@@ -414,7 +414,6 @@ class GitSettings(unittest.TestCase):
         hostile = support.run("measure.py", "-C", repo.path, env=variables)
         self.assertEqual((hostile.code, hostile.out, hostile.err), (plain.code, plain.out, plain.err))
 
-    @unittest.expectedFailure
     def test_a_subject_or_author_holding_any_character(self):
         repo = support.Repo("odd")
         repo.commit("2026-01-01", "Start", {"a.py": lines(3, "a")})
@@ -423,7 +422,8 @@ class GitSettings(unittest.TestCase):
         repo.done()
         result = support.run("heatmap.py", "-C", repo.path, "--show", "a.py")
         self.assertEqual(result.code, 0, result)
-        shown = [line.split(" ", 4)[-1] for line in result.out.splitlines()[1:] if line.strip()]
+        # Split at line ends only: splitlines() would split at \x1e too.
+        shown = [line.split(" ", 4)[-1] for line in result.out.split("\n")[1:] if line.strip()]
         self.assertEqual(shown, ["odd\x1esubject\x1fhere", "Tidy up", "Start"])
 
 

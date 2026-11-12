@@ -156,36 +156,43 @@ def git(repo, *args):
 # (log.showRoot), no signature checked, whose output would come first (log.showSignature), git's own diff and
 # limit on renames, which change the counts (diff.algorithm, diff.renameLimit), and the subjects in UTF-8
 # (i18n.logOutputEncoding). No text conversion, external diff, notes or colour either, though git leaves them
-# out of --numstat today.
+# out of --numstat today. Each commit is its hash, time, author and subject, each after a NUL, which no
+# subject or name can hold; then its numstat lines, each ending with a NUL, a rename's followed by its old
+# and its new name.
 LOG = ["log", "--no-merges", "-z", "-M", "-l1000", "--numstat", "--root", "--no-show-signature", "--no-textconv",
        "--no-ext-diff", "--diff-algorithm=myers", "--no-notes", "--no-color", "--encoding=UTF-8",
-       "--format=%x1e%H%x1f%ct%x1f%aN <%aE>%x1f%s"]
+       "--format=%x00%H%x00%ct%x00%aN <%aE>%x00%s"]
+COMMIT = re.compile(r"[0-9a-f]{40}(?:[0-9a-f]{24})?\Z")  # A full hash, of SHA-1 or SHA-256.
+NUMSTAT = re.compile(r"(\d+|-)\t(\d+|-)\t")
 
 
 def read_log(repo, revs):
     """The commits in revs, newest first: (sha, time, subject, [(path, old_path, added, removed)], author).
-    old_path is the name before a rename, else None; added and removed are None for a binary file."""
-    out = git(repo, *(LOG + revs))
+    old_path is the name before a rename, else None; added and removed are None for a binary file. Read by
+    position, so a subject or an author can hold any character."""
+    tokens = git(repo, *(LOG + revs)).split("\0")
     commits = []
-    for record in out.split("\x1e")[1:]:
-        header, _, body = record.partition("\0")
-        sha, stamp, author, subject = header.split("\x1f", 3)
-        tokens = body.split("\0")
-        changes = []
-        i = 0
-        while i < len(tokens):
-            token = tokens[i].lstrip("\n")
-            i += 1
-            if not token:
-                continue
-            added, removed, path = token.split("\t", 2)
-            old = None
+    i = 0
+    while i < len(tokens):
+        token = tokens[i].lstrip("\n")
+        i += 1
+        if not token:
+            continue
+        stat = NUMSTAT.match(token)
+        if stat and commits:
+            added, removed = stat.groups()
+            path, old = token[stat.end():], None
             if path == "":  # A rename: the old and new names follow.
                 old, path = tokens[i], tokens[i + 1]
                 i += 2
             binary = added == "-"
-            changes.append((path, old, None if binary else int(added), None if binary else int(removed)))
-        commits.append((sha, int(stamp), subject, changes, author))
+            commits[-1][3].append((path, old, None if binary else int(added), None if binary else int(removed)))
+        elif COMMIT.match(token) and i + 3 <= len(tokens):
+            stamp, author, subject = tokens[i:i + 3]
+            i += 3
+            commits.append((token, int(stamp), subject, [], author))
+        else:
+            raise ValueError("git log printed something read_log doesn't read: %r" % token[:80])
     return commits
 
 
