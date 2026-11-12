@@ -100,8 +100,11 @@ Usage:
   heatmap.py [options] [SCOPE ...]
 
 SCOPE is a folder or a glob (src, lib, 'app/**/*.py'), from the repo's top or
-from the folder -C names; with none, every file counts. A scope that matches
-no tracked file is an error. Reads git and the checklists; writes nothing but
+from the folder -C names; with none, every file counts. In a glob, * matches
+across folders too, so 'app/*.py' takes app/sub/deep.py; and **/ matches any
+number of folders, none included, so 'app/**/*.py' takes app/main.py too.
+--ignore, --test and --not-test read their globs the same way. A scope that
+matches no tracked file is an error. Reads git and the checklists; writes nothing but
 --page's file and that .gitignore.
 
 Examples:

@@ -8,6 +8,7 @@ author date is weeks before its commit date, as after a rebase: the heatmap goes
 
 import json
 import os
+import re
 import unittest
 
 try:
@@ -247,9 +248,8 @@ class Globs(unittest.TestCase):
         self.assertEqual(result.code, 0, result)
         if script == "heatmap.py":
             return set(support.heatmap_rows(result.out))
-        return set(line.split()[-1] for line in result.out.split("\n") if line.rstrip().endswith((".py", ".md")))
+        return set(line.split()[6] for line in result.out.split("\n") if re.match(r"\s*\d+ ", line))
 
-    @unittest.expectedFailure
     def test_a_double_star_matches_no_folder_too(self):
         for script in ("heatmap.py", "measure.py"):
             with self.subTest(script=script):
@@ -263,7 +263,6 @@ class Globs(unittest.TestCase):
         self.assertEqual(self.paths("heatmap.py", "app/*.py"), {"app/main.py", "app/sub/deep.py",
                                                                 "app/sub/deeper/x.py", "app/gen/made.py"})
 
-    @unittest.expectedFailure
     def test_ignore_and_test_globs_read_the_same_way(self):
         self.assertEqual(self.paths("heatmap.py", "--ignore", "**/gen/*"), {
             "top.py", "app/main.py", "app/sub/deep.py", "app/sub/deeper/x.py", "app/readme.md"})
@@ -271,7 +270,13 @@ class Globs(unittest.TestCase):
         self.assertNotIn("top.py", support.heatmap_rows(result.out))
         self.assertIn("Test files: 1 changed in the window", result.out)
 
-    @unittest.expectedFailure
+    def test_a_range_written_backwards_matches_nothing(self):
+        # As fnmatch reads one since Python 3.9; before, it failed.
+        result = support.run("heatmap.py", "-C", self.repo.path, "--ignore", "[z-a]", "app/[z-a]*.py")
+        self.assertEqual(result.code, 1, result)
+        self.assertIn("the scope app/[z-a]*.py matches no file git tracks in globs", result.err)
+        self.assertEqual(self.paths("measure.py", "--ignore", "[z-a]*", "app/*.md"), {"app/readme.md"})
+
     def test_the_help_says_how_a_glob_reads(self):
         for script in ("heatmap.py", "measure.py"):
             with self.subTest(script=script):

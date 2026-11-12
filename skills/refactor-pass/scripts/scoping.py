@@ -8,7 +8,6 @@ counts.
 """
 
 import argparse
-import fnmatch
 import os
 import posixpath
 import re
@@ -102,6 +101,74 @@ def count(least):
     return parse
 
 
+_GLOBS = {}
+
+
+def glob_piece(text):
+    """Part of a glob, between its **/s, as a regular expression: * is any characters, / included, ? any one,
+    and [...] one of a set ([!...] one not in it), as fnmatch reads them since Python 3.9, which leaves out a
+    range written backwards, such as [z-a], so no Python fails on one."""
+    out, i, n = [], 0, len(text)
+    while i < n:
+        c = text[i]
+        i += 1
+        if c == "*":
+            out.append(".*")
+        elif c == "?":
+            out.append(".")
+        elif c != "[":
+            out.append(re.escape(c))
+        else:
+            j = i + (text[i:i + 1] == "!")
+            j += text[j:j + 1] == "]"
+            j = text.find("]", j)
+            if j < 0:
+                out.append(re.escape(c))
+                continue
+            if "-" not in text[i:j]:
+                inside = text[i:j].replace("\\", "\\\\")
+            else:  # Its ranges, a-z, without those written backwards.
+                chunks, k = [], i + 2 if text[i] == "!" else i + 1
+                while True:
+                    k = text.find("-", k, j)
+                    if k < 0:
+                        break
+                    chunks.append(text[i:k])
+                    i, k = k + 1, k + 3
+                if text[i:j]:
+                    chunks.append(text[i:j])
+                else:
+                    chunks[-1] += "-"
+                for k in range(len(chunks) - 1, 0, -1):
+                    if chunks[k - 1][-1] > chunks[k][0]:
+                        chunks[k - 1] = chunks[k - 1][:-1] + chunks[k][1:]
+                        del chunks[k]
+                inside = "-".join(s.replace("\\", "\\\\").replace("-", "\\-") for s in chunks)
+            i = j + 1
+            if not inside:
+                out.append("(?!)")
+            elif inside == "!":
+                out.append(".")
+            else:
+                inside = re.sub(r"([&~|])", r"\\\1", inside)
+                out.append("[%s]" % ("^" + inside[1:] if inside[0] == "!" else
+                                     "\\" + inside if inside[0] in ("^", "[") else inside))
+    return "".join(out)
+
+
+def glob_match(path, pattern, case=True):
+    """Whether a glob matches a path: * matches across folders, so 'app/*.py' takes app/sub/deep.py, and **/
+    matches any number of folders, none included, so 'app/**/*.py' takes app/main.py too. With case False,
+    as fnmatch.fnmatch reads a glob, in any case on Windows."""
+    if not case and os.name == "nt":
+        path, pattern = path.lower(), pattern.lower()
+    found = _GLOBS.get(pattern)
+    if found is None:
+        pieces = [glob_piece(p) for p in pattern.split("**/")]
+        found = _GLOBS[pattern] = re.compile(r"(?s:%s)\Z" % "(?:.*/)?".join(pieces))
+    return bool(found.match(path))
+
+
 def in_scope(path, scopes):
     if not scopes:
         return True
@@ -109,7 +176,7 @@ def in_scope(path, scopes):
         if scope == ".":
             return True
         if any(ch in scope for ch in "*?["):
-            if fnmatch.fnmatch(path, scope):
+            if glob_match(path, scope, False):
                 return True
         elif path == scope or path.startswith(scope + "/"):
             return True
@@ -118,12 +185,12 @@ def in_scope(path, scopes):
 
 def ignored(path, patterns):
     name = posixpath.basename(path)
-    return any(fnmatch.fnmatch(name, p) or fnmatch.fnmatch(path, p) for p in patterns)
+    return any(glob_match(name, p, False) or glob_match(path, p, False) for p in patterns)
 
 
 def named(path, patterns):
     """Whether a glob, matched with case, names the file or its path."""
-    return any(fnmatch.fnmatchcase(posixpath.basename(path), p) or fnmatch.fnmatchcase(path, p) for p in patterns)
+    return any(glob_match(posixpath.basename(path), p) or glob_match(path, p) for p in patterns)
 
 
 def is_test(path, more=(), not_tests=()):
