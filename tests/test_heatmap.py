@@ -471,6 +471,38 @@ class GitSettings(unittest.TestCase):
         self.assertEqual(support.heatmap_rows(found[0][1])["a.py"], support.heatmap_rows(self.plain[0][1])["a.py"])
         self.assertEqual(found, self.plain)
 
+    @unittest.expectedFailure
+    def test_a_big_file_threshold(self):
+        # Above it git's diff reads a file as binary; at 1 byte, every file.
+        found = outputs(build_settings(), {"GIT_CONFIG_GLOBAL": user_config("[core]\n\tbigFileThreshold = 1\n")})
+        self.assertEqual(found, self.plain)
+
+    @unittest.expectedFailure
+    def test_files_attributes_mark_binary_though_text_are_named(self):
+        repo = support.Repo("attributes")
+        repo.commit("2026-01-01", "Start", {".gitattributes": "*.py -diff\n", "a.py": lines(3), "b.py": lines(3),
+                                            "c.txt": lines(3), "d.bin": b"\x00\x01\n"})
+        repo.commit("2026-01-02", "Change", {"a.py": lines(4), "b.py": lines(4), "c.txt": lines(4),
+                                             "d.bin": b"\x00\x02\n"})
+        repo.done()
+        result = support.run("heatmap.py", "-C", repo.path)
+        self.assertEqual(result.code, 0, result)
+        self.assertEqual(set(support.heatmap_rows(result.out)), {".gitattributes", "c.txt"})
+        self.assertIn("Git's attributes mark 2 files that changed in the window as binary, though they're text at "
+                      "HEAD, so they're left out: a.py and b.py.\n", result.out)
+        # The user's attributes, as the repo's.
+        plain = support.Repo("attributes-of-the-user")
+        plain.commit("2026-01-01", "Start", {"a.py": lines(3), "c.txt": lines(3)})
+        plain.commit("2026-01-02", "Change", {"a.py": lines(4), "c.txt": lines(4)})
+        plain.done()
+        home = support.new_folder("home")
+        attributes = support.write_text(os.path.join(home, "attributes"), "*.py binary\n")
+        mine = support.run("heatmap.py", "-C", plain.path, env={"GIT_CONFIG_GLOBAL": user_config(
+            "[core]\n\tattributesFile = %s\n" % attributes.replace("\\", "/"))})
+        self.assertIn("Git's attributes mark 1 file that changed in the window as binary, though it's text at HEAD, "
+                      "so it's left out: a.py.\n", mine.out)
+
+    @unittest.expectedFailure
     def test_no_setting_or_variable_changes_the_output(self):
         repo = build_settings()
         home = support.new_folder("home")
@@ -488,7 +520,8 @@ class GitSettings(unittest.TestCase):
             "i18n": ["logOutputEncoding = ISO-8859-1"],
             "format": ["pretty = oneline"],
             "color": ["ui = always", "diff = always"],
-            "core": ["quotePath = true", "abbrev = 5", "attributesFile = " + attributes.replace("\\", "/")],
+            "core": ["quotePath = true", "abbrev = 5", "attributesFile = " + attributes.replace("\\", "/"),
+                     "bigFileThreshold = 1"],
             "notes": ["displayRef = refs/notes/*"],
         }
         text = "".join("[%s]\n%s" % (name, "".join("\t%s\n" % s for s in values)) for name, values in settings.items())
