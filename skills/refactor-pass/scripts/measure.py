@@ -726,7 +726,11 @@ def preprocessed(lines, code, began_inside, directive, continues):
     found twice. A branch that's balanced keeps the others, as alternatives written in full. After #if 0
     or #if false, the next branch counts instead. A bracket that doesn't count becomes an s, so its line
     stays a code line."""
-    result, frames, going_on = [], [], False
+    # The lines read so far, outside any branch set aside or skipped, and the brackets they open less those they
+    # close, as a running sum; each #if's frame keeps where in them its branch began and the sum there, so a
+    # branch's balance is the sum since then, however many #ifs are open. Setting a branch aside takes its
+    # balance off the running sum, and so off every frame around it.
+    result, frames, going_on, read, running, skipping = [], [], False, [], 0, 0
     for i, line in enumerate(lines):
         found = directive.match(line) if going_on or not began_inside[i] else None
         if going_on or found:
@@ -734,33 +738,30 @@ def preprocessed(lines, code, began_inside, directive, continues):
             going_on = continues and line.rstrip().endswith("\\")
             if word in ("if", "ifdef", "ifndef"):
                 zero = line.split(word, 1)[1].strip() in ("0", "false")
-                frames.append({"skip": zero, "counting": not zero, "net": 0, "zero": zero, "lines": []})
+                frames.append({"skip": zero, "counting": not zero, "zero": zero, "from": len(read), "sum": running})
+                skipping += zero
             elif word in ("elif", "elseif", "else") and frames:
                 frame = frames[-1]
                 if frame["zero"]:
-                    frame.update(zero=False, skip=False, counting=True, net=0)
-                elif frame["counting"] and frame["net"] != 0:  # Set the branch aside, and read the next.
-                    for k in frame["lines"]:
+                    frame.update(zero=False, skip=False, counting=True, sum=running)
+                    frame["from"] = len(read)
+                    skipping -= 1
+                elif frame["counting"] and running != frame["sum"]:  # Set the branch aside, and read the next.
+                    for k in read[frame["from"]:]:
                         result[k] = BRACKETS_IN.sub("s", code[k])
                         began_inside[k] = True
-                    for outer in frames[:-1]:
-                        if outer["counting"]:
-                            outer["net"] -= frame["net"]
-                    frame.update(net=0, lines=[])
+                    running, frame["from"] = frame["sum"], len(read)
                 elif frame["counting"]:  # Balanced: the others are alternatives written in full.
                     frame.update(counting=False)
             elif word == "endif" and frames:
-                frames.pop()
+                skipping -= frames.pop()["skip"]
             result.append(BRACKETS_IN.sub("s", code[i]))
-        elif any(frame["skip"] for frame in frames):
+        elif skipping:
             result.append(BRACKETS_IN.sub("s", code[i]))
             began_inside[i] = True
         else:
-            net = sum(code[i].count(c) for c in OPEN) - sum(code[i].count(c) for c in CLOSE)
-            for frame in frames:
-                if frame["counting"]:
-                    frame["net"] += net
-                    frame["lines"].append(i)
+            running += sum(code[i].count(c) for c in OPEN) - sum(code[i].count(c) for c in CLOSE)
+            read.append(i)
             result.append(code[i])
     return result
 
@@ -778,6 +779,11 @@ def string_holes(language, quotes, quote, before):
         if language == "C#" and before == "$":
             return "{"
     return None
+
+
+# Characters that start nothing outside a string or a comment, in any language: not a comment's start (# or
+# /), a quote, a raw string's start ($ @ #, or b r R u U L at the start of a word) or a regular expression's.
+PLAIN = re.compile(r"(?:[^/#\"'`$@brRuUL]|(?<=[\w$@])[brRuUL])+")
 
 
 def skeleton(lines, comments, quotes, attributes=False, language=None):
@@ -801,7 +807,11 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
         code = []
         i = 0
         while i < len(line):
-            if raw is not None:
+            plain = PLAIN.match(line, i) if state is None and raw is None and not templates else None
+            if plain:  # Characters that start nothing, copied at once.
+                code.append(plain.group())
+                i = plain.end()
+            elif raw is not None:
                 if raw == '"' and language == "C#" and line.startswith('""', i):  # A verbatim string's quote.
                     code.append("ss")
                     i += 2
@@ -897,6 +907,9 @@ RUBY_VALUE_AFTER = re.compile(r"(?<![\w$@.:])(?:if|unless|elsif|while|until|and|
                               r"else|case|yield|raise|next|break|puts|print|p|begin)$")
 RUBY_PAIRS = {"(": ")", "[": "]", "{": "}", "<": ">"}
 RUBY_NAME_CHARACTER = re.compile(r"\w|[^\x00-\x7f]")
+# Ruby's code that starts nothing: not a comment, an operator's name, a symbol, a quote, a global, a heredoc,
+# a % literal, a regular expression, a character or a brace.
+RUBY_PLAIN = re.compile(r"[^#\[\]<=>!~+\-*/%^&|`:\"'$?{}]+")
 
 
 def ruby_value_may_start(line, i):
@@ -980,16 +993,21 @@ def ruby_skeleton(lines):
                 continue
             nested = top is not None  # In a #{...}: lexed as code, written as string.
             mark = (lambda text: "s" * len(text)) if nested else (lambda text: text)
-            before = line[:i]
+            plain = RUBY_PLAIN.match(line, i)
+            if plain:  # Code that starts nothing, at once.
+                code.append(mark(plain.group()))
+                i = plain.end()
+                continue
             if c == "#":
                 break  # A comment, to the end of the line.
-            if RUBY_DEF_NAME.search(before):
+            # What comes before c is read in place, never copied, so a long line stays quick.
+            if c in "[]<=>!~+-*/%^&|`" and RUBY_DEF_NAME.search(line, 0, i):
                 name = re.match(RUBY_OPERATOR, line[i:])
-                if name and c in "[]<=>!~+-*/%^&|`":
+                if name:
                     code.append(mark(name.group(0)))
                     i += name.end()
                     continue
-            symbol = RUBY_SYMBOL_OPERATOR.match(line, i) if c == ":" and not before.endswith(":") else None
+            symbol = RUBY_SYMBOL_OPERATOR.match(line, i) if c == ":" and line[i - 1:i] != ":" else None
             if symbol and not line.startswith("::", i):
                 code.append(mark(symbol.group(0)))
                 i = symbol.end()
@@ -1029,8 +1047,9 @@ def ruby_skeleton(lines):
                 continue
             # A ? straight after a name's character ends the name, as in next? and nil?; else after a
             # bracket, an = or a word such as return, it can open a character, as ?a.
-            if c == "?" and not RUBY_NAME_CHARACTER.match(before[-1:]) and (
-                    not before.rstrip() or before.rstrip()[-1] in "(,=[{" or RUBY_VALUE_AFTER.search(before.rstrip())):
+            if c == "?" and not RUBY_NAME_CHARACTER.match(line[i - 1:i]) and (
+                    not line[:i].rstrip() or line[:i].rstrip()[-1] in "(,=[{" or
+                    RUBY_VALUE_AFTER.search(line[:i].rstrip())):
                 character = re.match(r"\?(?:\\.|[^\s\w])(?!\w)", line[i:])
                 if character:
                     code.append(mark("s" * len(character.group(0))))
@@ -1091,44 +1110,71 @@ def indent_unit(lines, code, starts):
     return steps.most_common(1)[0][0] if steps else 4
 
 
-def signature_end(code, start):
+def signature_end(balance, start):
     """The line where the definition at start closes the brackets it opens: its own, or the last of a
-    signature split over lines. If they don't close within 50 lines, its own."""
+    signature split over lines. If they don't close within 50 lines, its own. balance is how many more
+    brackets each line opens than it closes."""
     depth = 0
-    for i in range(start, min(len(code), start + 50)):
-        depth += sum(code[i].count(c) for c in OPEN) - sum(code[i].count(c) for c in CLOSE)
+    for i in range(start, min(len(balance), start + 50)):
+        depth += balance[i]
         if depth <= 0:
             return i
     return start
 
 
-def body_by_indent(lines, code, inside, open_brackets, start, with_end):
+def indent_ends(code, inside, open_brackets, widths):
+    """What body_by_indent needs, worked out once per file, so that finding a function's end by indentation
+    takes about as long however many functions the file holds, nested or not: per line, the next line of
+    code outside a string at or after it (or None); the first such line after it whose brackets left open
+    and indentation, compared in that order, are less than its own (or None); and the last line of code
+    before it, in or out of a string (or None)."""
+    n = len(code)
+    keys = [(open_brackets[i], widths[i]) if code[i].strip() and not inside[i] else None for i in range(n)]
+    plain, upcoming = [None] * (n + 1), None
+    for i in range(n - 1, -1, -1):
+        upcoming = i if keys[i] is not None else upcoming
+        plain[i] = upcoming
+    shallower, waiting = [None] * n, []
+    for i in range(n):
+        if keys[i] is not None:
+            while waiting and keys[waiting[-1]] > keys[i]:
+                shallower[waiting.pop()] = i
+            waiting.append(i)
+    before, latest = [], None
+    for i in range(n + 1):
+        before.append(latest)
+        if i < n and code[i].strip():
+            latest = i
+    balance = [sum(line.count(c) for c in OPEN) - sum(line.count(c) for c in CLOSE) for line in code]
+    return keys, plain, shallower, before, balance
+
+
+def body_by_indent(code, ends, start, with_end):
     """The last line of the function defined at start, by indentation. Its body starts after its
     signature, whose last line a formatter puts at the definition's own indentation, as in ) -> int:.
     A line inside a string, or inside brackets opened after the definition began, continues another, so
     its indentation says nothing; and the brackets the definition is in, as in Class.new { def ... },
-    end it when they close."""
-    width = indent_of(lines[start])
-    last = signature_end(code, start)
-    for i in range(last + 1, len(lines)):
-        if not code[i].strip():
-            continue
-        if inside[i] or open_brackets[i] > open_brackets[start]:
-            last = i
-            continue
-        if open_brackets[i] < open_brackets[start]:
-            break
-        if indent_of(lines[i]) <= width:
-            # Its end is at its own indentation: one further out ends the class around a method that has none,
-            # written on one line. So are a rescue, an else and an ensure of the whole method's.
-            word = re.match(r"(end|rescue|ensure|else)\b", code[i].strip()) if with_end else None
-            if word and indent_of(lines[i]) == width:
-                last = i
-                if word.group(1) != "end":
-                    continue
-            break
-        last = i
-    return last
+    end it when they close. ends is indent_ends' answer for the file. The body ends before the first line of
+    code outside a string, after the signature, whose brackets left open and indentation, in that order, are
+    no more than the definition's own."""
+    keys, plain, shallower, before, balance = ends
+    own = keys[start]
+    last = signature_end(balance, start)
+    while True:
+        stop = plain[last + 1]
+        while stop is not None and keys[stop] > own:  # Each line between it and its next shallower is deeper.
+            stop = shallower[stop]
+        if stop is None:
+            return max(last, before[len(code)])
+        last = max(last, before[stop] if before[stop] is not None else last)
+        # Its end is at its own indentation: one further out ends the class around a method that has none,
+        # written on one line. So are a rescue, an else and an ensure of the whole method's.
+        word = re.match(r"(end|rescue|ensure|else)\b", code[stop].strip()) if with_end else None
+        if keys[stop][0] < own[0] or not word or keys[stop] != own:
+            return last
+        last = stop
+        if word.group(1) == "end":
+            return last
 
 
 # How a signature goes on past the end of a line, as a return type or a constraint split over lines, at the
@@ -1339,6 +1385,14 @@ def functions(path, text):
             counted[i] = False
     skip = [a or b for a, b in zip(inside, continued)]
     unit = indent_unit(lines, code, skip)
+    widths = [indent_of(line) for line in lines]
+    ends = indent_ends(code, inside, open_brackets, widths) if ending != "brackets" else None
+    # The indentation of each line a function's nesting is read from, and how many code lines come before each
+    # line, so a function's deepest nesting and its code lines are read off at once, however long it is.
+    deepest_in = range_max([w if c and not s else -1 for w, c, s in zip(widths, counted, skip)])
+    before = [0]
+    for c in counted:
+        before.append(before[-1] + c)
     found = []
     signature_until = -1  # In C++, no definition starts in another's signature, as among its initializers,
     for start in range(len(code)):  # nor on the line its body opens; and in C and C++, none in open brackets.
@@ -1357,12 +1411,27 @@ def functions(path, text):
             if name == "C++" and opened:
                 signature_until = max(signature_until, opened[0])
         else:
-            last = body_by_indent(lines, code, inside, open_brackets, start, ending == "end")
-        base = indent_of(lines[start])
-        depths = [(indent_of(lines[i]) - base) // unit - 1 for i in range(start + 1, last + 1)
-                  if counted[i] and not inside[i] and not continued[i]]
-        found.append((defined[0], start + 1, last + 1, sum(counted[start:last + 1]), max([0] + depths)))
+            last = body_by_indent(code, ends, start, ending == "end")
+        deepest = deepest_in(start + 1, last + 1)
+        found.append((defined[0], start + 1, last + 1, before[last + 1] - before[start],
+                      max(0, (deepest - widths[start]) // unit - 1) if deepest >= 0 else 0))
     return sum(counted), found, name
+
+
+def range_max(values):
+    """A function that gives the largest of values[i:j], or -1 if there are none, at once, from the largest
+    of each run of 1, 2, 4, 8... values from each place, worked out first."""
+    runs, width = [values], 1
+    while width * 2 <= len(values):
+        runs.append(list(map(max, runs[-1], runs[-1][width:])))
+        width *= 2
+
+    def largest(i, j):
+        if j <= i:
+            return -1
+        level = (j - i).bit_length() - 1
+        return max(runs[level][i], runs[level][j - (1 << level)])
+    return largest
 
 
 def band(length, cuts, kind):

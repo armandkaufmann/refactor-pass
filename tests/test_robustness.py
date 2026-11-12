@@ -224,7 +224,6 @@ print("%.2f" % (time.time() - start))
 
 class Growing(unittest.TestCase):
 
-    @unittest.expectedFailure
     def test_files_of_many_definitions(self):
         code = "import sys; sys.path[:0] = [%r, %r]\n" % (support.SCRIPTS, support.HERE) + TIME
         for name in sorted(GROWING):
