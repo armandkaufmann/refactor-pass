@@ -164,6 +164,26 @@ class Columns(unittest.TestCase):
         self.assertIn("  %s 2026-01-05 Rename\n" % short(self.marks[5]), result.out)
         self.assertNotIn("commits recent", result.out)
 
+    @unittest.expectedFailure
+    def test_show_a_file_no_commit_or_tree_knows_is_an_error(self):
+        result = support.run("heatmap.py", "-C", self.repo.path, "-n", "8", "--show", "src/big.py", "--show",
+                             "src/bgi.py")
+        self.assertEqual(result.code, 1, result)
+        self.assertEqual(result.out, "")
+        self.assertEqual(result.err, "heatmap.py: --show src/bgi.py names no file git tracks in town, nor one "
+                                     "changed in the window; did you mean src/big.py?\n")
+        nothing = support.run("heatmap.py", "-C", self.repo.path, "--show", "zzz/qqq.c")
+        self.assertEqual(nothing.err, "heatmap.py: --show zzz/qqq.c names no file git tracks in town, nor one "
+                                      "changed in the window.\n")
+
+    def test_show_a_file_deleted_in_the_window_or_not_changed_in_it(self):
+        result = support.run("heatmap.py", "-C", self.repo.path, "-n", "8", "--show", "src/gone.py", "--show",
+                             "src/cold.py")
+        self.assertEqual(result.code, 0, result)
+        self.assertIn("src/gone.py: 1 of the 8 commits", result.out)
+        self.assertIn("  %s 2026-01-07 Remove gone, grow new\n" % self.repo.short(self.marks[7]), result.out)
+        self.assertIn("src/cold.py: 0 of the 8 commits", result.out)
+
     def test_top(self):
         result = support.run("heatmap.py", "-C", self.repo.path, "-n", "8", "--top", "2")
         self.assertEqual(list(support.heatmap_rows(result.out)), ["src/big.py", "src/new.py"])
