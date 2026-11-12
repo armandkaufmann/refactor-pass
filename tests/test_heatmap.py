@@ -294,6 +294,17 @@ class Globs(unittest.TestCase):
                 self.assertEqual(self.paths(script, "**/made.py"), {"gen/made.py", "app/gen/made.py"})
                 self.assertEqual(self.paths(script, "app/**/deep.py"), {"app/sub/deep.py"})
 
+    @unittest.expectedFailure
+    def test_a_double_star_is_any_folders_only_at_a_start_or_after_a_slash(self):
+        # Elsewhere it's two stars, as fnmatch reads them: app**/main.py needs a / after app.
+        match = support.load("scoping").glob_match
+        for path, pattern, want in (("appmain.py", "app**/main.py", False), ("app/main.py", "app**/main.py", True),
+                                    ("appx/y/main.py", "app**/main.py", True), ("main.py", "**/main.py", True),
+                                    ("a/main.py", "a/**/main.py", True), ("a/b/c/main.py", "a/**/main.py", True),
+                                    ("amain.py", "a/**/main.py", False), ("xmain.py", "x**/main.py", False)):
+            with self.subTest(path=path, pattern=pattern):
+                self.assertEqual(match(path, pattern), want)
+
     def test_a_star_matches_across_folders(self):
         # The lenient reading the help gives: app/*.py takes app/sub/deep.py too.
         self.assertEqual(self.paths("heatmap.py", "app/*.py"), {"app/main.py", "app/sub/deep.py",
