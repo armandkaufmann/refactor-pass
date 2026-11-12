@@ -86,7 +86,7 @@ def marks_of(out):
     """--show's lines: per subject, its mark or ''."""
     found = {}
     for line in out.splitlines():
-        match = re.match(r"  [0-9a-f]{9} \d{4}-\d{2}-\d{2} (.*?)(?:  \[(.*)\])?$", line)
+        match = re.match(r"  [0-9a-f]{9} \d{4}-\d{2}-\d{2} (?:newer|older)  (.*?)(?:  \[(.*)\])?$", line)
         if match:
             found[match.group(1)] = match.group(2) or ""
     return found
@@ -152,8 +152,8 @@ class Shop(unittest.TestCase):
     def test_show_gives_each_message_and_a_hash_git_show_takes(self):
         out = self.shown.out
         # The message without who signed it; who reported it stays.
-        self.assertIn("  %s 2026-01-17 Fix the total's rounding  [fix, words: fix]\n      [+2 -0 in this file; 1 other "
-                      "file]\n      It rounded half down.\n\n      Reported-by: Cy <cy@example.com>\n  "
+        self.assertIn("  %s 2026-01-17 newer  Fix the total's rounding  [fix, words: fix]\n      [+2 -0 in this file; "
+                      "1 other file]\n      It rounded half down.\n\n      Reported-by: Cy <cy@example.com>\n  "
                       % self.repo.short(self.marks["rounding"]), out)
         self.assertNotIn("Signed-off-by", out)
         self.assertIn("Fix the crash when the cart is empty  [fix, words: fix, crash]\n      [+1 -0 in this file; 2 "
@@ -192,17 +192,17 @@ class Shop(unittest.TestCase):
                              "%s, %s" % (rounding, crash[:7]))
         self.assertEqual(result.code, 0, result)
         self.assertEqual(result.out, "app.py: its changes in 2 of its commits, each cut at 60 lines\n"
-                         "  %s 2026-01-17 Fix the total's rounding  [fix, words: fix]\n"
+                         "  %s 2026-01-17 newer  Fix the total's rounding  [fix, words: fix]\n"
                          "      @@ -12,3 +12,5 @@ app 11\n       app 12\n       app 13\n       app 14\n"
                          "      +app 15\n      +total = round(x)\n"
-                         "  %s 2026-01-03 Fix the crash when the cart is empty  [fix, words: fix, crash]\n"
+                         "  %s 2026-01-03 older  Fix the crash when the cart is empty  [fix, words: fix, crash]\n"
                          "      @@ -10,3 +10,4 @@ app 9\n       app 10\n       app 11\n       app 12\n      +app 13\n\n"
                          % (rounding, crash))
         wrong = support.run("heatmap.py", "-C", self.repo.path, "--show", "app.py", "--diffs", "%s,zz,%s" % (
             self.repo.short(self.marks["speed"]), rounding))
         self.assertEqual(wrong.code, 1, wrong)
-        self.assertIn("--diffs: %s isn't one of its commits in the window; zz isn't one of its commits in the "
-                      "window. Give hashes --show app.py prints." % self.repo.short(self.marks["speed"]), wrong.err)
+        self.assertIn("--diffs: %s isn't one of them; zz isn't one of them. Give hashes of the 7 commits --show "
+                      "app.py --messages lists." % self.repo.short(self.marks["speed"]), wrong.err)
 
     def test_the_page_carries_the_fixes(self):
         with open(self.page, encoding="utf-8") as f:
@@ -277,6 +277,17 @@ class Typed(unittest.TestCase):
         repo = build_typed(PLAIN + ["fix(cart): the total ignores discounts", "docs: fix the docstring of total",
                                     "[fix] crash on an empty cart"], "untyped")
         result = support.run("heatmap.py", "-C", repo.path, "--show", "app.py")
+        # --messages lists its newest 12 of 15, and --diffs takes only those, unless --newest widens it.
+        sample = support.run("heatmap.py", "-C", repo.path, "--show", "app.py", "--messages")
+        self.assertIn("app.py: the newest 12 of its 15 commits, of the 15 from ", sample.out.split("\n")[0])
+        self.assertTrue(sample.out.split("\n")[0].endswith("3 more: --newest 15 lists them all."), sample.out)
+        self.assertEqual(len(re.findall(r"(?m)^  [0-9a-f]{9} ", sample.out)), 12)
+        oldest = re.findall(r"(?m)^  ([0-9a-f]{9}) ", result.out)[-1]
+        narrow = support.run("heatmap.py", "-C", repo.path, "--show", "app.py", "--diffs", oldest)
+        self.assertIn("isn't one of them. Give hashes of the 12 commits --show app.py --messages lists, or widen it "
+                      "with --newest.", narrow.err)
+        wide = support.run("heatmap.py", "-C", repo.path, "--show", "app.py", "--diffs", oldest, "--newest", "15")
+        self.assertEqual(wide.code, 0, wide)
         marks = marks_of(result.out)
         self.assertEqual(marks["fix(cart): the total ignores discounts"], "fix, words: fix")
         self.assertEqual(marks["docs: fix the docstring of total"], "not a fix: says docs")
@@ -398,11 +409,11 @@ class Diffs(unittest.TestCase):
         out = result.out.split("\n")
         self.assertEqual(out[0], "new/a.py: its changes in 3 of its commits, each cut at 60 lines")
         # Before the move, its changes as old/a.py, and nothing of other.py's or img.png's.
-        self.assertEqual(out[1:7], ["  %s 2026-01-02 Fix a's first line  [fix, words: fix]" % shas[0],
+        self.assertEqual(out[1:7], ["  %s 2026-01-02 older  Fix a's first line  [fix, words: fix]" % shas[0],
                                     "      @@ -1,4 +1,4 @@", "      -a 1", "      +a one", "       a 2", "       a 3"])
-        self.assertEqual(out[8:12], ["  %s 2026-01-03 Move a" % shas[1], "      (rename from old/a.py)",
+        self.assertEqual(out[8:12], ["  %s 2026-01-03 newer  Move a" % shas[1], "      (rename from old/a.py)",
                                      "      @@ -47,7 +47,7 @@ a 46", "       a 47"])
-        rewritten = out[out.index("  %s 2026-01-04 Rewrite a" % shas[2]) + 1:-2]
+        rewritten = out[out.index("  %s 2026-01-04 newer  Rewrite a" % shas[2]) + 1:-2]
         self.assertEqual(len(rewritten), 60)
         self.assertEqual(rewritten[-1], "      (142 more lines: git show %s -- new/a.py)" % shas[2])
         binary = support.run("heatmap.py", "-C", repo.path, "--show", "img.png", "--diffs", shas[0])

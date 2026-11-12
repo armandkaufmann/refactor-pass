@@ -166,13 +166,16 @@ class Columns(unittest.TestCase):
                              "src/renamed.py")
         self.assertEqual(result.code, 0, result)
         short = self.repo.short
-        self.assertIn("src/big.py: 5 of the 8 commits from %s (2026-01-03) to %s (2026-01-10)\n"
-                      "  %s 2026-01-10 Grow both\n  %s 2026-01-08 Change new\n  %s 2026-01-06 Grow renamed\n"
-                      "  %s 2026-01-04 Add new\n  %s 2026-01-03 Grow big, shrink shrink\n" % (
+        # The window's newer half is its 4 newest commits, from the 7th.
+        self.assertIn("src/big.py: 5 of the 8 commits from %s (2026-01-03) to %s (2026-01-10); newer: in the "
+                      "window's newer half, from 2026-01-07.\n"
+                      "  %s 2026-01-10 newer  Grow both\n  %s 2026-01-08 newer  Change new\n"
+                      "  %s 2026-01-06 older  Grow renamed\n  %s 2026-01-04 older  Add new\n"
+                      "  %s 2026-01-03 older  Grow big, shrink shrink\n" % (
                           short(self.marks[3]), short(self.marks[10]), short(self.marks[10]), short(self.marks[8]),
                           short(self.marks[6]), short(self.marks[4]), short(self.marks[3])), result.out)
         self.assertIn("src/renamed.py: 2 of the 8 commits", result.out)
-        self.assertIn("  %s 2026-01-05 Rename\n" % short(self.marks[5]), result.out)
+        self.assertIn("  %s 2026-01-05 older  Rename\n" % short(self.marks[5]), result.out)
         self.assertNotIn("commits recent", result.out)
 
     def test_show_a_file_no_commit_or_tree_knows_is_an_error(self):
@@ -197,7 +200,7 @@ class Columns(unittest.TestCase):
                              "src/cold.py")
         self.assertEqual(result.code, 0, result)
         self.assertIn("src/gone.py: 1 of the 8 commits", result.out)
-        self.assertIn("  %s 2026-01-07 Remove gone, grow new\n" % self.repo.short(self.marks[7]), result.out)
+        self.assertIn("  %s 2026-01-07 newer  Remove gone, grow new\n" % self.repo.short(self.marks[7]), result.out)
         self.assertIn("src/cold.py: 0 of the 8 commits", result.out)
 
     def test_top(self):
@@ -592,7 +595,8 @@ class GitSettings(unittest.TestCase):
         result = support.run("heatmap.py", "-C", repo.path, "--show", "a.py")
         self.assertEqual(result.code, 0, result)
         # A control character is written as its escape, so a subject can't drive the terminal.
-        shown = [line.split(" ", 4)[-1] for line in result.out.split("\n")[1:] if line.strip()]
+        shown = [re.sub(r"^  \S+ \S+ (?:newer|older)  ", "", line) for line in result.out.split("\n")[1:]
+                 if line.strip()]
         self.assertEqual(shown, ["red \\x1b[31malert\\x7f", "odd\\x1esubject\\x1fhere", "Tidy up", "Start"])
 
 

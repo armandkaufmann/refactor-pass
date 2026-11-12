@@ -70,9 +70,11 @@ commits did and how many of those were in the newer half, most first. A fix
 here corrects a defect in the project's own code: wrong behaviour, a crash, a
 security hole, a regression; a compile or type error in the code; a guard
 against a failure that could happen as the code stood; something callers
-already relied on that was missing. A commit that changed only
-documentation, tests, or CI, build or dependency files never counts, and the
-table of fixes by file sets those files aside. The counts are at least that
+already relied on that was missing, even where the fix adds something new.
+Code that builds or packages the project is its code; its manifests, CI and
+dependency files aren't. A commit that changed only documentation, tests, or
+CI, build or dependency files never counts, and the table of fixes by file
+sets those files aside. The counts are at least that
 many: many fixes don't say so, and the rest are among the commits --show
 leaves unmarked. It's a lead, not a verdict. A commit counts once, the
 strongest way it reads:
@@ -116,22 +118,30 @@ those 252 commits and the definition found 72% of the fixes from their
 subjects (43 of its 44 calls right) and 83% from their whole messages (all 50
 calls right), and wanted the diff for 21 commits; reading as SKILL.md's step
 4 does, with the diffs where the messages fell short, it found 56 of the 60
-(56 of its 57 calls right), overruling four of the script's marks. The labels
-it was scored against came from the same kind of model reading the diffs,
-which flatters agreement: one measurement, not an accuracy.
+(56 of its 57 calls right), overruling four of the script's marks, and with
+each file's own changes from --diffs, 55 of the 60 (55 of 56 right), reading
+less than half as much. The labels it was scored against came from the same
+kind of model reading the diffs, which flatters agreement: one measurement,
+not an accuracy. On five of a busy project's files, the step took about
+55,000 tokens; the listing of a file's newest 12 commits it now reads is a
+few thousand bytes (8,678 for redis's src/server.c, whose 99 commits in an
+800-commit window take 65,878).
 
 --show FILE prints a file's commits in the window instead, newest first, to
 read the reasons it keeps changing: each with its hash as git show takes it,
-its date and subject, and how it reads as a fix, or why not where it might
-have. --messages adds, under each, what it changed (lines added and removed
-in the file, and how many other files, how many of them tests) and its
-message without who signed, reviewed or co-wrote it, cut at 12 lines, so the
-commits can be read without running git once each. Facts, not a verdict; on
-the commits the trace leaves unmarked, one that changed a test too was a fix
-about twice as often as one that didn't (45% against 24% in the labelled
-commits), and one of over 200 lines rarely (1 of 20). --diffs SHA,SHA, with
-one --show, gives just those commits' changes to the file, under the name it
-had in each, cut at 60 lines each, in one call. The file is one git tracks,
+its date, newer or older (in the window's newer half or not), its subject,
+and how it reads as a fix, or why not where it might have. --messages lists
+the file's newest 12 commits, a sample to judge whole (--newest N for
+another number; the first line says how many more there are), and under each
+what it changed (lines added and removed in the file, and how many other
+files, how many of them tests) and its message without who signed, reviewed
+or co-wrote it, cut at 12 lines, so they can be read without running git
+once each. Facts, not a verdict; on the commits the trace leaves unmarked,
+one that changed a test too was a fix about twice as often as one that
+didn't (45% against 24% in the labelled commits), and one of over 200 lines
+rarely (1 of 20). --diffs SHA,SHA, with one --show, gives just those of the
+commits --messages lists, each with its changes to the file under the name
+it had then, cut at 60 lines, in one call. The file is one git tracks,
 or one a commit in the window changed, as one deleted in it; a name a file
 had before a rename in the window means it as it's named today. Any other is
 an error, as a scope is.
@@ -899,6 +909,10 @@ IDENTITY = re.compile(r"\s*(?:signed-off-by|co-authored-by|reviewed-by|reviewed-
 
 
 DIFF_LINES = 60  # --diffs's lines per commit: the whole change to the file, for four commits in five.
+# --show --messages's commits: a file's newest 12, a sample a reader judges whole. At a fix in four, the rate in
+# untyped repos' unmarked commits, 12 shows about three, enough to set apart a file that keeps breaking from
+# one that doesn't, at a few thousand bytes of messages.
+SAMPLE = 12
 
 
 def message_lines(body, most=12):
@@ -972,28 +986,33 @@ def file_diffs(repo, wanted, most=60):
     return result
 
 
-def show_diffs(repo, show, given, logs, changed_as, fixes):
-    """--show FILE --diffs SHAS: those of the file's commits, each with its changes to the file. A hash that names
-    none of them, or more than one, is an error, which says which."""
+def half_of(commit, newer):
+    """Whether a commit is in the window's newer half, as --show says it, the same width either way."""
+    return "newer" if commit[0] in newer else "older"
+
+
+def show_diffs(repo, show, given, listed, changed_as, fixes, newer):
+    """--show FILE --diffs SHAS: those of the commits --show FILE --messages lists, each with its changes to the
+    file. A hash that names none of them, or more than one, is an error, which says which."""
     path, title = show
     chosen, problems = [], []
     for value in given:
-        matches = [c for c in logs.get(path, []) if re.match(r"[0-9a-fA-F]{4,}\Z", value) and
-                   c[0].startswith(value.lower())]
+        matches = [c for c in listed if re.match(r"[0-9a-fA-F]{4,}\Z", value) and c[0].startswith(value.lower())]
         if len(matches) == 1:
             chosen.append(matches[0])
         else:
-            problems.append("%s %s" % (value, "is more than one of its commits" if matches else
-                                               "isn't one of its commits in the window"))
+            problems.append("%s %s" % (value, "is more than one of them" if matches else "isn't one of them"))
     if problems or not chosen:
-        sys.exit("--diffs: %s. Give hashes --show %s prints." % (
-            "; ".join(problems) or "no commit given", path))
+        sys.exit("--diffs: %s. Give hashes of the %d commits --show %s --messages lists%s." % (
+            "; ".join(problems) or "no commit given", len(listed), path,
+            ", or widen it with --newest" if len(listed) == SAMPLE else ""))
     diffs = file_diffs(repo, [(c[0], changed_as[(c[0], path)][0], changed_as[(c[0], path)][1]) for c in chosen],
                        DIFF_LINES)
     print("%s: its changes in %d of its commits, each cut at %d lines" % (title, len(chosen), DIFF_LINES))
     for commit in chosen:
         info = describe(commit)
-        print("  %s %s %s%s" % (info["sha"], info["date"], printable(info["subject"]), fix_mark(fixes.get(commit[0]))))
+        print("  %s %s %s  %s%s" % (info["sha"], info["date"], half_of(commit, newer), printable(info["subject"]),
+                                    fix_mark(fixes.get(commit[0]))))
         print("\n".join("      " + line for line in diffs[(commit[0], changed_as[(commit[0], path)][0])]))
     print()
 
@@ -1139,6 +1158,9 @@ def main():
     parser.add_argument("--messages", action="store_true",
                         help="with --show, each commit's message after its subject too, under its line, to read "
                              "without running git once per commit, with what it changed in the file and in others")
+    parser.add_argument("--newest", type=scoping.count(1), metavar="N",
+                        help="with --show, list only the file's newest N commits in the window (with --messages, "
+                             "the newest %d unless given), and with --diffs take only those" % SAMPLE)
     parser.add_argument("--diffs", metavar="SHAS",
                         help="with one --show FILE, only these of its commits (comma-separated hashes, as --show "
                              "prints them), each with its changes to that file, under the name it had then, cut at "
@@ -1471,18 +1493,26 @@ def main():
                 shows.append((path, path))
             else:
                 sys.exit(scoping.unknown_file(path, known, repo, "changed in the window"))
+        # With --messages, a file's newest commits, a sample: the ones --diffs takes.
+        limit = args.newest or (SAMPLE if args.messages or args.diffs is not None else None)
         if args.diffs is not None:
-            show_diffs(repo, shows[0], [v.strip() for v in args.diffs.split(",") if v.strip()], logs, changed_as,
-                       fixes)
+            show_diffs(repo, shows[0], [v.strip() for v in args.diffs.split(",") if v.strip()],
+                       logs.get(shows[0][0], [])[:limit], changed_as, fixes, newer)
             return
         for path, title in shows:
-            print("%s: %d of the %d commits from %s (%s) to %s (%s)" % (
-                title, len(logs.get(path, [])), len(commits), window["oldest"]["sha"], window["oldest"]["date"],
-                window["newest"]["sha"], window["newest"]["date"]))
-            for commit in logs.get(path, []):
+            mine = logs.get(path, [])
+            listed = mine[:limit]
+            print("%s: %s from %s (%s) to %s (%s); newer: in the window's newer half, from %s.%s" % (
+                title, "the newest %d of its %d commits, of the %d" % (len(listed), len(mine), len(commits))
+                if len(listed) < len(mine) else "%d of the %d commits" % (len(mine), len(commits)),
+                window["oldest"]["sha"], window["oldest"]["date"], window["newest"]["sha"], window["newest"]["date"],
+                window["newer_half_from"], " %d more: --newest %d lists them all." % (len(mine) - len(listed),
+                                                                                      len(mine))
+                if len(listed) < len(mine) else ""))
+            for commit in listed:
                 info = describe(commit)
-                print("  %s %s %s%s" % (info["sha"], info["date"], printable(info["subject"]),
-                                        fix_mark(fixes.get(commit[0]))))
+                print("  %s %s %s  %s%s" % (info["sha"], info["date"], half_of(commit, newer),
+                                            printable(info["subject"]), fix_mark(fixes.get(commit[0]))))
                 if args.messages:
                     print(change_hint(commit, changed_as[(commit[0], path)], is_test))
                     if message_lines(commit[5]):
