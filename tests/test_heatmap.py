@@ -104,7 +104,6 @@ class Columns(unittest.TestCase):
         self.assertIn("Newer half from 2026-01-07. Ordered by commits times size.", out)
         self.assertIn("Test files: none in the scope changed in the window.", out)
 
-    @unittest.expectedFailure
     def test_growth_names_the_commit_it_is_against(self):
         self.assertIn("Growth is against %s (2026-01-02), just before the window.\n" % self.repo.short(self.marks[2]),
                       self.result.out)
@@ -113,7 +112,7 @@ class Columns(unittest.TestCase):
         help_text = " ".join(support.run("heatmap.py", "--help").out.split())
         self.assertIn("Just before the window is one commit: --since's revision, or else the first parent of the "
                       "window's oldest commit. Where the history has merges, other branches' work can sit on either "
-                      "side of it, so growth can differ from what the window's own commits added and removed.",
+                      "side of it, so growth can differ from what the window's own commits added and removed",
                       help_text)
 
     def test_page_data(self):

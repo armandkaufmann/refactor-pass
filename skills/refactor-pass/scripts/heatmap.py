@@ -18,7 +18,11 @@ of recent commits:
             defects far better than absolute churn (Nagappan & Ball, 2005)
   size      its lines at HEAD
   growth    its size now less its size just before the window, under the
-            name it had then (0 if it didn't exist)
+            name it had then (0 if it didn't exist). Just before the window
+            is one commit: --since's revision, or else the first parent of
+            the window's oldest commit. Where the history has merges, other
+            branches' work can sit on either side of it, so growth can
+            differ from what the window's own commits added and removed
 
 Files are listed by commits times size, so the top ones are both busy and
 big. A small file changed often, like a config, and a big one rarely
@@ -933,6 +937,12 @@ def main():
         len(commits), window["newest"]["sha"], window["newest"]["date"], window["oldest"]["sha"],
         window["oldest"]["date"], "; left out: " + reasons if reasons else ""))
     print("Newer half from %s. Ordered by commits times size." % window["newer_half_from"])
+    if base:
+        base_sha = git(repo, "rev-parse", "--verify", base + "^{commit}").strip()
+        print("Growth is against %s (%s), just before the window." % (
+            base_sha[:9], datetime.fromtimestamp(raw_commit(repo, base_sha)[0]).strftime("%Y-%m-%d")))
+    else:
+        print("Growth is from nothing: the window starts at the first commit.")
     if not args.keep_tests:
         print("Test files: %s." % ("%d changed in the window, set aside from the table and the pairs" % len(tests)
                                    if tests else "none in the scope changed in the window"))
