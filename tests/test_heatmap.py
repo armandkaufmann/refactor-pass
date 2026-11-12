@@ -305,6 +305,131 @@ class History(unittest.TestCase):
                       % town.short(marks[10]), result.out)
 
 
+def build_settings():
+    """A repo whose history each of git's settings below would read differently: a.py added in the root
+    commit and changed twice, with a subject past ASCII; a change that git's own diff counts as 3 lines added
+    and 4 removed, and its patience diff as 4 and 5; two files renamed and changed in one commit, which a
+    rename limit of 1 leaves as two removed and two added; a commit signed with a signature that's no good,
+    made by hand, since fast-import can't sign on every git; and one after it, so that what git prints on
+    checking the signature comes between two commits."""
+    repo = support.Repo("settings")
+    repo.commit("2026-01-01", "Start", {"a.py": lines(3, "a"), "b.txt": "{\nx\nx\n}\n}\nz\n", "c.py": lines(4, "c"),
+                                        "d.py": lines(4, "d")})
+    repo.commit("2026-01-02", "Grow a, caf\u00e9", {"a.py": lines(5, "a")})
+    repo.commit("2026-01-03", "Shuffle b", {"b.txt": "z\n}\n{\n}\n{\n", "a.py": lines(6, "a")})
+    repo.commit("2026-01-04", "Move c and d", {"e.py": lines(5, "c"), "f.py": lines(5, "d")},
+                rename={"c.py": "e.py", "d.py": "f.py"})
+    last = repo.commit("2026-01-05", "Signed", {"e.py": lines(6, "c")})
+    repo.done()
+    commit = support.git(repo.path, "cat-file", "commit", repo.sha(last))
+    header, message = commit.split("\n\n", 1)
+    signed = header + ("\ngpgsig -----BEGIN PGP SIGNATURE-----\n \n iQEzBAABCAAdFiEE\n -----END PGP SIGNATURE-----"
+                       "\n\n") + message
+    sha = support.git(repo.path, "hash-object", "-t", "commit", "-w", "--stdin", input=signed.encode()).strip()
+    support.git(repo.path, "update-ref", "refs/heads/main", sha)
+    repo.commit("2026-01-06", "After", {"f.py": lines(6, "d")}, parent=sha)
+    repo.done()
+    return repo
+
+
+def outputs(repo, env=None):
+    """The heatmap, and --show for each of its files, as run with env added to the environment: each as its
+    exit code, its output and its errors."""
+    env = env or {}
+    found = [support.run("heatmap.py", "-C", repo.path, env=env)]
+    for path in ("a.py", "b.txt", "e.py", "f.py"):
+        found.append(support.run("heatmap.py", "-C", repo.path, "--show", path, env=env))
+    return [(r.code, r.out, r.err) for r in found]
+
+
+def user_config(text):
+    """A git config file of the user's, holding text."""
+    return support.write_text(os.path.join(support.new_folder("home"), "gitconfig"), text)
+
+
+class GitSettings(unittest.TestCase):
+    """What git prints for the heatmap is the same whatever the user's or the repo's config says, and
+    whatever git's variables point at."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.plain = outputs(build_settings())
+        for code, out, err in cls.plain:
+            assert code == 0 and not err, (out, err)
+
+    def test_plain(self):
+        rows = support.heatmap_rows(self.plain[0][1])
+        self.assertEqual(rows["a.py"], dict(commits=3, recent=0, last="2026-01-03", churn=6, rel=1.0, size=6,
+                                            growth=6))
+        self.assertEqual(rows["b.txt"]["churn"], 3 + 4 + 6)
+        self.assertEqual((rows["e.py"]["commits"], rows["e.py"]["churn"]), (3, 4 + 1 + 1))
+        self.assertEqual((rows["f.py"]["commits"], rows["f.py"]["churn"]), (3, 4 + 1 + 1))
+        self.assertIn("Grow a, caf\u00e9", self.plain[1][1])
+
+    @unittest.expectedFailure
+    def test_a_signature_check_in_the_repos_config(self):
+        repo = build_settings()
+        support.git(repo.path, "config", "log.showSignature", "true")
+        support.git(repo.path, "config", "gpg.program", "git")  # Prints its usage, as gpg would its verdict.
+        self.assertEqual(outputs(repo), self.plain)
+
+    @unittest.expectedFailure
+    def test_the_root_commits_changes_whatever_log_showroot_says(self):
+        found = outputs(build_settings(), {"GIT_CONFIG_GLOBAL": user_config("[log]\n\tshowRoot = false\n")})
+        self.assertEqual(support.heatmap_rows(found[0][1])["a.py"], support.heatmap_rows(self.plain[0][1])["a.py"])
+        self.assertEqual(found, self.plain)
+
+    @unittest.expectedFailure
+    def test_no_setting_or_variable_changes_the_output(self):
+        repo = build_settings()
+        home = support.new_folder("home")
+        order = support.write_text(os.path.join(home, "order"), "f.py\ne.py\nb.txt\na.py\n")
+        attributes = support.write_text(os.path.join(home, "attributes"), "*.py diff=conv\n*.txt diff=conv\n")
+        settings = {
+            "log": ["showSignature = true", "showRoot = false", "decorate = full", "abbrevCommit = true",
+                    "date = relative", "follow = true"],
+            "gpg": ["program = git"],
+            "diff": ["algorithm = patience", "renameLimit = 1", "renames = copies", "noprefix = true",
+                     "mnemonicPrefix = true", "relative = true", "orderFile = " + order.replace("\\", "/"),
+                     "external = git hash-object", "indentHeuristic = false", "suppressBlankEmpty = true",
+                     "context = 0", "colorMoved = zebra"],
+            'diff "conv"': ["textconv = git hash-object"],
+            "i18n": ["logOutputEncoding = ISO-8859-1"],
+            "format": ["pretty = oneline"],
+            "color": ["ui = always", "diff = always"],
+            "core": ["quotePath = true", "abbrev = 5", "attributesFile = " + attributes.replace("\\", "/")],
+            "notes": ["displayRef = refs/notes/*"],
+        }
+        text = "".join("[%s]\n%s" % (name, "".join("\t%s\n" % s for s in values)) for name, values in settings.items())
+        support.git(repo.path, "-c", "user.name=Ann", "-c", "user.email=ann@example.com", "notes", "add", "-m",
+                    "a note", "HEAD~2")
+        with open(os.path.join(repo.path, ".git", "config"), "a", encoding="utf-8") as f:
+            f.write("[log]\n\tshowRoot = false\n[diff]\n\talgorithm = histogram\n")
+        other = support.Repo("other")
+        other.commit("2026-02-01", "Elsewhere", {"z.py": lines(9, "z")})
+        other.done()
+        variables = {"GIT_CONFIG_GLOBAL": user_config(text), "GIT_DIR": os.path.join(other.path, ".git"),
+                     "GIT_WORK_TREE": other.path, "GIT_INDEX_FILE": os.path.join(home, "no-index"),
+                     "GIT_EXTERNAL_DIFF": "git hash-object", "GIT_CONFIG_COUNT": "1",
+                     "GIT_CONFIG_KEY_0": "log.showRoot", "GIT_CONFIG_VALUE_0": "false"}
+        self.assertEqual(outputs(repo, variables), self.plain)
+        plain = support.run("measure.py", "-C", build_settings().path)
+        hostile = support.run("measure.py", "-C", repo.path, env=variables)
+        self.assertEqual((hostile.code, hostile.out, hostile.err), (plain.code, plain.out, plain.err))
+
+    @unittest.expectedFailure
+    def test_a_subject_or_author_holding_any_character(self):
+        repo = support.Repo("odd")
+        repo.commit("2026-01-01", "Start", {"a.py": lines(3, "a")})
+        repo.commit("2026-01-02", "Tidy up", {"a.py": lines(4, "a")}, author="Odd\x1fName <odd@example.com>")
+        repo.commit("2026-01-03", "odd\x1esubject\x1fhere", {"a.py": lines(5, "a")})
+        repo.done()
+        result = support.run("heatmap.py", "-C", repo.path, "--show", "a.py")
+        self.assertEqual(result.code, 0, result)
+        shown = [line.split(" ", 4)[-1] for line in result.out.splitlines()[1:] if line.strip()]
+        self.assertEqual(shown, ["odd\x1esubject\x1fhere", "Tidy up", "Start"])
+
+
 class Unusual(unittest.TestCase):
 
     def test_no_commits(self):
