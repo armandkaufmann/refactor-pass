@@ -109,7 +109,7 @@ def fields(where, value, shape, errors, optional=()):
     for key, kind in shape.items():
         if key not in value:
             errors.append("%s is missing %r." % (where, key))
-        elif not isinstance(value[key], kind) or (kind is int and isinstance(value[key], bool)):
+        elif not isinstance(value[key], kind) or (isinstance(value[key], bool) and kind is not bool):
             errors.append("%s: %r should be %s." % (where, key, WORDS.get(kind, "an object or null")))
     return True
 

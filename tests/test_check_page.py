@@ -208,6 +208,7 @@ class Errors(unittest.TestCase):
         for change, words in [(dict(facts, words=1), "counts 3 fixes, but 2 by reverts, types and words"),
                               (dict(facts, labels="no"), "window.fixes: 'labels' should be true or false."),
                               (dict(facts, closing=True), "window.fixes: 'closing' should be a whole number."),
+                              (dict(facts, typed=True), "window.fixes: 'typed' should be a number."),
                               (dict(facts, more=1), "window.fixes has a field the page doesn't show: 'more'")]:
             with self.subTest(error=words):
                 self.assertError(page(heatmap=dict(good, window={"commits": 9, "fixes": change})), words)
