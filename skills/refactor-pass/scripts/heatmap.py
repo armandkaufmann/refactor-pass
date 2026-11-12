@@ -124,11 +124,11 @@ Examples:
 """
 
 import argparse
+import email.utils
 import json
 import os
 import re
 import sys
-import time
 from collections import Counter, defaultdict
 from datetime import datetime
 from itertools import combinations
@@ -212,21 +212,70 @@ def bot_name(text):
     return text
 
 
+# The dates --since reads, known by their form, since git reads almost anything as a date: a mistyped hash
+# as now, never as 1970, 1.2 as the first of February, a week ago as now. Relative ones as git writes them
+# (3 months ago, 3.days.ago, two weeks ago, last week), and the forms git's documentation gives: ISO 8601,
+# with or without a time and a zone; YYYY.MM.DD, MM/DD/YYYY and DD.MM.YYYY; and RFC 2822.
+RELATIVE = re.compile(r"(?:(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)[ .]+"
+                      r"(?:second|minute|hour|day|week|month|year)s?[ .]+)+ago\Z|last[ .]+(?:week|month|year)\Z|"
+                      r"(?:now|yesterday)\Z", re.I)
+ISO_DATE = re.compile(r"(\d{4})-(\d{1,2})-(\d{1,2})(?:[T ](\d{1,2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?"
+                      r"(?: ?(?:Z|[+-]\d{2}:?\d{2}))?)?\Z")
+DAYS = [(re.compile(r"(\d{4})\.(\d{1,2})\.(\d{1,2})\Z"), (1, 2, 3)),
+        (re.compile(r"(\d{1,2})/(\d{1,2})/(\d{4})\Z"), (3, 1, 2)),
+        (re.compile(r"(\d{1,2})\.(\d{1,2})\.(\d{4})\Z"), (3, 2, 1))]
+RFC_2822 = re.compile(r"(?:[A-Za-z]{3}, )?\d{1,2} [A-Za-z]{3} \d{4} \d{1,2}:\d{2}(?::\d{2})? [+-]\d{4}\Z")
+HASH = re.compile(r"[0-9a-fA-F]{4,40}\Z|[0-9a-fA-F]{64}\Z")
+# A name of a revision: one with a path, an ancestry or a reflog in it, or a version's number, as a tag's.
+REF_LIKE = re.compile(r".*[/~^@:{}]|v?\d+(?:\.\d+)+(?:[-+.][\w.-]*)?\Z")
+
+
+def since_date(since):
+    """--since as a date for git to read, if it's one in a form this reads: as given, but a day with no time
+    from its start, local time, as git would read it at the time of day it is now; or None. Stop if it's
+    in such a form but isn't a real date."""
+    text = since.strip()
+    if RELATIVE.match(text) or (RFC_2822.match(text) and email.utils.parsedate_tz(text)):
+        return text
+    if text.lower() == "today":
+        return "midnight"
+    try:
+        found = ISO_DATE.match(text)
+        if found:
+            numbers = [int(n) for n in found.groups() if n is not None]
+            datetime(*numbers)
+            return text if found.group(4) else "%04d-%02d-%02d 00:00:00" % tuple(numbers)
+        for pattern, order in DAYS:
+            found = pattern.match(text)
+            if found:
+                day = datetime(*[int(found.group(n)) for n in order])
+                return day.strftime("%Y-%m-%d 00:00:00")
+    except ValueError:
+        sys.exit("--since %s isn't a real date." % since)
+    return None
+
+
 def window_revs(repo, since, count):
-    """The git log arguments for the window, and the commit just before it if --since named a revision.
-    --since takes a revision, or else a date as git log's own --since does."""
+    """The git log arguments for the window; the commit just before it if --since named a revision; and the
+    local time --since came to, as 2026-06-01 00:00, if it's a date. --since takes a revision, or else a
+    date in a form since_date reads."""
     if not since:
-        return ["-n", str(count), "HEAD"], None
+        return ["-n", str(count), "HEAD"], None, None
     check = scoping.git(repo, "rev-parse", "--verify", "--quiet", since + "^{commit}")
     if check.returncode == 0:
-        return ["%s..HEAD" % since], check.stdout.decode().strip()
-    # git reads almost anything as a date, and what it can't read as now: a date that comes out as now is one
-    # only if it says so, with a number (1 minute ago) or the word now.
-    stamp = git(repo, "rev-parse", "--since=" + since).strip().split("=")[-1]
-    if not stamp.isdigit() or (abs(int(stamp) - time.time()) < 120 and not re.search(r"\d|\bnow\b", since, re.I)):
-        sys.exit("--since %r is neither a revision here (a tag, branch or commit) nor a date git can read, "
-                 "such as '3 months ago' or 2026-06-01." % since)
-    return ["--since=" + since, "HEAD"], None
+        return ["%s..HEAD" % since], check.stdout.decode().strip(), None
+    date = since_date(since)
+    if date is None:
+        later = "Give a commit, tag or branch that's here, or a date such as '3 months ago' or 2026-06-01."
+        sys.exit("--since %s names no commit here, as after a rebase or a squash, or in another clone. %s"
+                 % (since, later) if HASH.match(since.strip()) else
+                 "--since %s names no commit, tag or branch here. Give one that's here, or a date such as "
+                 "'3 months ago' or 2026-06-01." % since if REF_LIKE.match(since.strip()) else
+                 "--since %r is neither a revision here (a tag, branch or commit) nor a date in a form this reads, "
+                 "such as '3 months ago', 3.days.ago, yesterday, last week or 2026-06-01." % since)
+    stamp = git(repo, "rev-parse", "--since=" + date).strip().split("=")[-1]
+    read = datetime.fromtimestamp(int(stamp)).strftime("%Y-%m-%d %H:%M") if stamp.isdigit() else "?"
+    return ["--since=" + date, "HEAD"], None, read
 
 
 def and_list(words):
@@ -562,7 +611,9 @@ def main():
                         help="the window: this many of the latest non-merge commits (default 200)")
     parser.add_argument("--since", metavar="REV_OR_DATE",
                         help="the window: every commit after REV (a tag, branch or commit, itself not included), "
-                             "or since a date, such as '3 months ago' or 2026-06-01")
+                             "or since a date: 2026-06-01 (from the start of that day), 2026-06-01 14:30, "
+                             "'3 months ago', 3.days.ago, yesterday or last week, and the other forms git's "
+                             "documentation gives. The output says how it read a date; anything else is an error")
     parser.add_argument("--exclude-commits", default="", metavar="SHAS",
                         help="comma-separated commits to leave out, such as a mass reformat or a vendored "
                              "import, which would make every file they touched look hot: each a hash (7 or more "
@@ -632,7 +683,9 @@ def main():
     args.scope = scoping.resolve(args.repo, repo, args.scope, tracked)
     own = scoping.own_folders(tracked, args.scope)  # Copies of this skill kept in the repo.
     named = asked_commits(repo, args.exclude_commits)
-    revs, since_rev = window_revs(repo, args.since, args.commits)
+    revs, since_rev, since_read = window_revs(repo, args.since, args.commits)
+    # How --since was read, when it's a date, so a misreading shows.
+    since_said = "%s (%s, local time)" % (args.since, since_read) if since_read else args.since
     edge = shallow_edge(repo, places)
     everything = read_log(repo, revs)
     cut = [c for c in everything if c[0] in edge]
@@ -690,14 +743,14 @@ def main():
     if not commits:
         # Nothing left to count is a result, as just after a pass with --since its base: say what was left out.
         if not everything:
-            print(("Nothing has landed since %s: the window has no commits." % args.since if args.since
+            print(("Nothing has landed since %s: the window has no commits." % since_said if args.since
                    else "No commits in the window.") + (" " + shallow if shallow else ""))
         else:
             reasons = "; ".join("%d %s" % (n, why) for n, why, _ in left_out if n)
             flags = [flag for n, _, flag in left_out if n and flag] + (["drop them from --exclude-commits"]
                                                                         if asked else [])
             print("%s: the window's %s left out: %s. To count them, %s." % (
-                "Nothing else has landed since %s" % args.since if args.since else "Nothing to count",
+                "Nothing else has landed since %s" % since_said if args.since else "Nothing to count",
                 "commit is" if len(everything) == 1 else "%d commits are all" % len(everything), reasons,
                 " or ".join(flags)))
         if page:
@@ -946,6 +999,8 @@ def main():
     print("Window: %d commits, %s (%s) back to %s (%s)%s" % (
         len(commits), window["newest"]["sha"], window["newest"]["date"], window["oldest"]["sha"],
         window["oldest"]["date"], "; left out: " + reasons if reasons else ""))
+    if since_read:
+        print("--since %s reads as %s, local time." % (args.since, since_read))
     print("Newer half from %s. Ordered by commits times size." % window["newer_half_from"])
     if base:
         print("Growth is against %s (%s), just before the window." % (

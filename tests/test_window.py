@@ -265,7 +265,6 @@ class Since(unittest.TestCase):
         self.assertEqual((result.code, result.out), (1, ""), result)
         return result.err
 
-    @unittest.expectedFailure
     def test_a_bad_value(self):
         # git reads almost anything as a date, never as nothing; these it reads as 1969, now, and 1 May.
         for since in ("zzz-no-such-thing", "never", "a week ago", "1.5 days ago"):
@@ -274,7 +273,6 @@ class Since(unittest.TestCase):
                                  "nor a date in a form this reads, such as '3 months ago', 3.days.ago, yesterday, last "
                                  "week or 2026-06-01.\n" % since)
 
-    @unittest.expectedFailure
     def test_a_hash_that_isnt_here(self):
         # As a pass's recorded base after a rebase or a squash, or in another clone.
         for since in ("abc1234", "0123abc", "deadbeef1", "2025"):
@@ -283,20 +281,17 @@ class Since(unittest.TestCase):
                                  "or in another clone. Give a commit, tag or branch that's here, or a date such as "
                                  "'3 months ago' or 2026-06-01.\n" % since)
 
-    @unittest.expectedFailure
     def test_a_tag_or_branch_that_isnt_here(self):
         for since in ("HEAD~3000000", "origin/mian2", "v1.9.0", "v3.2.0-rc1", "2.0.0", "1.2", "v9.9"):
             with self.subTest(since=since):
                 self.assertEqual(self.refused(since), "--since %s names no commit, tag or branch here. Give one that's "
                                  "here, or a date such as '3 months ago' or 2026-06-01.\n" % since)
 
-    @unittest.expectedFailure
     def test_a_date_that_isnt_a_real_one(self):
         for since in ("2025-13-45", "2026-02-30", "2026-01-06 25:00", "13/45/2026"):
             with self.subTest(since=since):
                 self.assertEqual(self.refused(since), "--since %s isn't a real date.\n" % since)
 
-    @unittest.expectedFailure
     def test_a_date_in_each_form_says_how_it_was_read(self):
         # A date with no time is read from the start of that day, local time, not at the time of day it is now.
         utc = datetime(2026, 1, 6, 12, 30, tzinfo=timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M")
