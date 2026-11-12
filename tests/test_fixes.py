@@ -338,6 +338,16 @@ class Words(unittest.TestCase):
         self.assertIsNone(type_of("ignore: respect the filters"))  # An area, as ripgrep's, not a type.
         self.assertIsNone(type_of("Fix the crash"))
 
+    @unittest.expectedFailure
+    def test_one_person_by_name_or_email_but_not_by_an_empty_one(self):
+        same = self.heatmap.same_person
+        self.assertTrue(same("Ann Dev <ann@example.com>", "ann dev <ann@work.example>"))
+        self.assertTrue(same("Ann <ann@example.com>", "Ann Dev <ANN@example.com>"))
+        self.assertFalse(same("Ann Dev <ann@example.com>", "Bob Dev <bob@example.com>"))
+        # A blank name, or a blank email, is no one's: two such authors aren't one person by it.
+        self.assertFalse(same(" <ann@example.com>", " <bob@example.com>"))
+        self.assertFalse(same("Ann Dev <>", "Bob Dev <>"))
+
     def test_how_long(self):
         how_long = self.heatmap.how_long
         self.assertEqual([how_long(s) for s in (30, 600, 7200, 86400, 86400 * 45, 86400 * 400, 86400 * 900)],
