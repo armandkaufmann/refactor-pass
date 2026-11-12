@@ -27,7 +27,7 @@ def good():
                 "fixes": [{"file": "src/checkout.py", "read": 12, "newer": 1, "marked": ["a1b2c3d4e"],
                            "found": ["b2c3d4e5f"], "dropped": ["c3d4e5f6a"]}]}
     carried = dict(refactor, id="R3", status="todo", title="Give each report one definition", commits=[], outcome="",
-                   **{"from": "2026-11-03"})
+                   fixes=[dict(refactor["fixes"][0], newer=None)], **{"from": "2026-11-03"})
     return {
         "project": "shop", "started": "2026-11-10", "base": "a1b2c3d4e", "updated": "2026-11-11",
         "summary": "Two hot spots; the rest is fine.", "checks": ["`make test`", "the snapshots"],
@@ -198,6 +198,8 @@ class Errors(unittest.TestCase):
                          "R2.fixes[0] lists 2 commits but read 1")
         self.assertError(changed(lambda d: item(d, "R2").update(fixes=entry(newer=2))),
                          "R2.fixes[0] says 2 of its fixes are in the newer half, of the 1 it counts.")
+        self.assertError(changed(lambda d: item(d, "R2").update(fixes=entry(newer=True))),
+                         "R2.fixes[0]: 'newer' should be a whole number or null.")
 
     def test_the_fixes_a_heatmap_counts(self):
         facts = {"fixes": 3, "revert": 1, "type": 0, "words": 2, "typed": 0.0, "labels": False, "closing": 1,

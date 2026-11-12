@@ -12,8 +12,8 @@ so a status update stays a one-line edit:
 It checks too that dates are written 2026-11-10, and that a refactor's size
 is S, M or L and its risk Low, Medium or High, as the page shows them. An
 item that cites fixes has them per file: how many of its newest commits
-were read (the sample), how many of its fixes are in the newer half, the
-fixes the heatmap marked among those read, those found by reading, and those
+were read (the sample), how many of its fixes are in the newer half (or
+null), the fixes counted that the heatmap marked, those it didn't, and those
 it marked that were left out, each a hash once, no more than were read. The
 heatmap block is heatmap.py's to write; where it counts fixes (a heatmap
 from before it did has none), those counts are checked too.
@@ -58,15 +58,15 @@ COST = {"today": str, "after": str}
 EARLIER = {"checklist": str, "results": list}
 RESULT = {"id": str, "title": str, "eases": str, "cost": dict, "change": str, "actual": str, "note": str}
 # An item's fixes, per file: how many of its newest commits were read (the sample), how many of its fixes are in
-# the window's newer half, the fixes the heatmap marked among those read, those found by reading, and those it
-# marked that weren't fixes of the file.
-FIXES = {"file": str, "read": int, "newer": int, "marked": list, "found": list, "dropped": list}
+# the window's newer half (null where nearly all the sample is), the fixes counted that the heatmap marked, those
+# it didn't (found by reading), and those it marked that weren't fixes of the file.
+FIXES = {"file": str, "read": int, "newer": (int, type(None)), "marked": list, "found": list, "dropped": list}
 # The fixes trace's facts in the heatmap block's window, as heatmap.py writes them.
 FIX_FACTS = {"fixes": int, "revert": int, "type": int, "words": int, "typed": (int, float), "labels": bool,
              "closing": int, "withdrawn": int, "thin": bool}
 KIND_NAMES = {"R": "refactors", "F": "small fixes", "L": "later", "D": "your call"}
 WORDS = {str: "text", list: "a list", dict: "an object", int: "a whole number", bool: "true or false",
-         (int, float): "a number"}
+         (int, float): "a number", (int, type(None)): "a whole number or null"}
 
 
 def parse(text, name, errors):
