@@ -201,6 +201,13 @@ def read_log(repo, revs):
     return commits
 
 
+def bot_name(text):
+    """An argparse type: a bot's name, which can't be blank, since every author's name holds a blank one."""
+    if not text.strip():
+        raise argparse.ArgumentTypeError("a bot's name can't be blank: it would match every commit")
+    return text
+
+
 def window_revs(repo, since, count):
     """The git log arguments for the window, and the revision just before it if --since named one.
     --since takes a revision, or else a date as git log's own --since does."""
@@ -208,9 +215,10 @@ def window_revs(repo, since, count):
         return ["-n", str(count), "HEAD"], None
     if scoping.git(repo, "rev-parse", "--verify", "--quiet", since + "^{commit}").returncode == 0:
         return ["%s..HEAD" % since], since
-    # git reads almost anything as a date, and what it can't read as now.
+    # git reads almost anything as a date, and what it can't read as now: a date that comes out as now is one
+    # only if it says so, with a number (1 minute ago) or the word now.
     stamp = git(repo, "rev-parse", "--since=" + since).strip().split("=")[-1]
-    if not stamp.isdigit() or abs(int(stamp) - time.time()) < 120:
+    if not stamp.isdigit() or (abs(int(stamp) - time.time()) < 120 and not re.search(r"\d|\bnow\b", since, re.I)):
         sys.exit("--since %r is neither a revision here (a tag, branch or commit) nor a date git can read, "
                  "such as '3 months ago' or 2026-06-01." % since)
     return ["--since=" + since, "HEAD"], None
@@ -493,7 +501,15 @@ def write_page(path, heatmap, project):
     Only the heatmap block changes, so the items are left as they were. In a .refactor-pass folder
     with no .gitignore, and nothing git tracks, write one that keeps the folder out of commits."""
     new = not os.path.exists(path)
-    text = open(TEMPLATE if new else path, encoding="utf-8").read()
+    try:
+        with open(TEMPLATE if new else path, "rb") as f:
+            data = f.read()
+        text = data.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")  # As text mode reads it.
+    except OSError as e:
+        sys.exit("heatmap.py: couldn't read %s, so it's left as it was: %s." % (path, e.strerror or e))
+    except UnicodeDecodeError as e:
+        sys.exit("heatmap.py: couldn't read %s, so it's left as it was: it isn't UTF-8 text, at byte %d. "
+                 "check_page.py says the same." % (path, e.start))
     if new:
         span = block_span(text, "pass")
         data = json.loads(text[span[0]:span[1]])
@@ -568,7 +584,7 @@ def main():
     parser.add_argument("--keep-bots", action="store_true",
                         help="count housekeeping bots' commits too (dependabot, renovate, github-actions, "
                              "pre-commit-ci and the like, which are left out by default)")
-    parser.add_argument("--bot", action="append", default=[], metavar="NAME",
+    parser.add_argument("--bot", action="append", default=[], metavar="NAME", type=bot_name,
                         help="leave out another bot's commits too: those whose author's name or email holds NAME, "
                              "in any case, such as a translation or release bot the output doesn't name")
     parser.add_argument("--keep-ignore-revs", action="store_true",

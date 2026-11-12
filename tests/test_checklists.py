@@ -176,7 +176,6 @@ class Pages(unittest.TestCase):
                       % os.path.join(folder, "2026-01-20.html"), result.err)
 
 
-    @unittest.expectedFailure
     def test_a_page_that_isnt_utf_8(self):
         repo, _ = build()
         page = repo.write(FOLDER + "/2026-01-20.html", support.page_with().encode("utf-8").replace(b"<title>",
@@ -194,7 +193,6 @@ class Pages(unittest.TestCase):
 
     @unittest.skipIf(support.WINDOWS or (hasattr(os, "geteuid") and os.geteuid() == 0),
                      "a file can't be made unreadable here")
-    @unittest.expectedFailure
     def test_a_page_that_cant_be_read(self):
         repo, _ = build()
         page = repo.write(FOLDER + "/2026-01-20.html", support.page_with())

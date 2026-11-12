@@ -77,7 +77,6 @@ class Bots(unittest.TestCase):
         self.assertIn("Devin AI 1", result.out)
         self.assertEqual(support.heatmap_rows(result.out)["src/agent_work.py"]["commits"], 5)
 
-    @unittest.expectedFailure
     def test_a_blank_bot_is_an_error(self):
         for value in ("", "  "):
             with self.subTest(value=value):
@@ -260,7 +259,6 @@ class Since(unittest.TestCase):
         self.assertIn("--since 'zzz-no-such-thing' is neither a revision here (a tag, branch or commit) nor a date git "
                       "can read, such as '3 months ago' or 2026-06-01.", result.err)
 
-    @unittest.expectedFailure
     def test_a_date_a_minute_or_seconds_ago(self):
         for since in ("1 minute ago", "30 seconds ago", "now"):
             with self.subTest(since=since):
