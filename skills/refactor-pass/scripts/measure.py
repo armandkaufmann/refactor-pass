@@ -98,12 +98,12 @@ Usage:
 SCOPE is a folder or a glob, as for heatmap.py; with none, every file git
 tracks. In a glob, * matches across folders too, so 'app/*.py' takes
 app/sub/deep.py; and **/ matches any number of folders, none included, so
-'app/**/*.py' takes app/main.py too. Use the same scope as the heatmap. Test files are set aside as the
-heatmap sets them aside, by name or folder, so they stay out of the
-percentiles, and the output names any set aside in doubt; --test and
---not-test correct it, and --keep-tests measures them all. Any copy of this
-skill a project keeps in the repo is left out, unless a scope names its
-folder. Reads the working tree's tracked files only.
+'app/**/*.py' takes app/main.py too. Use the same scope as the heatmap.
+Test files are set aside as the heatmap sets them aside, by name or folder,
+so they stay out of the percentiles, and the output names any set aside in
+doubt; --test and --not-test correct it, and --keep-tests measures them
+all. Any copy of this skill a project keeps in the repo is left out, unless
+a scope names its folder. Reads the working tree's tracked files only.
 
 Examples:
   measure.py src tests
