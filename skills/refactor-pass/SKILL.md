@@ -204,20 +204,38 @@ re-run the counts, and drop or correct what doesn't hold. Say in the report
 what you checked. A wrong item that sends the user into a refactor costs far
 more than the minute it takes to check it.
 
-**Count the fixes in the files you'll recommend**: at most five files, and
-the newest 40 commits of each. `heatmap.py -C <repo> --show <file>
---messages`, with step 1's window, lists them with their messages, the
-script's reading marked on each. Read each message and decide; open the diff
-(`git show <hash>`) only when the message can't settle it. A fix corrects a
-defect in the project's own code: wrong behaviour, a crash, a security hole,
-a regression. Many don't say "fix" ("Keep the cookie's domain on
-redirect"), and many that say it aren't: a "fix" of a typo, the docs, a
-test, the CI, the build or a dependency, or one that adds a feature. The
-count is evidence that the file breaks when it's touched, to weigh with its
-churn, size and smells, never an item on its own. An item that cites it
-lists the commits in `fixes`, those the script marked as fixes and those you
-found by reading, and says how many of each. Where the header says the
-messages can't be read, say nothing of fixes.
+**Count the fixes in the files you'll recommend**, at most five, reading
+each file's commits newest first. `heatmap.py -C <repo> --show <file>
+--messages`, with step 1's window, lists them with their messages, a line of
+what each changed (in the file and in others) and the script's reading.
+Decide each from its message; for those it can't settle, `--show <file>
+--diffs <hash>,<hash>` gives their changes to this file in one call.
+
+- **A fix corrects a defect in the project's own code**: wrong behaviour, a
+  crash, a security hole, a regression. Many don't say "fix" ("Keep the
+  cookie's domain on redirect"); many that say it aren't: a "fix" of a
+  typo, the docs, a test, the CI or a dependency, or one that adds a
+  feature. A compile or type error fixed in the code is a fix; a change
+  only to build files isn't. A guard is a fix when it stops a failure that
+  could happen as the code stood, not one for a case nothing reaches.
+  Something callers already relied on that was missing is a fix; a new
+  capability isn't.
+- **Count only fixes of this file.** A commit that fixes a defect elsewhere
+  and touches this file in passing (a renamed call, an import) doesn't
+  count, even where the script marked it.
+- **The line of what changed is a hint, not a verdict**: a commit that
+  changed a test too is a fix about twice as often as one that didn't, and
+  one of hundreds of lines, or titled Bump, Update or Release, rarely is.
+- **Stop when the case is made**: at three fixes in the window's newer
+  half, five in all, or 40 commits read.
+
+The count is evidence that the file breaks when it's touched, to weigh with
+its churn, size and smells, never an item on its own. An item that cites it
+says how far you read ("at least 3 of its newest 14 commits") and records
+it in `fixes`, per file: how many commits you read (`read`), the fixes the
+script marked (`marked`), those you found (`found`), and any it marked that
+you left out (`dropped`), saying why. Where the header says the messages
+can't be read, say nothing of fixes.
 
 Then apply the restraint. A reviewer asked to find problems will always find
 something, and fixing every finding leaves extra layers and tests for cases
@@ -241,8 +259,8 @@ the checklist (step 6); F, L and D items say theirs in a `note`.
   - the plan, as the playbook's steps (`plan`);
   - the files, size (S, M or L) and risk (Low, Medium or High) (`files`,
     `size`, `risk`);
-  - the fixes it cites, if any, from step 4 (`fixes`: `marked` and `read`,
-    each a list of short hashes);
+  - the fixes it cites, if any, from step 4 (`fixes`), an entry per file
+    with its `file`;
   - how to check that behaviour didn't change (`verify`).
 - **F1…** Small fixes found along the way, each its own commit.
 - **L1…** Later: smelly but cold, or worth doing when the code nearby is next
