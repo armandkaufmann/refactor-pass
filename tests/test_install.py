@@ -2,6 +2,9 @@
 run's temporary folder for every run: what it installs and where, which version, update, check and
 uninstall, every refusal leaving the target as it was, and a copy that works. No network: the source is
 always a local repo, given with --source.
+
+The install.py tested is the one at the top of this checkout; to test another, such as an older commit's
+(git show <commit>:install.py > /tmp/install.py), set the REFACTOR_PASS_INSTALLER environment variable to it.
 """
 
 import hashlib
@@ -19,7 +22,7 @@ try:
 except ImportError:
     import support
 
-INSTALLER = os.path.join(support.ROOT, "install.py")
+INSTALLER = os.path.abspath(os.environ.get("REFACTOR_PASS_INSTALLER") or os.path.join(support.ROOT, "install.py"))
 RECORD = ".install.json"
 
 
@@ -69,23 +72,27 @@ class Run(object):
     """A finished installer run, with its home, project and temporary folders."""
 
     def __init__(self, result, home, temp):
-        self.code, self.out, self.home, self.temp = result.code, result.out, home, temp
+        self.code, self.out, self.err, self.home, self.temp = result.code, result.out, result.err, home, temp
 
     def __repr__(self):
-        return "exit %d\n%s" % (self.code, self.out)
+        return "exit %d\n%s%s" % (self.code, self.out, self.err)
 
 
 def install(*args, **options):
     """Run install.py with a home and a temporary folder of its own, both in the run's temporary folder: from
-    the checkout, or piped on stdin as the one-line install runs it. Options: home, cwd, piped."""
+    the checkout, or piped on stdin as the one-line install runs it. Options: home, cwd, piped; env, more
+    variables; and around, Python code that runs install.py itself, named as its first argument, as with a
+    function of os's changed."""
     home = options.get("home") or support.new_folder("home")
     temp = support.new_folder("tmp")
     assert home.startswith(support.temp_root()) and temp.startswith(support.temp_root()), (home, temp)
-    env = support.environment(HOME=home, USERPROFILE=home, TMPDIR=temp, TEMP=temp, TMP=temp)
+    env = support.environment(HOME=home, USERPROFILE=home, TMPDIR=temp, TEMP=temp, TMP=temp, **options.get("env", {}))
     for key in ("XDG_CONFIG_HOME", "CODEX_HOME", "CLAUDE_CONFIG_DIR", "COPILOT_HOME"):
         env.pop(key, None)
     if options.get("piped"):
         command, given = [sys.executable, "-"] + list(args), read(INSTALLER)
+    elif options.get("around"):
+        command, given = [sys.executable, "-c", options["around"], INSTALLER] + list(args), None
     else:
         command, given = [sys.executable, INSTALLER] + list(args), None
     result = subprocess.run(command, cwd=options.get("cwd") or temp, input=given, capture_output=True, env=env,
@@ -618,6 +625,84 @@ class Untrusted(unittest.TestCase):
             self.assertEqual(tree(copy), before)
         finally:
             os.chmod(skills, 0o755)
+
+
+# install.py run with one of os's functions changed: CHANGED names the function and replaces it; the
+# replacement raises what WHEN says, for paths WHERE matches, and calls the real one for the rest.
+AROUND = """
+import os, re, runpy, sys
+real = os.{name}
+def changed(*paths):
+    if re.search({where!r}, " ".join(os.path.basename(p) for p in paths)):
+        raise {when}
+    return real(*paths)
+os.{name} = changed
+sys.argv = sys.argv[1:]
+runpy.run_path(sys.argv[0], run_name="__main__")
+"""
+
+
+# install.py run where SKILL.md can't be removed, and nothing can be moved back from beside a copy.
+NEITHER = """
+import os, runpy, sys
+real_remove, real_rename = os.remove, os.rename
+def remove(path):
+    if os.path.basename(path) == "SKILL.md":
+        raise PermissionError(13, "Permission denied")
+    return real_remove(path)
+def rename(old, new):
+    if os.path.basename(old).startswith(".refactor-pass.old-"):
+        raise PermissionError(13, "Permission denied")
+    return real_rename(old, new)
+os.remove, os.rename = remove, rename
+sys.argv = sys.argv[1:]
+runpy.run_path(sys.argv[0], run_name="__main__")
+"""
+
+
+class Interrupted(unittest.TestCase):
+    """A run stopped part way, by an interrupt or a system that won't do what it asks, leaves either the old copy
+    in its place or a line that says where it is; and what it prints never stops it."""
+
+    @unittest.expectedFailure
+    def test_an_interrupt_while_swapping_leaves_the_old_copy(self):
+        skills, copy = Refusals.installed(self)
+        before = tree(copy)
+        run = install("update", "--dir", skills, "--ref", "v1.10.0", around=AROUND.format(
+            name="rename", where=r"^\.refactor-pass\.new-\S+ refactor-pass$", when="KeyboardInterrupt()"))
+        self.assertIn("KeyboardInterrupt", run.err)
+        self.assertEqual(tree(copy), before)
+        self.assertEqual(os.listdir(skills), ["refactor-pass"])
+
+    @unittest.expectedFailure
+    def test_uninstall_stopped_part_way_puts_what_is_left_back(self):
+        skills, copy = Refusals.installed(self)
+        before = tree(copy)
+        run = install("uninstall", "--dir", skills, around=AROUND.format(  # SKILL.md is the first it removes.
+            name="remove", where=r"^SKILL\.md$", when="PermissionError(13, 'Permission denied')"))
+        self.assertEqual(run.code, 1, run)
+        self.assertIn("refactor-pass: couldn't remove it: Permission denied; what's left of it is back in its "
+                      "place.", run.out)
+        self.assertEqual(os.listdir(skills), ["refactor-pass"])
+        self.assertEqual(tree(copy), before)
+
+    @unittest.expectedFailure
+    def test_uninstall_that_cant_put_it_back_says_where_it_is(self):
+        skills, copy = Refusals.installed(self)
+        run = install("uninstall", "--dir", skills, around=NEITHER)
+        left = [n for n in os.listdir(skills) if n.startswith(".refactor-pass.old-")]
+        self.assertEqual(len(left), 1, (os.listdir(skills), run))
+        self.assertIn("couldn't remove it: Permission denied; what's left of it is in ", run.out)
+        self.assertIn("%s: remove that folder yourself, as an agent may load it as a second copy." % left[0], run.out)
+
+    @unittest.expectedFailure
+    def test_a_name_the_output_cant_show(self):
+        skills = os.path.join(support.new_folder("skills"), "sk\u00e9lls-\u2603")
+        run = install("--source", Sources.tagged(), "--dir", skills, env={"PYTHONIOENCODING": "ascii"})
+        self.assertEqual(run.code, 0, run)
+        self.assertNotIn("Traceback", run.err)
+        self.assertIn("sk?lls-?", run.out)
+        self.assertTrue(os.path.isfile(os.path.join(skills, "refactor-pass", "SKILL.md")))
 
 
 class InstalledCopy(unittest.TestCase):
