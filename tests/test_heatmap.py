@@ -471,13 +471,11 @@ class GitSettings(unittest.TestCase):
         self.assertEqual(support.heatmap_rows(found[0][1])["a.py"], support.heatmap_rows(self.plain[0][1])["a.py"])
         self.assertEqual(found, self.plain)
 
-    @unittest.expectedFailure
     def test_a_big_file_threshold(self):
         # Above it git's diff reads a file as binary; at 1 byte, every file.
         found = outputs(build_settings(), {"GIT_CONFIG_GLOBAL": user_config("[core]\n\tbigFileThreshold = 1\n")})
         self.assertEqual(found, self.plain)
 
-    @unittest.expectedFailure
     def test_files_attributes_mark_binary_though_text_are_named(self):
         repo = support.Repo("attributes")
         repo.commit("2026-01-01", "Start", {".gitattributes": "*.py -diff\n", "a.py": lines(3), "b.py": lines(3),
@@ -502,7 +500,6 @@ class GitSettings(unittest.TestCase):
         self.assertIn("Git's attributes mark 1 file that changed in the window as binary, though it's text at HEAD, "
                       "so it's left out: a.py.\n", mine.out)
 
-    @unittest.expectedFailure
     def test_no_setting_or_variable_changes_the_output(self):
         repo = build_settings()
         home = support.new_folder("home")

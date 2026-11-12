@@ -164,13 +164,14 @@ def git(repo, *args):
 # git log as read_log reads it, whatever the user's or the repo's config says: the root commit's changes shown
 # (log.showRoot), no signature checked, whose output would come first (log.showSignature), git's own diff and
 # limit on renames, which change the counts (diff.algorithm, diff.renameLimit), and the subjects in UTF-8
-# (i18n.logOutputEncoding). No text conversion, external diff, notes or colour either, though git leaves them
+# (i18n.logOutputEncoding), and git's own size past which a file is read as binary (core.bigFileThreshold).
+# No text conversion, external diff, notes or colour either, though git leaves them
 # out of --numstat today. Each commit is its hash, time, author and subject, each after a NUL, which no
 # subject or name can hold; then its numstat lines, each ending with a NUL, a rename's followed by its old
 # and its new name.
-LOG = ["log", "--no-merges", "-z", "-M", "-l1000", "--numstat", "--root", "--no-show-signature", "--no-textconv",
-       "--no-ext-diff", "--diff-algorithm=myers", "--no-notes", "--no-color", "--encoding=UTF-8",
-       "--format=%x00%H%x00%ct%x00%aN <%aE>%x00%s"]
+LOG = ["-c", "core.bigFileThreshold=512m", "log", "--no-merges", "-z", "-M", "-l1000", "--numstat", "--root",
+       "--no-show-signature", "--no-textconv", "--no-ext-diff", "--diff-algorithm=myers", "--no-notes", "--no-color",
+       "--encoding=UTF-8", "--format=%x00%H%x00%ct%x00%aN <%aE>%x00%s"]
 COMMIT = re.compile(r"[0-9a-f]{40}(?:[0-9a-f]{24})?\Z")  # A full hash, of SHA-1 or SHA-256.
 NUMSTAT = re.compile(r"(\d+|-)\t(\d+|-)\t")
 
@@ -816,6 +817,9 @@ def main():
     base_time = read.get((base, None), 0)
     rows = []
     at_head = set(tracked)  # Not symbolic links or submodules.
+    # Files git's diff reads as binary though they're text at HEAD: the repo's attributes (-diff, binary), or
+    # the user's, say so. They're left out as git says, and the output names them.
+    marked = sorted(p for p, s in files.items() if s["binary"] and p in sizes and p in at_head)
     for path, stats in files.items():
         if path not in sizes or stats["binary"] or path not in at_head:  # Gone at HEAD, binary, or not a file.
             continue
@@ -1017,6 +1021,12 @@ def main():
     if own_left_out:
         print("This skill's own files, in %s, are left out; a scope naming that folder counts them."
               % " and ".join(f + "/" for f in sorted(own_left_out)))
+    if marked:
+        named = marked[:5] + (["%d more" % (len(marked) - 5)] if len(marked) > 5 else [])
+        print("Git's attributes mark %s that changed in the window as binary, though %s text at HEAD, so %s left "
+              "out: %s." % ("1 file" if len(marked) == 1 else "%d files" % len(marked),
+                            "it's" if len(marked) == 1 else "they're", "it's" if len(marked) == 1 else "they're",
+                            and_list(named)))
     for note in [shallow, where]:
         if note:
             print(note)
