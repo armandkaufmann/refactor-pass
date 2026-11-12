@@ -158,6 +158,50 @@ class Extremes(unittest.TestCase):
                 check(self, name, text, 10, "an extreme")
 
 
+# Lines of many generic types that aren't a definition, each of which once took a time that doubled with each
+# type: a C-family line can be read as types in more ways than one, and every way was tried before giving up.
+def generic_lines(k):
+    return [
+        "Map<String, List<Integer>> " * k,
+        "Map<String, List<Integer>> " * k + "= f(x);",
+        " ".join("a%d<b%d>" % (i, i) for i in range(k)) + " ;",
+        "template <" + "a<b>, " * k + " x",
+        "    public static <" + ", ".join("T%d extends Comparable<T%d>" % (i, i) for i in range(k)) + "> void sort;",
+        "    std::tuple<" + ", ".join("A%d<int>" % i for i in range(k)) + "> t;",
+        "    private final " + "Map<String, " * k + "Integer" + ">" * k + " cache = new HashMap<>();",
+        "    public (" + ", ".join("List<int> a%d" % i for i in range(k)) + ") Pairs;",
+        "    " + " ".join("List<A%d>" % i for i in range(k)) + " x",
+        "    public void M<T>() " + " ".join("where T%d : IFoo<T%d>" % (i, i) for i in range(k)),
+        "@A(" * k + "x",
+        "public " * k + "x;(",
+    ]
+
+
+GENERICS = """
+import sys, time
+import measure
+from test_robustness import generic_lines
+start = time.time()
+for extension in (".java", ".cs", ".cpp", ".c", ".h"):
+    for line in generic_lines(200):
+        measure.functions("a" + extension, line + "\\n")
+print("%.1f" % (time.time() - start))
+"""
+
+
+class Generics(unittest.TestCase):
+
+    @unittest.expectedFailure
+    def test_long_lines_of_generic_types(self):
+        code = "import sys; sys.path[:0] = [%r, %r]\n" % (support.SCRIPTS, support.HERE) + GENERICS
+        try:
+            result = support.run_python(code, timeout=60)
+        except subprocess.TimeoutExpired:
+            self.fail("measuring lines of 200 generic types took over a minute")
+        self.assertEqual(result.code, 0, result)
+        self.assertLess(float(result.out), 10, result)
+
+
 # A script run with one of the functions it calls replaced by one that raises, as a bug would.
 CRASH = """
 import json, os, runpy, sys
