@@ -182,7 +182,6 @@ class LastLineOfDefence(unittest.TestCase):
         repo.done()
         cls.repo = repo.path
 
-    @unittest.expectedFailure
     def test_a_bug_is_one_plain_line(self):
         page = support.write_text(os.path.join(support.new_folder("page"), "page.html"), support.page_with())
         for script, module, name, args in (("heatmap.py", "scoping", "toplevel", ["-C", self.repo]),
@@ -196,7 +195,6 @@ class LastLineOfDefence(unittest.TestCase):
                                              r"repo or the command: RuntimeError: boom \(%s, line \d+, in \w+\)\.\n$"
                                  % (re.escape(script), re.escape(script)))
 
-    @unittest.expectedFailure
     def test_a_reader_that_stops_reading(self):
         for script in ("heatmap.py", "measure.py"):
             with self.subTest(script=script):
@@ -206,7 +204,6 @@ class LastLineOfDefence(unittest.TestCase):
                 err = process.communicate(timeout=60)[1].decode("utf-8", "replace")
                 self.assertEqual(err, "")
 
-    @unittest.expectedFailure
     def test_skill_md_says_what_to_do(self):
         with open(os.path.join(support.SKILL, "SKILL.md"), encoding="utf-8") as f:
             text = " ".join(f.read().split())

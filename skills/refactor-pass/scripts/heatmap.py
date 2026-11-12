@@ -979,4 +979,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    scoping.guard(main)

@@ -26,9 +26,15 @@ Usage:
 
 import argparse
 import json
+import os
 import re
 import sys
 from datetime import datetime
+
+# No __pycache__ is written, so a run leaves the skill's folder as it was.
+sys.dont_write_bytecode = True
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import scoping  # noqa: E402
 
 BLOCK = '<script type="application/json" id="%s">'
 STATUSES = ["todo", "doing", "waiting", "done", "skipped"]
@@ -224,11 +230,7 @@ def check(text):
 
 
 def main():
-    # Never fail on printing a value the console can't show, as on Windows with output piped in its own code
-    # page: the character becomes a ?.
-    for stream in (sys.stdout, sys.stderr):
-        if hasattr(stream, "reconfigure") and (stream.encoding or "").lower().replace("-", "") != "utf8":
-            stream.reconfigure(errors="replace")
+    scoping.safe_output()
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0],
                                      formatter_class=argparse.RawDescriptionHelpFormatter,
                                      epilog=__doc__.split("\n\n", 1)[1])
@@ -259,4 +261,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    scoping.guard(main)

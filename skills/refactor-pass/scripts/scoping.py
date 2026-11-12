@@ -9,11 +9,13 @@ counts.
 
 import argparse
 import difflib
+import errno
 import os
 import posixpath
 import re
 import subprocess
 import sys
+import traceback
 
 # Never worth a refactor, whatever their churn: lock files, generated or
 # minified files, drawings kept as text (SVG images and icon fonts), and the
@@ -68,6 +70,36 @@ def git(repo, *args, **options):
     env = dict((k, v) for k, v in os.environ.items() if k.upper() not in GIT_PLACES)
     return subprocess.run(["git", "-C", repo] + list(args), capture_output=True, input=options.get("input"),
                           env=env)
+
+
+def guard(main):
+    """Run a script's main. An exception nothing foresaw, a bug in the script, ends it with one plain line that
+    says so and where, and exit code 3, so it can't pass for a problem with the repo; a reader that stops
+    reading the output, as head does, ends it quietly."""
+    try:
+        main()
+        sys.stdout.flush()
+    except Exception as e:
+        if isinstance(e, OSError) and e.errno in (errno.EPIPE, errno.EINVAL) and not writable(sys.stdout):
+            os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())  # So the last flush has somewhere to go.
+            sys.exit(1)
+        here = os.path.dirname(os.path.abspath(__file__))
+        frames = traceback.extract_tb(e.__traceback__)
+        where = ([f for f in frames if os.path.dirname(os.path.abspath(f.filename)) == here] or frames)[-1]
+        sys.stderr.write("%s: stopped on a bug in the script itself, not a problem with the repo or the command: "
+                         "%s: %s (%s, line %d, in %s).\n" % (
+                             os.path.basename(sys.argv[0]), type(e).__name__, " ".join(str(e).split()),
+                             os.path.basename(where.filename), where.lineno, where.name))
+        sys.exit(3)
+
+
+def writable(stream):
+    """Whether a stream can still be written: a pipe whose reader has gone can't."""
+    try:
+        stream.flush()
+        return True
+    except OSError:
+        return False
 
 
 def run(repo, *args):
