@@ -1308,6 +1308,8 @@ FIND["Java"], FIND["C#"] = [by_pattern(dict((lang[0], lang[2]) for lang in LANGU
 def functions(path, text):
     """The file's code lines, its functions as (name, first line, last line, code lines, deepest), and its language."""
     language = BY_EXTENSION.get(os.path.splitext(path)[1].lower())
+    if text.startswith("\ufeff"):  # A byte-order mark, as Visual Studio starts a file with: not code.
+        text = text[1:]
     lines = text.split("\n")
     comments = language[4] if language else "# //"
     if language and language[0] == "Ruby":

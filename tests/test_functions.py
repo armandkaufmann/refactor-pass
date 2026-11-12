@@ -59,7 +59,6 @@ class Samples(unittest.TestCase):
             with self.subTest(sample=name):
                 self.assertEqual(found(name, read(os.path.join(FUNCTIONS, name))), want)
 
-    @unittest.expectedFailure
     def test_a_byte_order_mark(self):
         # As Visual Studio starts a file by default: it changes nothing, not even the first line.
         measure = support.load("measure")
@@ -69,7 +68,6 @@ class Samples(unittest.TestCase):
                     text = read(os.path.join(FUNCTIONS, name))
                     self.assertEqual(measure.functions(name, "\ufeff" + text), measure.functions(name, text))
 
-    @unittest.expectedFailure
     def test_a_byte_order_mark_in_a_repo(self):
         repo = support.Repo("bom")
         repo.commit("2026-01-01", "Start", {"Main.cs": b"\xef\xbb\xbfint Main() {\n    return 0;\n}\n"})
