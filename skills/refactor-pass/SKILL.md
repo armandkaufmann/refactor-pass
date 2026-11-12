@@ -207,11 +207,10 @@ more than the minute it takes to check it.
 **Count the fixes in the files you'll recommend**, at most five.
 `heatmap.py -C <repo> --show <file> --messages`, with step 1's window, lists
 each file's newest 12 commits, a sample, with their messages, a line of what
-each changed (in the file and in others), whether it's in the window's newer
-half, and the script's reading. Judge every commit in the sample, from its
-message; where the message doesn't settle one, get its changes before you
-count on: all of a file's unsettled commits in one call, `--show <file>
---diffs <hash>,<hash>`.
+each changed, whether it's in the window's newer half, and the script's
+reading. Judge every commit from its message; where that doesn't settle one,
+get its changes before counting on, all of a file's unsettled ones in one
+call: `--show <file> --diffs <hash>,<hash>`.
 
 - **A fix corrects a defect in the project's own code**: wrong behaviour, a
   crash, a security hole, a regression, a compile or type error. Many don't
@@ -222,23 +221,24 @@ count on: all of a file's unsettled commits in one call, `--show <file>
   to cure a defect; a new capability nothing lacked isn't one. Guards and
   the other edges: [Counting fixes](references/smells.md#counting-fixes).
 - **Count a commit for each file whose change is part of its fix.** One fix
-  can count for two files; a fix elsewhere that touches this file in
-  passing (a renamed call, an import) doesn't count for it, even where the
-  script marked it.
+  can count for two files; one that touches a file in passing (a renamed
+  call, an import) doesn't count for it, even where the script marked it.
 - **The line of what changed is a hint, not a verdict**: a commit that
-  changed a test too is a fix about twice as often as one that didn't, and
-  one of hundreds of lines, or titled Bump, Update or Release, rarely is.
+  changed a test too is a fix about twice as often as one that didn't; one
+  of hundreds of lines, or titled Bump, Update or Release, rarely is; a line
+  or two here among many files is likely in passing: no diff needed.
 
-Within the sample the count is a count, not a floor. It's evidence that the
-file breaks when it's touched, to weigh with its churn, size and smells,
-never an item on its own. An item that cites it says "7 of its newest 12
-commits fixed a defect in it, 5 of them in the newer half", and, where the
-files you read differ much, how the others ran ("the other four ran 2 to 4
-of 12"). It records each file in `fixes`: the sample's size (`read`), how
-many of its fixes are in the newer half (`newer`), the fixes the script
-marked among the commits read (`marked`), those you found (`found`), and
-those it marked that you left out (`dropped`), saying why. Where the header
-says the messages can't be read, say nothing of fixes.
+Within the sample the count is a count, not a floor: evidence that the file
+breaks when it's touched, to weigh with its churn, size and smells, never an
+item on its own. An item that cites it says "7 of its newest 12 commits
+fixed a defect in it, 5 of them in the newer half" ("of its 11 commits in
+the window" where it has fewer), and, where the files differ much, how the
+others ran ("the other four ran 2 to 4 of 12"). It records each file in
+`fixes`: the sample's size (`read`), how many fixes are in the newer half
+(`newer`; null, and not said, where nearly all the sample is in it), and, as
+lists of short hashes, the fixes you count that the script marked (`marked`)
+or didn't (`found`), and those it marked that you don't (`dropped`), saying
+why. Where the header says the messages can't be read, say nothing of fixes.
 
 Then apply the restraint. A reviewer asked to find problems will always find
 something, and fixing every finding leaves extra layers and tests for cases

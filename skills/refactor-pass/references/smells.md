@@ -216,13 +216,17 @@ How to judge a commit's change to a file when counting the file's fixes
 - **A guard** is a fix when it stops a failure that could happen as the
   code stood: a crash or a wrong result in the project's code. One against
   a failure only a caller misusing the API reaches counts only where the
-  API accepted that input before. One that moves a failure earlier (an
-  error at the call where a crash came later) counts when the later failure
-  was a crash or a wrong result in the project's code. A guard for a case
-  nothing reaches isn't a fix.
+  API took that input before and then failed later or gave a wrong result,
+  not where its documentation ruled the input out. One that moves a failure
+  earlier (an error at the call where a crash came later) counts on the
+  same terms, when the later failure was a crash or a wrong result in the
+  project's code. A guard for a case nothing reaches isn't a fix.
 - **Something missing** that callers or an interface already relied on is a
   fix, even where curing it adds something new (an option, a control); a
   capability nothing lacked is a feature.
+- **An opt-in option** that cures an overload or a slow path, the default
+  unchanged, isn't a fix unless the old behaviour was a failure: a hang, a
+  crash, data lost.
 - **Building and packaging**: code whose job is to build or package the
   project, such as a script in its source that generates code, is its code,
   and a fix to it counts. A change only to its manifests, lock files, CI or
@@ -233,6 +237,9 @@ How to judge a commit's change to a file when counting the file's fixes
 - **One fix, two files**: a commit counts for each file whose change is part
   of the fix, and not for one it touches only in passing (a renamed call,
   an import).
+- **A cut diff**: `--diffs` shows at most 60 lines of a commit's change to
+  the file, and its last line names the `git show <hash> -- <file>` that
+  shows the rest. A count rarely needs it.
 
 ## Bloaters
 

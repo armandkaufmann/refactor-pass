@@ -122,10 +122,10 @@ calls right), and wanted the diff for 21 commits; reading as SKILL.md's step
 each file's own changes from --diffs, 55 of the 60 (55 of 56 right), reading
 less than half as much. The labels it was scored against came from the same
 kind of model reading the diffs, which flatters agreement: one measurement,
-not an accuracy. On five of a busy project's files, the step took about
-55,000 tokens; the listing of a file's newest 12 commits it now reads is a
-few thousand bytes (8,678 for redis's src/server.c, whose 99 commits in an
-800-commit window take 65,878).
+not an accuracy. On five of a busy project's files, judging up to 12 commits
+of each (55 in all, 15 of them with their diffs) took about 60,000 tokens and
+two minutes; a file's listing is a few thousand bytes (8,678 for redis's
+src/server.c, whose 99 commits in an 800-commit window take 65,878).
 
 --show FILE prints a file's commits in the window instead, newest first, to
 read the reasons it keeps changing: each with its hash as git show takes it,
