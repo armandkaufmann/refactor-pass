@@ -66,6 +66,11 @@ SETS = [
         (0, 2)),
     Set("javapoet", "Java", "https://github.com/square/javapoet", "b9017a9503b76e11b4ad4c1a9f050e2d29112cb0",
         ".java", (0, 2)),
+    # Generic methods whose type arguments hold annotations: <T extends @Nullable Object> T getLast(...), which
+    # v1.0.0 left unreported (1,243). Its 10 run-ons aren't: a method whose type parameters stand on the line
+    # above its name is found from its name's line, as deep as the methods of an anonymous class inside it.
+    Set("guava", "Java", "https://github.com/google/guava", "72a3f9060a600a795c6c9ccfcd907d2ad975753c", ".java",
+        (10, 2)),
     Set("godot-demo-projects", "GDScript", "https://github.com/godotengine/godot-demo-projects",
         "b761b4cd5718a7118f2c95eb55f181d0a5f004f1", ".gd", (0, 2)),
     Set("beehave", "GDScript", "https://github.com/bitbrain/beehave", "fe589153fa780a3f88989578ceb5f539afffb7c2",
@@ -81,8 +86,9 @@ DEFINITION = {
     "GDScript": re.compile(r"^\s*(?:static\s+)?func\s+\w+\s*\("),
     "C#": re.compile(r"^\s*(?:\[[^\]]*\]\s*)*(?:\w+\s+)*[\w<>\[\],.?()]+\s+(?!(?:static|async|new|return|throw|"
                      r"in|is|as|when|case|await)\b)[\w.]+(?:<[^()]*>)?\s*\("),
-    "Java": re.compile(r"^\s*(?:@\w+(?:\([^)]*\))?\s+)*(?:\w+\s+)*(?:<[^>]*>\s+)?[\w<>\[\],.?]+\s+(?!(?:new|return|"
-                       r"throw|case|instanceof)\b)\w+\s*\("),
+    # A type's arguments in < > can hold spaces and annotations, as Map<K, @Nullable V>.
+    "Java": re.compile(r"^\s*(?:@\w+(?:\([^)]*\))?\s+)*(?:\w+\s+)*(?:<[^()]*>\s+)?(?:[\w.\[\]?]+(?:<[^()]*>)?"
+                       r"[\w.\[\]?]*)\s+(?!(?:new|return|throw|case|instanceof)\b)\w+\s*\("),
 }
 STATEMENT = re.compile(r"\s*(?:return|if|for|foreach|while|switch|catch|else|do|new|throw|case|using|lock|await|var|"
                        r"yield)\b")
