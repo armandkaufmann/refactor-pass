@@ -51,29 +51,29 @@ class Repo(object):
         self.name, self.url, self.sha, self.window, self.floors = name, url, sha, window, floors
 
 
-# The floors, in percent: per set, precision and recall. Recorded on 2026-11-12 from that day's numbers, a hair
-# under them.
+# The floors, in percent: per set, precision and recall. Recorded on 2026-11-12 from that day's numbers, two
+# points under them.
 REPOS = [
     Repo("flask", "https://github.com/pallets/flask", "49943b5a94413a530761350f04e896f76e8d620e", 4000,
-         {"dev": (80, 30), "revert": (40, 20), "word": (60, 50)}),
+         {"dev": (85, 44), "revert": (64, 23), "word": (73, 73)}),
     Repo("gin", "https://github.com/gin-gonic/gin", "0f09c3a9b4626d9fe9979cf4d0521d6ae32ab646", 2500,
-         {"dev": (90, 70), "revert": (80, 90), "word": (50, 50)}),
+         {"dev": (91, 71), "revert": (88, 98), "word": (75, 98)}),
     Repo("pinia", "https://github.com/vuejs/pinia", "4817135a25431172d363bd928476db7cdbf875c4", 3000,
-         {"dev": (95, 80), "revert": (90, 70)}),
+         {"dev": (98, 84), "revert": (98, 98)}),
     Repo("django", "https://github.com/django/django", "a0f2e29e0a98ee14aa808ebe38ec5fb79c8af71f", 800,
-         {"dev": (85, 45), "revert": (0, 0), "word": (70, 70)}),
+         {"dev": (91, 53), "revert": (98, 58), "word": (91, 86)}),
     Repo("lua", "https://github.com/lua/lua", "8cb93bada561977eb370819e39d7d644e5fd0a3f", 4000,
-         {"dev": (90, 60), "word": (60, 60)}),
+         {"dev": (92, 56), "word": (73, 73)}),
     Repo("ripgrep", "https://github.com/BurntSushi/ripgrep", "178cc027e283fd965cb72d0a7395b219eada170c", 2500,
-         {"dev": (60, 30), "revert": (50, 30), "word": (50, 50)}),
+         {"dev": (64, 31), "revert": (98, 64), "word": (98, 98)}),
     Repo("hutool", "https://github.com/chinabugotech/hutool", "87ec11862baae72914df703e25939eb44a8a843c", 4000,
-         {"dev": (75, 65), "revert": (50, 50), "word": (80, 80)}),
+         {"dev": (81, 78), "revert": (98, 64), "word": (85, 89)}),
     Repo("requests", "https://github.com/psf/requests", "3c7baaa05ab4aa49cc819ce3a819d260de19c157", 1000,
-         {"aside": (0, 0)}),
+         {"aside": (98, 36)}),
     Repo("nest", "https://github.com/nestjs/nest", "afa6e3d3801f58750dc80ad0970c0bc52850ed2a", 1000,
-         {"aside": (0, 0)}),
+         {"aside": (94, 98)}),
     Repo("redis", "https://github.com/redis/redis", "df10f323951f024df7f3a9a86274ef2fab7a7fa1", 1000,
-         {"aside": (0, 0)}),
+         {"aside": (84, 50)}),
 ]
 SETS = ["dev", "revert", "word", "aside"]
 TIERS = {1: "revert", 2: "type", 3: "words"}

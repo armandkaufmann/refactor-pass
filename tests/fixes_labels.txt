@@ -885,3 +885,189 @@ eae76eb27 n 0 not 测试: refactor, comments and tests
 e2d71ee56 f 3 not 测试: test assertions were wrong
 c02f3fbb8 n 3 not 测试: a word in a test
 b86147c4a f 3 not 测试: MapUtil.map threw on null values
+
+@ requests aside
+5460f467b n 0 CI action bump
+d38495c90 n 0 docs link
+74c56d5ff n 0 CI lint config
+6f66281a1 f 0 isinstance checks missed __getattr__ proxies
+6f205ff42 f 3 _encode_files missed __getattr__ file wrappers
+661970d17 n 0 linter rules
+1190afd14 n 0 adds a type annotation
+e50e59452 n 0 internal typing
+c4367f231 n 0 policy docs
+cd90742ed n 0 docstring
+6e83187b8 n 0 release
+84d10f0be f 0 Request.headers' type broke callers
+b7b549b54 n 0 release
+e511bc727 f 3 headers input types were wrongly mutable
+5691f5961 f 0 json input types were too narrow
+2144213c3 f 0 Response.reason was typed optional
+6404f345e f 3 prepare_body missed __getattr__ file wrappers
+0b401c76b n 0 release
+86b378d3f f 0 Session.get's typed parameters didn't match
+a4f9a5999 f 0 no_proxy matched hosts it shouldn't
+3816cfa1a f 0 SupportsItems rejected Mappings (invariance)
+b684dcb9b f 3 Session's hooks type was wrong
+dc9dbdfb3 n 0 Python 3.15 support
+25340ebad f 0 tests failed with proxy variables set
+fd628095d f 0 path_url lost leading slashes
+e8d2c015e n 0 docs example
+eb173bc81 n 0 CI
+d60f4773b n 0 docs links
+f64a0d782 n 0 docs link
+f7822f7c4 n 0 release
+561e4b688 n 0 feature: inline types
+8f6cda996 n 0 adds tests
+27e098196 n 0 typos
+6ec76b4a3 n 0 linter config
+9450dd51f n 0 dependabot config
+93bf5331a n 0 docs
+b294b08fe f 0 the urllib3 version check broke on four-part
+5f3ff9b9e n 0 typo
+514c1623f n 0 readme
+d2f6bdecc n 0 docstring
+a044b020d f 0 digest auth failed on FIPS builds (md5
+16df2a091 n 0 dependency pin
+fe2063be0 n 0 docs CSS
+4b0b1a3e9 n 0 tooling
+185f587a7 n 0 docs
+ef439eb77 f 3 a response was in its own redirect history
+cbce03132 n 0 CI
+111d2b777 n 0 release
+f0198e6df f 3 malformed Content-Type values parsed wrongly
+bc7dd0fc4 f 3 header validity regexes accepted a trailing
+4443b1a84 f 3 test dependencies were published as an extra
+389eea58d f 0 a test left files in the temporary folder
+7407309c8 n 0 packaging tidy
+bc04dfd6d n 0 release
+66d21cb07 f 0 CVE: extract_zipped_paths wrote to a shared
+8b9bc8fc0 n 0 readme
+e331a288f n 0 removes an unused call
+753fd08c5 n 0 docs grammar
+774a0b837 n 0 docs
+0e4ae38f0 n 0 docs
+
+@ nest aside
+afa6e3d38 n 0 readme
+3a1c9ac57 n 0 release
+fecdd4f9e f 2 fastify: object-mode file streams threw on
+5f08564c8 f 2 fastify: file streams of pipelined requests
+9934bcffc f 2 fastify: a failed stream on a raw response
+9aa196d14 f 2 scoped global filters ran as empty
+d2319b8c4 f 2 express: rejected uploads of pipelined
+8d74ddcd3 f 2 server-side SyntaxErrors leaked their
+81f9d0c1f f 2 node: file streams of pipelined requests
+a0a64f504 f 2 node: object-mode file streams crashed the
+832c4eeb7 f 2 node: a throwing stream error handler exited
+5b58a6e89 f 2 NaN limits turned the pipe and SSE limits off
+f956177a0 f 2 NaN limits turned the ws and socket.io limits
+972a59283 f 2 grpc stream call failures reached the client
+407518855 n 2 diagnostics: warns about a filter that can't
+7d705cc83 f 2 gateways served clients before startup hooks
+7a81aed50 f 2 guards that couldn't run were dropped and
+608fcec0a f 2 a promise from the CSRF exclude predicate
+2dffe900d f 2 class-bound enhancers with static members
+1704079dd f 2 resolvers in two modules ran the first
+f433a1f75 n 2 diagnostics: warns when a validation pipe
+c88524238 f 2 filter catch types were read from a repointed
+7c5792d96 f 2 parameter metadata read from the wrong class
+ce061111c f 2 microservices failed a message before its
+7359d3b06 f 2 gateways without a port opened a server on a
+32875410d f 2 a later gateway's connection check was
+d6c3e2fa8 f 2 gateways on "/" and on no namespace missed
+5ddb0943f f 2 error replies echoed binary payloads back
+ce948b18d f 2 a message counted as handled before its async
+bd01f0f21 f 2 websockets failed a message before its other
+ed988e606 f 2 a scoped gateway's disconnect hook ran before
+8619bc84d f 2 errors of a connection hook's filter went
+c99f3318c f 2 a gateway with an unset port lost its options
+6ff160ca7 f 2 gateways of one namespace didn't share their
+fd0155fba f 2 gateways on one port dropped their hosts
+a97e5bf6e f 2 later gateways didn't wait for the adapter
+d2cc65fda f 2 a throwing upgrade check let the client in
+f6490a7d6 f 2 a paused client that left was never noticed
+aae7cb067 f 2 a shared client resumed while a gateway was
+109e52cd9 f 2 DoS: no default limit on message size
+c98b5f782 f 2 DoS: no cap on waiting messages
+55509f683 f 2 each handler kept its last message in memory
+2038bff42 f 2 grpc answered errors with their messages
+015456cc2 f 2 DoS: localeCompare on pattern keys
+222e8efff f 2 scoped filters skipped for controller
+078945a87 f 2 unobserved promises of joined event handlers
+515f99cfb f 2 a failing rpc filter left the stream
+ed8ca5cde f 2 DoS: pattern limits applied after serializing
+42c619cd6 f 2 DoS: no bound on pending tcp messages
+7b4fa3292 f 2 streams of tcp messages without an id never
+4196d3655 f 2 an empty tcp host listened on every interface
+b93dc04b2 f 2 memory: fragmented tcp packet buffer
+ce285e6ad f 2 maxBufferSize applied to several packets
+8209d1c8b f 2 NaN turned the tcp and kafka limits off
+55da0b0d3 f 2 DoS: the default tcp buffer was 128 Mi
+8f9764a36 f 2 nats replies came back as messages
+074dcf7c6 f 2 redis wildcard replies on unbounded channels
+76064f355 f 2 mqtt topic names with wildcards went on the
+1634286a2 f 2 mqtt wildcard filters matched the decoded
+cc2157b82 f 2 redis requests before the subscription leaked
+
+@ redis aside
+df10f3239 f 0 DEBUG QUICKLIST left nodes uncompressed
+b83c9c1ee f 0 addresses announced on the cluster bus
+bee4ee2cd f 3 a flaky maxclients test under TLS
+5dd0f4e47 f 3 undefined shifts decoding msgpack ints
+133d7df04 f 3 AOF preload crashed in long working
+0cfe83720 n 0 feature: ZMOVE
+cfda2dbeb f 0 fastjson read past a trailing escape
+01ed15184 f 3 module getkeys callbacks crashed IO threads
+52d11e711 n 3 CI adapted to an unavailable keyserver
+8fccf8591 f 3 set member expiry wrong during slot migration
+27f962f0d n 0 performance
+d866f80d2 n 0 CI adapted to a newer lcov
+73c496c11 f 3 IDMP appends lost on AOF replay and lagging
+5364030b8 n 0 performance
+76b611c92 n 0 performance
+1252bb51b f 0 parallel LTO linking failed (jobserver
+f09cabd56 f 0 ZRANGESTORE trusted a listpack source's order
+889672c76 f 3 XCLAIM claiming nothing didn't propagate the
+dda59d1f8 f 0 TLS session resumption crossed listeners
+cb4b70e7c f 3 modules reading a zset emptied by ZPOP
+124bc7ef4 f 3 lua pattern matching recursed too deep
+63cf48ce4 f 3 a test failed on Tcl 8.5
+86561a0f4 f 0 slot migration lost keys when the destination
+d973851a7 f 3 MSETEX propagated repeated EX/PX wrongly
+b2f70ec7b f 3 a test failed on Tcl 8.5
+9da5a27ed n 0 refactor for other cluster implementations
+5b69ba2ce f 0 listpack to btree conversion could keep
+4bb71df00 f 0 SORT changed the sorted set's encoding for
+abda10c01 n 0 performance
+283a563f9 n 0 performance
+dda610ab2 f 0 the replica soft limit ignored
+71633fe17 f 0 client memory left out watched keys and
+a5c94689f n 0 CI runners
+28c3a1820 f 3 AOF rewrite duplicated commands after a write
+a05f30c97 n 0 adds tests
+46cf4a8f5 n 0 feature: CPU time in SLOWLOG
+8a68e4453 f 0 a test failed on a random -0
+16e63d64b f 0 ZADD left a huge sparse member index
+87133479d n 0 feature: module API
+8e2ba8c4e f 0 redis-cli trusted extreme arities in COMMAND
+d88fea2fb f 0 duplicate metadata classes overflowed on load
+dc1e7e2e6 f 3 use-after-free in ZRANGESTORE onto its source
+76990001c n 0 redis-cli output for empty keystats
+68d9a2df0 f 3 stale dict entry links reused after lookups
+a4172f543 f 3 DELEX ignored lazyfree-lazy-user-del
+f729b7c9a f 0 keyspace event flags n, o, c lost with A
+927cc6d77 f 0 bundled jemalloc took over libc's hooks on
+669b2b9ba n 0 dependency update by a release bot
+6a5fee675 f 3 flaky XREADGROUP CLAIM tests
+418883960 n 0 CONFIG REWRITE behaviour change
+d843e6150 n 3 test adapted to rounding on a new Ubuntu
+a76a3689a n 0 feature: set member expiration
+da925a2ca f 0 listpack backlen width broke data from 8.8 to
+9a5c6e978 f 3 out-of-bounds read parsing cluster bus packets
+c2aa3993f f 3 slot memory accounting wrong after IDMP expiry
+157e3f3bb n 0 feature: BITRANGEINTARRAY
+c01d00bed n 0 log message wording
+31edfd806 f 3 flaky defrag test
+8b5384ae9 n 0 performance
+33c2a2a14 n 3 test adapted to a tmpfs /tmp
