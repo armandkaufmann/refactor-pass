@@ -8,7 +8,10 @@ full size and every file of a folder, outside the default run.
 
 import os
 import random
+import re
 import signal
+import subprocess
+import sys
 import time
 import unittest
 
@@ -153,6 +156,62 @@ class Extremes(unittest.TestCase):
         for name, text in EXTREMES:
             with self.subTest(case=name):
                 check(self, name, text, 10, "an extreme")
+
+
+# A script run with one of the functions it calls replaced by one that raises, as a bug would.
+CRASH = """
+import json, os, runpy, sys
+sys.path.insert(0, os.environ["REFACTOR_PASS_SCRIPTS"])
+import scoping
+def boom(*args, **kwargs):
+    raise RuntimeError("boom")
+setattr({module}, {name!r}, boom)
+sys.argv = [os.path.join(os.environ["REFACTOR_PASS_SCRIPTS"], {script!r})] + sys.argv[1:]
+runpy.run_path(sys.argv[0], run_name="__main__")
+"""
+
+
+class LastLineOfDefence(unittest.TestCase):
+    """An exception a script doesn't foresee ends it with one plain line that says it's a bug in the script,
+    and where, not a traceback; and a reader that stops reading, as head does, isn't one."""
+
+    @classmethod
+    def setUpClass(cls):
+        repo = support.Repo("defence")
+        repo.commit("2026-01-01", "Start", {"a.py": "def f():\n    return 1\n"})
+        repo.done()
+        cls.repo = repo.path
+
+    @unittest.expectedFailure
+    def test_a_bug_is_one_plain_line(self):
+        page = support.write_text(os.path.join(support.new_folder("page"), "page.html"), support.page_with())
+        for script, module, name, args in (("heatmap.py", "scoping", "toplevel", ["-C", self.repo]),
+                                           ("measure.py", "scoping", "tracked_files", ["-C", self.repo]),
+                                           ("check_page.py", "json", "loads", [page])):
+            with self.subTest(script=script):
+                result = support.run_python(CRASH.format(module=module, name=name, script=script), *args)
+                self.assertEqual(result.code, 3, result)
+                self.assertNotIn("Traceback", result.err)
+                self.assertRegex(result.err, r"^%s: stopped on a bug in the script itself, not a problem with the "
+                                             r"repo or the command: RuntimeError: boom \(%s, line \d+, in \w+\)\.\n$"
+                                 % (re.escape(script), re.escape(script)))
+
+    @unittest.expectedFailure
+    def test_a_reader_that_stops_reading(self):
+        for script in ("heatmap.py", "measure.py"):
+            with self.subTest(script=script):
+                process = subprocess.Popen([sys.executable, os.path.join(support.SCRIPTS, script), "-C", self.repo],
+                                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=support.environment())
+                process.stdout.close()
+                err = process.communicate(timeout=60)[1].decode("utf-8", "replace")
+                self.assertEqual(err, "")
+
+    @unittest.expectedFailure
+    def test_skill_md_says_what_to_do(self):
+        with open(os.path.join(support.SKILL, "SKILL.md"), encoding="utf-8") as f:
+            text = " ".join(f.read().split())
+        self.assertIn("If a script stops on a bug in the script itself, as it says, tell the user what it said, "
+                      "and go on without it", text)
 
 
 if __name__ == "__main__":
