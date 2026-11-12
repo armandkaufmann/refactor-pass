@@ -537,6 +537,12 @@ def line_counts(repo, wanted):
     return counts
 
 
+def printable(text):
+    """Text from a commit, as the output writes it: a control character as its escape, as \\x1b, so a subject
+    or a name can't drive the terminal the output goes to."""
+    return re.sub(r"[\x00-\x08\x0b-\x1f\x7f]", lambda found: "\\x%02x" % ord(found.group()), text)
+
+
 def describe(commit):
     """A commit's short hash, its local date (as the checklist page's dates are) and its subject."""
     sha, stamp, subject = commit[:3]
@@ -736,7 +742,8 @@ def main():
     commits = [c for c in everything if c[0] not in excluded]
     left_out = [(len(asked), "asked", ""), (len(listed), "in .git-blame-ignore-revs", "--keep-ignore-revs"),
                 (len(recorded), "recorded on refactor checklists", "--keep-pass-commits"),
-                (len(bots), "by housekeeping bots (%s)" % ", ".join("%s %d" % b for b in bot_names), "--keep-bots")]
+                (len(bots), "by housekeeping bots (%s)" % ", ".join("%s %d" % (printable(name), n)
+                                                                    for name, n in bot_names), "--keep-bots")]
     page = None
     if args.page:
         page = args.page if os.path.isabs(args.page) else os.path.join(home, args.page)
@@ -966,7 +973,7 @@ def main():
                 window["newest"]["sha"], window["newest"]["date"]))
             for commit in logs.get(path, []):
                 info = describe(commit)
-                print("  %s %s %s" % (info["sha"], info["date"], info["subject"]))
+                print("  %s %s %s" % (info["sha"], info["date"], printable(info["subject"])))
             print()
         return
     scope = args.scope or ["(everything)"]

@@ -566,7 +566,6 @@ class GitSettings(unittest.TestCase):
         hostile = support.run("measure.py", "-C", repo.path, env=variables)
         self.assertEqual((hostile.code, hostile.out, hostile.err), (plain.code, plain.out, plain.err))
 
-    @unittest.expectedFailure
     def test_a_subject_or_author_holding_any_character(self):
         repo = support.Repo("odd")
         repo.commit("2026-01-01", "Start", {"a.py": lines(3, "a")})
