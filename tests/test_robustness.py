@@ -283,7 +283,7 @@ class LastLineOfDefence(unittest.TestCase):
                 self.assertEqual(err, "")
 
     def test_skill_md_says_what_to_do(self):
-        with open(os.path.join(support.SKILL, "SKILL.md"), encoding="utf-8") as f:
+        with open(os.path.join(os.path.dirname(support.SCRIPTS), "SKILL.md"), encoding="utf-8") as f:
             text = " ".join(f.read().split())
         self.assertIn("If a script stops on a bug in the script itself, as it says, tell the user what it said, "
                       "and go on without it", text)
