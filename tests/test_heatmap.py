@@ -304,7 +304,6 @@ class Globs(unittest.TestCase):
             with self.subTest(path=path, pattern=pattern):
                 self.assertEqual(match(path, pattern), want)
 
-    @unittest.expectedFailure
     def test_a_backslash_on_windows(self):
         # On Windows a glob's \\ is its /, as fnmatch read --ignore's before: the system is passed in, so this runs
         # everywhere; --test and --not-test read it the same way.

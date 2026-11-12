@@ -208,13 +208,16 @@ def glob_piece(text):
     return "".join(out)
 
 
-def glob_match(path, pattern, case=True):
+def glob_match(path, pattern, case=True, windows=None):
     """Whether a glob matches a path: * matches across folders, so 'app/*.py' takes app/sub/deep.py, and **/
     at the start or after a / matches any number of folders, none included, so 'app/**/*.py' takes
-    app/main.py too. With case False,
-    as fnmatch.fnmatch reads a glob, in any case on Windows."""
-    if not case and os.name == "nt":
-        path, pattern = path.lower(), pattern.lower()
+    app/main.py too. On Windows (windows, by default whether this is it) a glob's \\ is its /, as a path
+    there is written, and as fnmatch read --ignore's; and with case False, case is ignored there, as fnmatch
+    did."""
+    if os.name == "nt" if windows is None else windows:
+        pattern = pattern.replace("\\", "/")
+        if not case:
+            path, pattern = path.lower(), pattern.lower()
     found = _GLOBS.get(pattern)
     if found is None:
         pieces = [glob_piece(p) for p in DOUBLE_STAR.split(pattern)]
