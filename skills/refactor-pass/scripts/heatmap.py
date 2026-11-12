@@ -661,9 +661,12 @@ def type_of(subject):
 
 
 def same_person(one, other):
-    """Whether two "Name <email>" authors are one person: the same name or the same email."""
-    a, b = [x.rpartition(" <") for x in (one, other)]
-    return a[0].strip().lower() == b[0].strip().lower() or a[2].rstrip(">").lower() == b[2].rstrip(">").lower()
+    """Whether two "Name <email>" authors are one person: the same name or the same email, a blank one being
+    no one's."""
+    (name, _, email), (other_name, _, other_email) = [x.rpartition(" <") for x in (one, other)]
+    name, other_name = name.strip().lower(), other_name.strip().lower()
+    email, other_email = email.rstrip(">").strip().lower(), other_email.rstrip(">").strip().lower()
+    return bool(name) and name == other_name or bool(email) and email == other_email
 
 
 def how_long(seconds):

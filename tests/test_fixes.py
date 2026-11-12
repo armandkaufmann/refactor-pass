@@ -338,7 +338,6 @@ class Words(unittest.TestCase):
         self.assertIsNone(type_of("ignore: respect the filters"))  # An area, as ripgrep's, not a type.
         self.assertIsNone(type_of("Fix the crash"))
 
-    @unittest.expectedFailure
     def test_one_person_by_name_or_email_but_not_by_an_empty_one(self):
         same = self.heatmap.same_person
         self.assertTrue(same("Ann Dev <ann@example.com>", "ann dev <ann@work.example>"))
