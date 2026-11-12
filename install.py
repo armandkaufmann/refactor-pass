@@ -488,16 +488,19 @@ def put(folder, get_files, source, target, force, dry_run):
             json.dump(new_record, f, indent=2, sort_keys=True)
             f.write("\n")
         os.chmod(staging, 0o777 & ~mask)  # As a folder mkdir makes, not mkdtemp's owner-only one.
-        if os.path.exists(folder):
-            retired = tempfile.mkdtemp(prefix=RETIRED, dir=parent)
-            os.rmdir(retired)
-            os.rename(folder, retired)
         try:
+            if os.path.exists(folder):
+                retired = tempfile.mkdtemp(prefix=RETIRED, dir=parent)
+                os.rmdir(retired)
+                os.rename(folder, retired)
             os.rename(staging, folder)
-        except OSError:
-            if retired:
+        except BaseException:  # An error or an interrupt: the old copy goes back in its place.
+            if retired and os.path.isdir(retired) and not os.path.exists(folder):
                 os.rename(retired, folder)
                 retired = None
+            elif retired and os.path.isdir(retired):
+                say("The old copy is in %s: remove it yourself, as an agent may load it as a second copy."
+                    % shown_path(retired))
             raise
     finally:
         if os.path.isdir(staging):
@@ -524,19 +527,31 @@ def remove_copy(folder, force, dry_run):
     retired = tempfile.mkdtemp(prefix=RETIRED, dir=os.path.dirname(folder))
     os.rmdir(retired)
     os.rename(folder, retired)
-    for path in record["files"]:
-        full = os.path.join(retired, *path.split("/"))
-        if os.path.isfile(full):
-            os.remove(full)
-    os.remove(os.path.join(retired, RECORD))
-    for top, dirs, names in os.walk(retired, topdown=False):
-        if os.path.basename(top) == BYTECODE:
-            remove_tree(top)
-        elif not os.listdir(top):
-            os.rmdir(top)
-    if kept:
-        os.rename(retired, folder)
-        return "removed, but for the files it didn't install: " + ", ".join(kept)
+    try:
+        for path in record["files"]:
+            full = os.path.join(retired, *path.split("/"))
+            if os.path.isfile(full):
+                os.remove(full)
+        os.remove(os.path.join(retired, RECORD))
+        for top, dirs, names in os.walk(retired, topdown=False):
+            if os.path.basename(top) == BYTECODE:
+                remove_tree(top)
+            elif not os.listdir(top):
+                os.rmdir(top)
+        if kept:
+            os.rename(retired, folder)
+            return "removed, but for the files it didn't install: " + ", ".join(kept)
+    except BaseException as error:  # An error or an interrupt: what's left goes back, or the output says where.
+        try:
+            os.rename(retired, folder)
+            left = "what's left of it is back in its place"
+        except OSError:
+            left = ("what's left of it is in %s: remove that folder yourself, as an agent may load it as a second "
+                    "copy" % shown_path(retired))
+        if isinstance(error, OSError):
+            raise OSError(error.errno, "%s; %s." % (error.strerror or error, left))
+        say("%s: stopped; %s." % (shown_path(folder), left))
+        raise
     return "removed"
 
 

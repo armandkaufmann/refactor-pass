@@ -664,7 +664,6 @@ class Interrupted(unittest.TestCase):
     """A run stopped part way, by an interrupt or a system that won't do what it asks, leaves either the old copy
     in its place or a line that says where it is; and what it prints never stops it."""
 
-    @unittest.expectedFailure
     def test_an_interrupt_while_swapping_leaves_the_old_copy(self):
         skills, copy = Refusals.installed(self)
         before = tree(copy)
@@ -674,7 +673,6 @@ class Interrupted(unittest.TestCase):
         self.assertEqual(tree(copy), before)
         self.assertEqual(os.listdir(skills), ["refactor-pass"])
 
-    @unittest.expectedFailure
     def test_uninstall_stopped_part_way_puts_what_is_left_back(self):
         skills, copy = Refusals.installed(self)
         before = tree(copy)
@@ -686,7 +684,6 @@ class Interrupted(unittest.TestCase):
         self.assertEqual(os.listdir(skills), ["refactor-pass"])
         self.assertEqual(tree(copy), before)
 
-    @unittest.expectedFailure
     def test_uninstall_that_cant_put_it_back_says_where_it_is(self):
         skills, copy = Refusals.installed(self)
         run = install("uninstall", "--dir", skills, around=NEITHER)
