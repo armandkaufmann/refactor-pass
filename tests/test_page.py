@@ -47,7 +47,7 @@ class Template(unittest.TestCase):
     def test_every_field_check_page_accepts_is_read(self):
         c = self.check_page
         fields = set(c.PASS) | set(c.REFACTOR) | set(c.OTHER) | set(c.COST) | set(c.EARLIER) | set(c.RESULT)
-        fields |= {"from", "what", "why", "date", "text"}  # An item's optional field; left_alone's; log's.
+        fields |= set(c.FIXES) | {"from", "fixes", "what", "why", "date", "text"}  # An item's; left_alone's; log's.
         for field in sorted(fields):
             with self.subTest(field=field):
                 self.assertRegex(self.script, r"\.%s\b" % field)
@@ -106,7 +106,7 @@ class AgainstTheHeatmap(unittest.TestCase):
                 for path in paths:
                     sizes[path] = sizes.get(path, 0) + 1
                     files[path] = support.lines(sizes[path])
-                repo.commit("2026-01-%02d" % day, "Change", files)
+                repo.commit("2026-01-%02d" % day, "Fix the crash in it" if day == 3 else "Change the files", files)
                 day += 1
         repo.done()
         page = os.path.join(support.new_folder("page"), "p.html")
@@ -123,8 +123,10 @@ class AgainstTheHeatmap(unittest.TestCase):
             "heat": (heat, ["window", "scope", "head", "files", "total_files", "groups", "pairs", "tests", "options"]),
             "w": (heat["window"], ["bots", "excluded_checklists", "excluded_asked", "excluded_ignore_revs",
                                    "excluded_bots", "since", "commits", "oldest", "newest", "newer_half_from",
-                                   "tests_aside", "shallow", "too_big_for_pairs"]),
-            "f": (heat["files"][0], ["path", "size", "commits", "recent", "last", "growth"]),
+                                   "tests_aside", "shallow", "too_big_for_pairs", "fixes"]),
+            "fx": (heat["window"]["fixes"], ["fixes", "revert", "type", "words", "typed", "labels", "thin"]),
+            "f": (heat["files"][0], ["path", "size", "commits", "recent", "last", "growth", "fixes",
+                                     "fixes_recent"]),
             "p": (heat["pairs"][0], ["a", "b", "shared", "degree", "last"]),
             "group": (heat["groups"][0], ["files", "pairs", "shared", "degree", "last"]),
             "t": (heat["tests"][0], ["test", "files"]),

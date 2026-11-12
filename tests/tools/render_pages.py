@@ -3,12 +3,16 @@ default run, since it needs a browser.
 
 A page fails if its error box shows, or if it shows a different number of items than its pass block holds,
 of file rows than its heatmap block's files, of pair and group rows than its pairs and groups, or of tests
-than its tests. The pages: one heatmap.py makes in a small repo, as made and with a pass written; the
-suite's fixture checklists, their data in today's template; a page whose heatmap is in an older format,
-with no last dates, no bots and no dates on pairs; and one heatmap.py makes from commits whose subjects hold
-<!-- and <script. Then, for each text test_check_page.py tries in a pass block that a browser might read as
-HTML, a page with it written as it is and one with each < written \u003c: check_page.py must find an error
-in the page exactly when the browser shows its error box. It exits 0 with a message when Chrome isn't found.
+than its tests; or, in today's template, of fix cells than its file rows where the heatmap counts fixes (and
+any where it doesn't), or of items' cited fixes than its items with fixes. The pages: one heatmap.py makes in
+a small repo, as made and with a pass written that cites fixes, and that one in the templates of v1.0.0 and
+v1.0.1, as a checklist made by them keeps, taken from their tags; the suite's fixture checklists, their data
+in today's template; a page whose heatmap is in an older format, with no last dates, no bots, no dates on
+pairs and no fixes; and
+one heatmap.py makes from commits whose subjects hold <!-- and <script. Then, for each text
+test_check_page.py tries in a pass block that a browser might read as HTML, a page with it written as it is
+and one with each < written \u003c: check_page.py must find an error in the page exactly when the browser
+shows its error box. It exits 0 with a message when Chrome isn't found.
 
 It uses the skill's scripts and template, or those REFACTOR_PASS_SCRIPTS names, and git.
 
@@ -84,6 +88,16 @@ def problems(dom, text):
         tests = len(re.findall(r"production files besides its own", dom))
         if tests != len(heat.get("tests") or []):
             found.append("%d tests shown, %d in the heatmap" % (tests, len(heat.get("tests") or [])))
+    if 'id="fixes-head"' in dom and heat:
+        counted = any("fixes" in f for f in heat["files"])
+        cells = len(re.findall(r'<td class="num fix', dom))
+        if cells != (len(heat["files"]) if counted else 0):
+            found.append("%d fix cells shown, for %d file rows%s" % (
+                cells, len(heat["files"]), "" if counted else " of a heatmap that counts no fixes"))
+        citing = sum(1 for i in data.get("items") or [] if i.get("fixes"))
+        if len(re.findall(r'class="cited"', dom)) != citing:
+            found.append("%d items' fixes shown, %d items cite fixes" % (len(re.findall(r'class="cited"', dom)),
+                                                                        citing))
     title = re.search(r"<title>(.*?)</title>", dom)
     if data.get("project") and (not title or data["project"] not in title.group(1)):
         found.append("the title doesn't name the project")
@@ -100,7 +114,8 @@ def made_pages(folder):
         for path in paths:
             sizes[path] = sizes.get(path, 0) + 1
             files[path] = support.lines(sizes[path])
-        repo.commit("2026-01-%02d" % day, "Change %s" % ", ".join(paths), files)
+        repo.commit("2026-01-%02d" % day, ("Fix the crash in %s" if day % 4 == 1 else "Change %s")
+                    % ", ".join(paths), files)
         day += 1
     repo.done()
     made = os.path.join(folder, "made.html")
@@ -113,7 +128,8 @@ def made_pages(folder):
     data.update(summary="Fine.", checks=["the tests"], items=[
         {"id": "R1", "status": "doing", "title": "Name it", "eases": "x", "smells": ["Long Function"],
          "cost": {"today": "2", "after": "1"}, "plan": ["Extract Function"], "files": ["src/a.py"], "size": "S",
-         "risk": "Low", "verify": "the tests", "commits": [], "outcome": ""},
+         "risk": "Low", "verify": "the tests", "commits": [], "outcome": "",
+         "fixes": {"marked": ["a1b2c3d"], "read": ["b2c3d4e"]}},
         {"id": "F1", "status": "done", "title": "Fix it", "note": "x", "commits": ["a1b2c3d"], "outcome": "Done."},
         {"id": "D1", "status": "waiting", "title": "Your call", "note": "x", "commits": [], "outcome": ""}],
         log=[{"date": "2026-01-11", "text": "Started."}], left_alone=[{"what": "x", "why": "y"}])
@@ -164,7 +180,10 @@ def older_format(folder, made):
     heat = json.loads(support.block(text, "heatmap"))
     for row in heat["files"] + heat["pairs"] + heat["groups"]:
         row.pop("last", None)
+        row.pop("fixes", None)
+        row.pop("fixes_recent", None)
     heat["window"].pop("bots", None)
+    heat["window"].pop("fixes", None)
     path = os.path.join(folder, "older.html")
     support.write_text(path, support.page_with(template=made, heatmap=heat))
     return path
@@ -181,6 +200,32 @@ def fixtures(folder):
             support.write_text(path, support.page_with(pass_json=support.block(text, "pass"),
                                                        heatmap_json=support.block(text, "heatmap")))
             pages.append(path)
+    return pages
+
+
+RELEASES = ["v1.0.0", "v1.0.1"]
+
+
+def old_templates(folder, made):
+    """Pages in the templates of earlier releases, as a checklist made by one keeps: the written page's pass
+    block, with today's heatmap block, which counts fixes, as heatmap.py --page puts it in on a refresh. Each
+    release's template comes from its tag in this repo's git; a tag that isn't here is skipped, and said."""
+    with open(made, encoding="utf-8") as f:
+        text = f.read()
+    pages = []
+    for tag in RELEASES:
+        found = subprocess.run(["git", "-C", support.HERE, "show", "%s:skills/refactor-pass/assets/page.html" % tag],
+                               capture_output=True)
+        if found.returncode != 0:
+            print("%s: skipped, no such tag here to take its template from." % tag)
+            continue
+        template = os.path.join(folder, "template-%s.html" % tag)
+        with open(template, "wb") as f:
+            f.write(found.stdout)
+        path = os.path.join(folder, "old-template-%s.html" % tag)
+        support.write_text(path, support.page_with(template=template, pass_json=support.block(text, "pass"),
+                                                   heatmap_json=support.block(text, "heatmap")))
+        pages.append(path)
     return pages
 
 
@@ -201,7 +246,8 @@ def main():
     failed = 0
     try:
         made = made_pages(folder)
-        for path in made + [older_format(folder, made[0]), html_subjects(folder)] + fixtures(folder):
+        for path in made + [older_format(folder, made[0]), html_subjects(folder)] + fixtures(folder) + \
+                old_templates(folder, made[1]):
             with open(path, encoding="utf-8") as f:
                 text = f.read()
             dom = render(chrome, path, profile)

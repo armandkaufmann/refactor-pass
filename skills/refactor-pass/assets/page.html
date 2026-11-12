@@ -212,6 +212,8 @@ ol.items, ul.items { list-style: none; margin: 0; padding: 0; display: grid; gap
 .outcome.skipped { background: var(--code-bg); }
 .outcome .eyebrow { color: inherit; }
 .eyebrow .sha, .eyebrow code { text-transform: none; letter-spacing: 0; }
+.sha { font-family: var(--font-mono); font-size: var(--step--1); }
+.cited { color: var(--muted); }
 
 /* Compact rows: fixes, later, your call, since the last pass, left alone */
 .item.compact { padding-block: 12px; }
@@ -273,7 +275,7 @@ ol.items, ul.items { list-style: none; margin: 0; padding: 0; display: grid; gap
     </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>File</th><th class="num">Lines</th><th class="num">Commits</th><th class="num">Newer half</th><th class="num" id="last-head">Last changed</th><th class="num">Growth</th><th class="bar-col" style="width:30%">Commits, newer half solid</th></tr></thead>
+        <thead><tr><th>File</th><th class="num">Lines</th><th class="num">Commits</th><th class="num">Newer half</th><th class="num" id="fixes-head" hidden>Fixes, at least</th><th class="num" id="last-head">Last changed</th><th class="num">Growth</th><th class="bar-col" style="width:30%">Commits, newer half solid</th></tr></thead>
         <tbody id="files-top"></tbody>
       </table>
     </div>
@@ -412,6 +414,15 @@ function outcome(item) {
   return `<div class="outcome ${esc(item.status)}"><span class="eyebrow">${head}</span><p>${rich(item.outcome)}</p></div>`;
 }
 
+// The fixes an item cites as evidence: those the heatmap marked, and those found by reading the commits.
+function cited(item) {
+  if (!item.fixes) return "";
+  const marked = list(item.fixes.marked), read = list(item.fixes.read);
+  const parts = [[marked, "the heatmap marked"], [read, "found by reading"]].filter(x => x[0].length)
+    .map(x => `${x[0].length} ${x[1]} (<span class="sha">${x[0].map(short).join(", ")}</span>)`);
+  return `${marked.length + read.length} commits fixed a defect in these files${parts.length ? `: ${parts.join(", ")}` : ""}.`;
+}
+
 function renderRefactor(item) {
   const cost = item.cost || {};
   return `<li class="item" data-status="${esc(item.status)}" id="${esc(item.id)}">
@@ -425,6 +436,7 @@ function renderRefactor(item) {
       <dl class="plan">
         <dt>Plan</dt><dd><ol>${list(item.plan).map(s => `<li>${rich(s)}</li>`).join("")}</ol></dd>
         <dt>Files</dt><dd>${list(item.files).map(path).join(", ")}</dd>
+        ${item.fixes ? `<dt>Fixes</dt><dd class="cited">${cited(item)}</dd>` : ""}
         <dt>Checked by</dt><dd>${rich(item.verify)}</dd>
       </dl>
     </div>
@@ -437,6 +449,7 @@ function renderCompact(item) {
     <div class="body">
       <div class="title-row"><span class="id">${esc(item.id)}</span><h3>${rich(item.title)}</h3>${statusChip(item.status)}${fromChip(item)}</div>
       <p>${rich(item.note)}</p>
+      ${item.fixes ? `<p class="cited">${cited(item)}</p>` : ""}
       ${outcome(item)}
     </div>
   </li>`;
@@ -471,10 +484,26 @@ function renderHeatmap(heat) {
   if (leftOut.length) text += ` Left out: ${leftOut.join(", ")}.`;
   if (w.tests_aside) text += ` ${number(w.tests_aside)} test files changed too, and are set aside from the table and the pairs.`;
   if (w.shallow) text += " The clone is shallow, so its history stops just before the oldest commit here.";
+  // The fixes trace: what the commits' messages say they fixed, at least. A heatmap from before it has none.
+  const fx = w.fixes;
+  if (fx && fx.thin) text += " Most of the commits' subjects are a word or two, too little to tell a fix from anything else, so no fixes are counted.";
+  else if (fx) {
+    const ways = [[fx.revert, "a revert", "reverts"], [fx.type, "by its type", "by their type"], [fx.words, "by its words", "by their words"]]
+      .filter(x => x[0]).map(x => `${number(x[0])} ${x[0] === 1 ? x[1] : x[2]}`);
+    text += ` At least ${number(fx.fixes)} of the commits fixed a defect in the project's own code, as their messages say${ways.length ? ` (${ways.join(", ")})` : ""}. ` +
+      (fx.labels ? `${Math.round(fx.typed * 100)}% of the subjects carry a type, read as a label, so the count is close to complete.`
+        : `${Math.round(fx.typed * 100)}% of the subjects carry a type, too few to read as labels, so the counts are a floor: subjects without a type typically say so for a third to a half of the fixes.`);
+  }
   $("window").innerHTML = text;
+  const hasFixes = heat.files.some(f => "fixes" in f);
+  $("fixes-head").hidden = !hasFixes;
+  // Documentation, tests, and CI, build and dependency files aren't counted: their cell says so.
+  const fixCell = f => !hasFixes ? "" : "fixes" in f
+    ? `<td class="num fix" title="at least ${f.fixes} commits fixed a defect in it, ${f.fixes_recent} of them in the newer half">${f.fixes}<span class="muted">, ${f.fixes_recent} newer</span></td>`
+    : `<td class="num fix muted" title="documentation, tests, or CI, build or dependency files: not counted">–</td>`;
   const most = Math.max(1, ...heat.files.map(f => f.commits));
   const lastCell = f => hasLast ? `<td class="num">${day(f.last)}</td>` : "";
-  const row = f => `<tr><td class="path">${path(f.path)}</td><td class="num">${number(f.size)}</td><td class="num">${f.commits}</td><td class="num">${f.recent}</td>${lastCell(f)}<td class="num">${f.growth > 0 ? "+" : ""}${number(f.growth)}</td>` +
+  const row = f => `<tr><td class="path">${path(f.path)}</td><td class="num">${number(f.size)}</td><td class="num">${f.commits}</td><td class="num">${f.recent}</td>${fixCell(f)}${lastCell(f)}<td class="num">${f.growth > 0 ? "+" : ""}${number(f.growth)}</td>` +
     `<td class="bar-col"><div class="bar" role="img" aria-label="${f.commits} commits, ${f.recent} in the newer half${f.last ? `, the last on ${day(f.last)}` : ""}"><span class="all" style="width:${100 * f.commits / most}%"></span><span class="recent" style="width:${100 * f.recent / most}%"></span></div></td></tr>`;
   $("files-top").innerHTML = heat.files.slice(0, HEATMAP_ROWS_SHOWN).map(row).join("");
   const rest = heat.files.slice(HEATMAP_ROWS_SHOWN);
@@ -610,12 +639,16 @@ document.addEventListener("DOMContentLoaded", () => {
         "files": ["src/checkout.py", "src/payment.py"],
         "size": "M", "risk": "Medium",
         "verify": "`make test`; the checkout snapshots",
+        "fixes": {"marked": ["a1b2c3d"], "read": ["b2c3d4e", "c3d4e5f"]},
         "commits": [], "outcome": ""}
        {"id": "Fn", "status": "todo", "title": "…",
         "note": "…",
         "commits": [], "outcome": ""}
      L and D items have the same fields as F. An item carried over from an
      earlier checklist adds "from": "2026-11-03", the date it first appeared.
+     An item that cites fixes as evidence adds "fixes", as above: the commits
+     the heatmap marked as fixes, and those found by reading; leave it out
+     otherwise.
      After an earlier pass, "earlier" says what came of its refactors:
        {"checklist": ".refactor-pass/2026-11-03.html", "results": [
         {"id": "Rn", "title": "…", "eases": "…", "cost": {"today": "…", "after": "…"},

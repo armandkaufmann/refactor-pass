@@ -10,7 +10,11 @@ so a status update stays a one-line edit:
   {"id": "R4", "status": "todo", ...   becomes   {"id": "R4", "status": "doing", ...
 
 It checks too that dates are written 2026-11-10, and that a refactor's size
-is S, M or L and its risk Low, Medium or High, as the page shows them.
+is S, M or L and its risk Low, Medium or High, as the page shows them. An
+item that cites fixes has them as {"marked": [...], "read": [...]}, the
+commits the heatmap marked and those found by reading, each a hash once. The
+heatmap block is heatmap.py's to write; where it counts fixes (a heatmap
+from before it did has none), those counts are checked too.
 
 It prints a line per kind of item, then any problems: errors (the page or a
 later pass would go wrong) and warnings (something the skill asks for is
@@ -51,8 +55,13 @@ OTHER = {"id": str, "status": str, "title": str, "note": str, "commits": list, "
 COST = {"today": str, "after": str}
 EARLIER = {"checklist": str, "results": list}
 RESULT = {"id": str, "title": str, "eases": str, "cost": dict, "change": str, "actual": str, "note": str}
+FIXES = {"marked": list, "read": list}
+# The fixes trace's facts in the heatmap block's window, as heatmap.py writes them.
+FIX_FACTS = {"fixes": int, "revert": int, "type": int, "words": int, "typed": (int, float), "labels": bool,
+             "closing": int, "withdrawn": int, "thin": bool}
 KIND_NAMES = {"R": "refactors", "F": "small fixes", "L": "later", "D": "your call"}
-WORDS = {str: "text", list: "a list", dict: "an object"}
+WORDS = {str: "text", list: "a list", dict: "an object", int: "a whole number", bool: "true or false",
+         (int, float): "a number"}
 
 
 def parse(text, name, errors):
@@ -95,7 +104,7 @@ def fields(where, value, shape, errors, optional=()):
     for key, kind in shape.items():
         if key not in value:
             errors.append("%s is missing %r." % (where, key))
-        elif not isinstance(value[key], kind):
+        elif not isinstance(value[key], kind) or (kind is int and isinstance(value[key], bool)):
             errors.append("%s: %r should be %s." % (where, key, WORDS.get(kind, "an object or null")))
     return True
 
@@ -141,9 +150,20 @@ def check_item(item, page, seen, errors, warnings, spread):
     if ident in seen:
         errors.append("%s is used twice; an ID always means one item." % ident)
     seen[ident] = seen.get(ident, 0) + 1
-    fields(ident, item, REFACTOR if ident[0] == "R" else OTHER, errors, optional=("from",))
+    fields(ident, item, REFACTOR if ident[0] == "R" else OTHER, errors, optional=("from", "fixes"))
     if "from" in item:
         date("%s's from" % ident, item["from"], errors)
+    if "fixes" in item and fields(ident + ".fixes", item["fixes"], FIXES, errors):
+        cited = [c for key in FIXES for c in (item["fixes"].get(key) if isinstance(item["fixes"].get(key), list)
+                                              else [])]
+        bad = [c for c in cited if not (isinstance(c, str) and re.fullmatch(r"[0-9a-f]{7,40}", c))]
+        if bad:
+            errors.append("%s: the fixes it cites are hashes of 7 to 40 hex digits; not %s."
+                          % (ident, ", ".join(repr(c) for c in bad)))
+        twice = sorted(set(c for c in cited if cited.count(c) > 1 and isinstance(c, str)))
+        if twice:
+            errors.append("%s cites %s twice: a fix is either one the heatmap marked or one found by reading."
+                          % (ident, " and ".join(twice)))
     if ident[0] == "R":
         one_of("%s's size" % ident, item.get("size"), SIZES, errors)
         one_of("%s's risk" % ident, item.get("risk"), RISKS, errors)
@@ -174,10 +194,34 @@ def check_item(item, page, seen, errors, warnings, spread):
         warnings.append("%s is %s with no outcome: say what happened, with the checks' numbers." % (ident, status))
 
 
+def check_heatmap(heatmap, errors):
+    """The fixes counted in a heatmap block, where it counts them: its window's facts, and each file's count,
+    at least, and how many of those were in the newer half."""
+    window = heatmap.get("window") if isinstance(heatmap.get("window"), dict) else {}
+    if "fixes" in window and fields("The heatmap's window.fixes", window["fixes"], FIX_FACTS, errors):
+        facts = window["fixes"]
+        counts = [facts.get(k) for k in ("revert", "type", "words")]
+        if all(isinstance(c, int) for c in counts + [facts.get("fixes")]) and sum(counts) != facts["fixes"]:
+            errors.append("The heatmap's window.fixes counts %d fixes, but %d by reverts, types and words: run "
+                          "heatmap.py --page again rather than editing its block." % (facts["fixes"], sum(counts)))
+    for row in heatmap.get("files") if isinstance(heatmap.get("files"), list) else []:
+        if not isinstance(row, dict) or "fixes" not in row and "fixes_recent" not in row:
+            continue
+        where = "The heatmap's row for %s" % row.get("path")
+        fixes, recent = row.get("fixes"), row.get("fixes_recent")
+        if not all(isinstance(n, int) and not isinstance(n, bool) and n >= 0 for n in (fixes, recent)):
+            errors.append("%s: its fixes and fixes_recent should be whole numbers, 0 or more." % where)
+        elif recent > fixes or fixes > row.get("commits", fixes):
+            errors.append("%s: its %d fixes, %d in the newer half, don't fit its %s commits."
+                          % (where, fixes, recent, row.get("commits")))
+
+
 def check(text):
     """The errors, the warnings, and the items."""
     errors, warnings = [], []
     heatmap = parse(text, "heatmap", errors)
+    if isinstance(heatmap, dict):
+        check_heatmap(heatmap, errors)
     data = parse(text, "pass", errors)
     if heatmap is None and not errors:
         warnings.append("No heatmap yet: heatmap.py --page puts it in.")

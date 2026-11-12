@@ -23,7 +23,8 @@ def good():
                 "cost": {"today": "5 files, 2 switches", "after": "1 file"},
                 "plan": ["Pin today's behaviour", "Replace Primitive with Object"],
                 "files": ["src/checkout.py"], "size": "M", "risk": "Medium", "verify": "`make test`",
-                "commits": ["a1b2c3d", "0123456789abcdef0123456789abcdef01234567"], "outcome": "Done: 40 tests pass."}
+                "commits": ["a1b2c3d", "0123456789abcdef0123456789abcdef01234567"], "outcome": "Done: 40 tests pass.",
+                "fixes": {"marked": ["a1b2c3d4e"], "read": ["b2c3d4e5f", "c3d4e5f6a"]}}
     carried = dict(refactor, id="R3", status="todo", title="Give each report one definition", commits=[], outcome="",
                    **{"from": "2026-11-03"})
     return {
@@ -135,7 +136,8 @@ class Errors(unittest.TestCase):
             plan=["x"])))
         self.assertError(text, "The pass block has a field the page doesn't show: 'notes'")
         self.assertError(text, "R2 has a field the page doesn't show: 'priority' (it shows id, status, title, eases, "
-                               "smells, cost, plan, files, size, risk, verify, commits, outcome, from if wanted).")
+                               "smells, cost, plan, files, size, risk, verify, commits, outcome, from if wanted, "
+                               "fixes if wanted).")
         self.assertError(text, "F1 has a field the page doesn't show: 'plan'")
 
     def test_missing_fields(self):
@@ -176,6 +178,32 @@ class Errors(unittest.TestCase):
         self.assertError(changed(lambda d: item(d, "R2").update(commits=["abc", "ABCDEF1", "a1b2c3d", "a1b2 c3d"])),
                          "R2: commits are hashes of 7 to 40 hex digits, one per commit; not 'abc', 'ABCDEF1', "
                          "'a1b2 c3d'.")
+
+    def test_bad_cited_fixes(self):
+        self.assertError(changed(lambda d: item(d, "R2").update(fixes=["a1b2c3d"])), "R2.fixes should be an object.")
+        self.assertError(changed(lambda d: item(d, "R2").update(fixes={"marked": []})), "R2.fixes is missing 'read'.")
+        self.assertError(changed(lambda d: item(d, "F1").update(fixes={"marked": ["a1b2"], "read": [7]})),
+                         "F1: the fixes it cites are hashes of 7 to 40 hex digits; not 'a1b2', 7.")
+        self.assertError(changed(lambda d: item(d, "R2").update(fixes={"marked": ["a1b2c3d"], "read": ["a1b2c3d"]})),
+                         "R2 cites a1b2c3d twice: a fix is either one the heatmap marked or one found by reading.")
+
+    def test_the_fixes_a_heatmap_counts(self):
+        facts = {"fixes": 3, "revert": 1, "type": 0, "words": 2, "typed": 0.0, "labels": False, "closing": 1,
+                 "withdrawn": 0, "thin": False}
+        row = {"path": "src/a.py", "commits": 4, "fixes": 3, "fixes_recent": 1}
+        good = dict(HEATMAP, window={"commits": 9, "fixes": facts}, files=[row, {"path": "CHANGES.md", "commits": 2}])
+        self.assertEqual(problems(page(heatmap=good)), ([], []))
+        for change, words in [(dict(facts, words=1), "counts 3 fixes, but 2 by reverts, types and words"),
+                              (dict(facts, labels="no"), "window.fixes: 'labels' should be true or false."),
+                              (dict(facts, closing=True), "window.fixes: 'closing' should be a whole number."),
+                              (dict(facts, more=1), "window.fixes has a field the page doesn't show: 'more'")]:
+            with self.subTest(error=words):
+                self.assertError(page(heatmap=dict(good, window={"commits": 9, "fixes": change})), words)
+        for change, words in [(dict(row, fixes_recent=4), "its 3 fixes, 4 in the newer half, don't fit its 4 commits"),
+                              (dict(row, fixes=5, fixes_recent=1), "its 5 fixes, 1 in the newer half, don't fit"),
+                              (dict(row, fixes=-1), "its fixes and fixes_recent should be whole numbers, 0 or more")]:
+            with self.subTest(error=words):
+                self.assertError(page(heatmap=dict(good, files=[change])), "row for src/a.py: " + words)
 
     def test_bad_ids_and_items(self):
         text = changed(lambda d: d["items"].extend([{"id": "X1", "status": "todo"}, "R9", {"title": "no id"}]))
