@@ -364,10 +364,10 @@ def checklist_places(repo, folders):
         if main:
             home = main
             note = ("This is a linked worktree, so a relative --page path is written in the main checkout's "
-                    "%s, which outlives it." % os.path.join(main, FOLDER))
+                    "%s, which outlives it." % os.path.normpath(os.path.join(main, FOLDER)))
         else:
             note = ("This is a linked worktree with no main checkout, so a relative --page path is written in "
-                    "%s, which goes when the worktree is removed." % os.path.join(repo, FOLDER))
+                    "%s, which goes when the worktree is removed." % os.path.normpath(os.path.join(repo, FOLDER)))
     folders, seen = [], set()
     for top in [home, repo] + trees:
         folder = os.path.join(top, FOLDER)
@@ -708,7 +708,7 @@ def main():
     others = sorted(set(os.path.dirname(p) for p in pages) - {os.path.join(home, FOLDER)})
     if others:
         where = ((where + " ") if where else "") + "The checklists in %s are read too." % " and ".join(
-            "this worktree's %s" % FOLDER if f == os.path.join(repo, FOLDER) else f for f in others)
+            "this worktree's %s" % FOLDER if f == os.path.join(repo, FOLDER) else os.path.normpath(f) for f in others)
     window_shas = set(c[0] for c in everything)
     asked = set(named.values()) & window_shas
     for value, sha in named.items():
@@ -746,7 +746,8 @@ def main():
                                                                     for name, n in bot_names), "--keep-bots")]
     page = None
     if args.page:
-        page = args.page if os.path.isabs(args.page) else os.path.join(home, args.page)
+        # In the system's form, as the output names it: git gives a repo's top with / on Windows too.
+        page = os.path.normpath(args.page if os.path.isabs(args.page) else os.path.join(home, args.page))
 
     if not commits:
         # Nothing left to count is a result, as just after a pass with --since its base: say what was left out.
@@ -989,7 +990,7 @@ def main():
         except OSError as e:
             sandboxed = ("ask the user to let you write there, or give --page an absolute path in this worktree, "
                          "such as %s, and tell the user the checklist goes when the worktree is removed unless "
-                         "they copy it out" % os.path.join(repo, FOLDER, os.path.basename(page))) \
+                         "they copy it out" % os.path.normpath(os.path.join(repo, FOLDER, os.path.basename(page)))) \
                 if os.path.realpath(home) != os.path.realpath(repo) else \
                 "ask the user to let you write there, or give --page a path you can write and tell them where it is"
             sys.exit("Couldn't write %s: %s.\nIf a sandbox keeps you out of that folder, %s." % (
