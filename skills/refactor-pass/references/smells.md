@@ -30,6 +30,7 @@ names of refactorings are those of Fowler's second edition (2018), as in
 
 - [What the evidence says](#what-the-evidence-says)
 - [Measuring](#measuring)
+- [Counting fixes](#counting-fixes)
 - Bloaters: [Long Function](#long-function), [Large Class](#large-class),
   [Long Parameter List](#long-parameter-list), [Data Clumps](#data-clumps),
   [Primitive Obsession](#primitive-obsession)
@@ -203,6 +204,35 @@ The rest takes plain commands:
 
 These are cheap and rough, which is fine: they point you at code to read,
 and you read it before saying anything.
+
+## Counting fixes
+
+How to judge a commit's change to a file when counting the file's fixes
+(SKILL.md step 4):
+
+- **A fix corrects a defect in the project's own code** as it stood: wrong
+  behaviour, a crash, a security hole, a regression, a compile or type
+  error.
+- **A guard** is a fix when it stops a failure that could happen as the
+  code stood: a crash or a wrong result in the project's code. One against
+  a failure only a caller misusing the API reaches counts only where the
+  API accepted that input before. One that moves a failure earlier (an
+  error at the call where a crash came later) counts when the later failure
+  was a crash or a wrong result in the project's code. A guard for a case
+  nothing reaches isn't a fix.
+- **Something missing** that callers or an interface already relied on is a
+  fix, even where curing it adds something new (an option, a control); a
+  capability nothing lacked is a feature.
+- **Building and packaging**: code whose job is to build or package the
+  project, such as a script in its source that generates code, is its code,
+  and a fix to it counts. A change only to its manifests, lock files, CI or
+  build configuration doesn't.
+- **A report** the commit answers ("Fixes #12", "Reported-by:", a ticket)
+  is evidence of a defect, but an issue can also ask for a feature: read
+  what it says was wrong.
+- **One fix, two files**: a commit counts for each file whose change is part
+  of the fix, and not for one it touches only in passing (a renamed call,
+  an import).
 
 ## Bloaters
 

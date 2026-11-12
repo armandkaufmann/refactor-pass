@@ -204,38 +204,41 @@ re-run the counts, and drop or correct what doesn't hold. Say in the report
 what you checked. A wrong item that sends the user into a refactor costs far
 more than the minute it takes to check it.
 
-**Count the fixes in the files you'll recommend**, at most five, reading
-each file's commits newest first. `heatmap.py -C <repo> --show <file>
---messages`, with step 1's window, lists them with their messages, a line of
-what each changed (in the file and in others) and the script's reading.
-Decide each from its message; for those it can't settle, `--show <file>
---diffs <hash>,<hash>` gives their changes to this file in one call.
+**Count the fixes in the files you'll recommend**, at most five.
+`heatmap.py -C <repo> --show <file> --messages`, with step 1's window, lists
+each file's newest 12 commits, a sample, with their messages, a line of what
+each changed (in the file and in others), whether it's in the window's newer
+half, and the script's reading. Judge every commit in the sample, from its
+message; where the message doesn't settle one, get its changes before you
+count on: all of a file's unsettled commits in one call, `--show <file>
+--diffs <hash>,<hash>`.
 
 - **A fix corrects a defect in the project's own code**: wrong behaviour, a
-  crash, a security hole, a regression. Many don't say "fix" ("Keep the
-  cookie's domain on redirect"); many that say it aren't: a "fix" of a
-  typo, the docs, a test, the CI or a dependency, or one that adds a
-  feature. A compile or type error fixed in the code is a fix; a change
-  only to build files isn't. A guard is a fix when it stops a failure that
-  could happen as the code stood, not one for a case nothing reaches.
-  Something callers already relied on that was missing is a fix; a new
-  capability isn't.
-- **Count only fixes of this file.** A commit that fixes a defect elsewhere
-  and touches this file in passing (a renamed call, an import) doesn't
-  count, even where the script marked it.
+  crash, a security hole, a regression, a compile or type error. Many don't
+  say "fix": one that answers a report ("Fixes #12", "Reported-by:") is
+  likely one, though an issue can ask for a feature. Many that say "fix"
+  aren't: a "fix" of a typo, the docs, a test, the CI, or the build's
+  manifests and dependencies. A fix may add something (an option, a check)
+  to cure a defect; a new capability nothing lacked isn't one. Guards and
+  the other edges: [Counting fixes](references/smells.md#counting-fixes).
+- **Count a commit for each file whose change is part of its fix.** One fix
+  can count for two files; a fix elsewhere that touches this file in
+  passing (a renamed call, an import) doesn't count for it, even where the
+  script marked it.
 - **The line of what changed is a hint, not a verdict**: a commit that
   changed a test too is a fix about twice as often as one that didn't, and
   one of hundreds of lines, or titled Bump, Update or Release, rarely is.
-- **Stop when the case is made**: at three fixes in the window's newer
-  half, five in all, or 40 commits read.
 
-The count is evidence that the file breaks when it's touched, to weigh with
-its churn, size and smells, never an item on its own. An item that cites it
-says how far you read ("at least 3 of its newest 14 commits") and records
-it in `fixes`, per file: how many commits you read (`read`), the fixes the
-script marked (`marked`), those you found (`found`), and any it marked that
-you left out (`dropped`), saying why. Where the header says the messages
-can't be read, say nothing of fixes.
+Within the sample the count is a count, not a floor. It's evidence that the
+file breaks when it's touched, to weigh with its churn, size and smells,
+never an item on its own. An item that cites it says "7 of its newest 12
+commits fixed a defect in it, 5 of them in the newer half", and, where the
+files you read differ much, how the others ran ("the other four ran 2 to 4
+of 12"). It records each file in `fixes`: the sample's size (`read`), how
+many of its fixes are in the newer half (`newer`), the fixes the script
+marked among the commits read (`marked`), those you found (`found`), and
+those it marked that you left out (`dropped`), saying why. Where the header
+says the messages can't be read, say nothing of fixes.
 
 Then apply the restraint. A reviewer asked to find problems will always find
 something, and fixing every finding leaves extra layers and tests for cases
