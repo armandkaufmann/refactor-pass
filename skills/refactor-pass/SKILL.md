@@ -124,6 +124,10 @@ what it said, and go on without it, from `git log` and the code.
 - **Why it changes.** Read the top few files' commit messages (`--show`)
   and group them by feature. Many unrelated reasons to change one file is
   Divergent Change, and it shows here more directly than in any count.
+- **Fixes** count the commits whose messages say they fixed a defect in the
+  project's own code, so there are at least that many. Where most subjects
+  carry a type, the count is close to complete; elsewhere it's a floor, and
+  step 4 counts the rest for the files you'll recommend.
 
 ## 2. What: the smells
 
@@ -200,6 +204,21 @@ re-run the counts, and drop or correct what doesn't hold. Say in the report
 what you checked. A wrong item that sends the user into a refactor costs far
 more than the minute it takes to check it.
 
+**Count the fixes in the files you'll recommend**: at most five files, and
+the newest 40 commits of each. `heatmap.py -C <repo> --show <file>
+--messages`, with step 1's window, lists them with their messages, the
+script's reading marked on each. Read each message and decide; open the diff
+(`git show <hash>`) only when the message can't settle it. A fix corrects a
+defect in the project's own code: wrong behaviour, a crash, a security hole,
+a regression. Many don't say "fix" ("Keep the cookie's domain on
+redirect"), and many that say it aren't: a "fix" of a typo, the docs, a
+test, the CI, the build or a dependency, or one that adds a feature. The
+count is evidence that the file breaks when it's touched, to weigh with its
+churn, size and smells, never an item on its own. An item that cites it
+lists the commits in `fixes`, those the script marked as fixes and those you
+found by reading, and says how many of each. Where the header says the
+messages can't be read, say nothing of fixes.
+
 Then apply the restraint. A reviewer asked to find problems will always find
 something, and fixing every finding leaves extra layers and tests for cases
 that can't happen. Leave out what's cold, what the "Not a smell when" lines
@@ -222,6 +241,8 @@ the checklist (step 6); F, L and D items say theirs in a `note`.
   - the plan, as the playbook's steps (`plan`);
   - the files, size (S, M or L) and risk (Low, Medium or High) (`files`,
     `size`, `risk`);
+  - the fixes it cites, if any, from step 4 (`fixes`: `marked` and `read`,
+    each a list of short hashes);
   - how to check that behaviour didn't change (`verify`).
 - **F1…** Small fixes found along the way, each its own commit.
 - **L1…** Later: smelly but cold, or worth doing when the code nearby is next

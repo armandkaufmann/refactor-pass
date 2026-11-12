@@ -188,9 +188,9 @@ class Skill(unittest.TestCase):
         vocabulary = set()
         check_page = support.load("check_page")
         for shape in (check_page.PASS, check_page.REFACTOR, check_page.OTHER, check_page.COST, check_page.EARLIER,
-                      check_page.RESULT):
+                      check_page.RESULT, check_page.FIXES):
             vocabulary |= set(shape)
-        vocabulary |= set(check_page.STATUSES) | {"from", "what", "why", "date", "text"}
+        vocabulary |= set(check_page.STATUSES) | {"from", "fixes", "what", "why", "date", "text"}
         vocabulary |= {"commits", "recent", "last", "churn", "rel", "size", "growth"}  # The heatmap's columns.
         others = {"heatmap", "pass", "null", "app", "py", "python", "python3"}  # Block names, a scope, commands.
         for word in sorted(set(re.findall(r"`([a-z_0-9]+)`", text))):

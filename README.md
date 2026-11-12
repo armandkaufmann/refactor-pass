@@ -21,7 +21,9 @@ fix.
   much of each was rewritten or grew, the files that keep changing
   together and when they last did, and the tests that change with several
   other files, as leads to check. Housekeeping bots' commits are left out;
-  coding agents' commits count.
+  coding agents' commits count. It counts the commits whose messages say
+  they fixed a defect in each file, at least that many, and the agent reads
+  the rest of the commits for the few files it recommends.
 - **The smells**, from a catalogue of the established code smells, each
   with what to count, when it isn't a smell, and its playbook of named
   refactorings.
@@ -214,7 +216,7 @@ an older commit's, set `REFACTOR_PASS_SCRIPTS` to its `scripts/` folder.
 A GitHub Actions workflow, `.github/workflows/tests.yml`, runs it on Linux,
 macOS and Windows with several versions of Python.
 
-Outside that run, `tests/tools/` holds four checks to run by hand:
+Outside that run, `tests/tools/` holds five checks to run by hand:
 
 - `compare_parsers.py` compares the functions `measure.py` finds with
   real parsers' (Python's `ast`, TypeScript's compiler, PHP's tokenizer,
@@ -226,8 +228,13 @@ Outside that run, `tests/tools/` holds four checks to run by hand:
   parser to compare with here, on 15 pinned repos: it counts the functions
   that run on past their end, and the definitions a looser rule finds that
   `measure.py` doesn't, against recorded ceilings.
-- `render_pages.py` renders checklist pages in headless Chrome and checks
-  that each shows what its data holds.
+- `measure_fixes.py` measures the heatmap's count of fixes against 1,023
+  commits of ten pinned repos labelled fix or not by reading each one's
+  message and diff (`tests/fixes_labels.txt`), and fails where a repo's
+  precision or recall falls below its recorded floors.
+- `render_pages.py` renders checklist pages in headless Chrome, today's and
+  those of earlier releases, and checks that each shows what its data
+  holds.
 - `stress.py` runs a longer fuzz, the extreme inputs at full size, and
   every file in the folders it's given.
 

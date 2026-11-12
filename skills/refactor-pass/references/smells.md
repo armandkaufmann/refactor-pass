@@ -93,6 +93,24 @@ priority below.
   never did. So take small steps with the tests passing after each, don't
   start a hierarchy refactoring without tests, and check for smells again
   afterwards.
+- **A file that keeps needing fixes breaks when it's touched, but messages
+  undercount the fixes.** That's what the heatmap's fixes count, and it
+  counts them from commit messages, as Mockus and Votta did: "If fix, bug,
+  error, fixup, fail are present, the change is classified as corrective".
+  Words miss fixes and mislabel changes. Their rule and the developers who
+  wrote the changes agreed only so often: "More than 61% of the time, both
+  the developer and the program ... put changes in the same class". A
+  study reproducing one that sorted commits this way found a "false
+  positive rate of 36%", and "The false negative rate was 11%" (Berger et
+  al.), and even issue trackers' own labels are often wrong: Herzig et
+  al. found "33.8% of all bug reports to be misclassified". Reverts are
+  rare: "1%-5% of the commits in the studied systems are reverted"
+  (Shimagaki et al.). So read
+  the count as a floor, and read the commits it leaves unmarked before
+  citing it. And a count alone changes nothing: when Google deployed a bug
+  predictor to its developers, there was "no identifiable change in
+  developer behavior" (Lewis et al.). A fix count is evidence that backs an
+  item with a reason, never an item by itself.
 
 ## Measuring
 
