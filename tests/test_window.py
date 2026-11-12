@@ -152,7 +152,6 @@ class Reformats(unittest.TestCase):
         result, rows = self.run_heatmap("--exclude-commits", both)
         self.assertIn("; left out: 2 asked\n", result.out)  # Asked first, so not counted twice.
 
-    @unittest.expectedFailure
     def test_an_asked_commit_by_a_tag_a_branch_or_in_capitals(self):
         support.git(self.repo.path, "tag", "-f", "rename-all", self.repo.sha(self.marks[5]))
         for value in ("rename-all", self.repo.sha(self.marks[5])[:9].upper(), "HEAD~1"):
@@ -161,7 +160,6 @@ class Reformats(unittest.TestCase):
                 self.assertIn("; left out: 1 asked, 1 in .git-blame-ignore-revs\n", result.out)
                 self.assertEqual(rows["src/b.py"]["commits"], 1)
 
-    @unittest.expectedFailure
     def test_an_asked_commit_outside_the_window_is_named(self):
         result, _ = self.run_heatmap("-n", "2", "--exclude-commits", self.repo.short(self.marks[1]))
         self.assertNotIn("asked", result.out)
@@ -169,7 +167,18 @@ class Reformats(unittest.TestCase):
                                      "leaving it out changes nothing.\n" % (self.repo.short(self.marks[1]),
                                                                            self.repo.short(self.marks[1])))
 
-    @unittest.expectedFailure
+    def test_an_asked_merge_is_named(self):
+        repo = support.Repo("merged")
+        start = repo.commit("2026-01-01", "Start", {"a.py": lines(3)})
+        side = repo.commit("2026-01-02", "Side", {"b.py": lines(3)}, branch="side", parent=start)
+        repo.commit("2026-01-03", "Main", {"a.py": lines(4)})
+        merge = repo.commit("2026-01-04", "Merge side", {"b.py": lines(3)}, merge=side)
+        repo.done()
+        result = support.run("heatmap.py", "-C", repo.path, "--exclude-commits", repo.short(merge))
+        self.assertEqual(result.code, 0, result)
+        self.assertEqual(result.err, "heatmap.py: --exclude-commits %s (%s, 2026-01-04) is a merge, which the "
+                                     "heatmap leaves out anyway.\n" % (repo.short(merge), repo.short(merge)))
+
     def test_a_value_that_names_no_commit_is_an_error(self):
         for value, why in (("c", "is too short to name a commit: give 7 or more characters of its hash"),
                            ("no-such-thing", "isn't a commit here: give a commit's hash, a tag or a branch"),
@@ -181,7 +190,6 @@ class Reformats(unittest.TestCase):
                 self.assertEqual(result.err, "heatmap.py: --exclude-commits %s %s.\n" % (value, why))
                 self.assertEqual(result.out, "")
 
-    @unittest.expectedFailure
     def test_a_prefix_two_commits_share_is_an_error(self):
         repo = support.Repo("twins")
         repo.commit("2026-01-01", "Start", {"a.py": lines(3)})

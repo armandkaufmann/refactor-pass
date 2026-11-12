@@ -214,6 +214,49 @@ def window_revs(repo, since, count):
     return ["--since=" + since, "HEAD"], None
 
 
+def and_list(words):
+    return words[0] if len(words) == 1 else "%s and %s" % (", ".join(words[:-1]), words[-1])
+
+
+def asked_commits(repo, given):
+    """The commits --exclude-commits names, as a map from each value to its commit's full hash; or stop, saying
+    what each value that names none is. A hash is read in any case, from its first 4 characters on, as git
+    reads one; a value can be a tag or a branch too."""
+    found, problems = {}, []
+    for value in [v.strip() for v in given.split(",") if v.strip()]:
+        hexadecimal = bool(re.match(r"[0-9a-fA-F]+\Z", value))
+        for way in ([] if value.startswith("-") else dict.fromkeys([value, value.lower()] if hexadecimal else [value])):
+            result = scoping.git(repo, "rev-parse", "--verify", "--quiet", way + "^{commit}")
+            if result.returncode == 0:
+                found[value] = result.stdout.decode().strip()
+                break
+        else:
+            shared = commits_starting(repo, value.lower()) if hexadecimal and len(value) >= 4 else []
+            problems.append("%s is too short to name a commit: give 7 or more characters of its hash" % value
+                            if hexadecimal and len(value) < 4 else
+                            "%s names more than one commit here (%s): give more characters of its hash"
+                            % (value, and_list([s[:9] for s in shared])) if len(shared) > 1 else
+                            "%s isn't a commit here: give a commit's hash, a tag or a branch" % value)
+    if problems:
+        sys.exit("\n".join("heatmap.py: --exclude-commits %s." % p for p in problems))
+    return found
+
+
+def commits_starting(repo, prefix):
+    """The commits whose hashes start with prefix, of 4 characters or more, in order."""
+    shas = (scoping.run(repo, "rev-parse", "--disambiguate=" + prefix) or "").split()
+    kinds = scoping.git(repo, "cat-file", "--batch-check", input="".join(s + "\n" for s in shas).encode())
+    return sorted(line.split()[0] for line in kinds.stdout.decode(errors="replace").splitlines()
+                  if line.split()[1:2] == ["commit"])
+
+
+def raw_commit(repo, sha):
+    """A commit as git stores it, read whatever the config says: its committer's time and its parents."""
+    header = (scoping.run(repo, "cat-file", "commit", sha) or "").split("\n\n", 1)[0].split("\n")
+    stamp = next((line.split()[-2] for line in header if line.startswith("committer ")), "0")
+    return int(stamp) if stamp.isdigit() else 0, [line.split()[1] for line in header if line.startswith("parent ")]
+
+
 def ignore_revs(repo):
     """The commits the repo asks blame to skip: bulk reformats and the like."""
     configured = (scoping.run(repo, "config", "blame.ignoreRevsFile") or "").strip()
@@ -493,7 +536,9 @@ def main():
                              "or since a date, such as '3 months ago' or 2026-06-01")
     parser.add_argument("--exclude-commits", default="", metavar="SHAS",
                         help="comma-separated commits to leave out, such as a mass reformat or a vendored "
-                             "import, which would make every file they touched look hot")
+                             "import, which would make every file they touched look hot: each a hash (7 or more "
+                             "of its characters, in any case), a tag or a branch. One that names no commit is an "
+                             "error, and one outside the window is named")
     parser.add_argument("--ignore", action="append", default=[], metavar="GLOB",
                         help="more file globs to leave out (added to the defaults: %s)"
                              % ", ".join(scoping.DEFAULT_IGNORE))
@@ -554,6 +599,7 @@ def main():
     tracked = scoping.tracked_files(repo, "HEAD")
     args.scope = scoping.resolve(args.repo, repo, args.scope, tracked)
     own = scoping.own_folders(tracked, args.scope)  # Copies of this skill kept in the repo.
+    named = asked_commits(repo, args.exclude_commits)
     revs, since_rev = window_revs(repo, args.since, args.commits)
     edge = shallow_edge(repo)
     everything = read_log(repo, revs)
@@ -571,7 +617,15 @@ def main():
     if others:
         where = ((where + " ") if where else "") + "The checklists in %s are read too." % " and ".join(
             "this worktree's %s" % FOLDER if f == os.path.join(repo, FOLDER) else f for f in others)
-    asked = matching([s.strip() for s in args.exclude_commits.split(",") if s.strip()])
+    window_shas = set(c[0] for c in everything)
+    asked = set(named.values()) & window_shas
+    for value, sha in named.items():
+        if sha not in window_shas:
+            stamp, parents = raw_commit(repo, sha)
+            print("heatmap.py: --exclude-commits %s (%s, %s) %s" % (
+                value, sha[:9], datetime.fromtimestamp(stamp).strftime("%Y-%m-%d"),
+                "is a merge, which the heatmap leaves out anyway." if len(parents) > 1 else
+                "isn't in the window, so leaving it out changes nothing."), file=sys.stderr)
     listed = set() if args.keep_ignore_revs else matching(ignore_revs(repo)) - asked
     records, unreadable = ([], []) if args.keep_pass_commits else checklist_commits(pages)
     for page in unreadable:
