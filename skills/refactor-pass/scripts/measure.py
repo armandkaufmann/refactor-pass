@@ -1408,6 +1408,28 @@ def weighted(lengths, percents=PERCENTS):
     return out
 
 
+def not_there(repo, missing):
+    """Why files git tracks aren't in the working tree, for the output: those a sparse checkout leaves out (git
+    marks them skip-worktree), and those deleted and not committed; a few of each by name."""
+    sparse = set(entry[2:] for entry in (scoping.run(repo, "ls-files", "-t", "-z") or "").split("\0")
+                 if entry.startswith("S "))
+    left_out = [p for p in missing if p in sparse]
+    deleted = [p for p in missing if p not in sparse]
+    parts = []
+    if left_out:
+        parts.append("%d file%s a sparse checkout leaves out (%s)" % (
+            len(left_out), "" if len(left_out) == 1 else "s", a_few(left_out)))
+    if deleted:
+        parts.append("%d deleted and not committed (%s)" % (len(deleted), a_few(deleted)))
+    return ", and ".join(parts)
+
+
+def a_few(paths):
+    """The first five paths, and how many more."""
+    names = paths[:5] + (["%d more" % (len(paths) - 5)] if len(paths) > 5 else [])
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+
+
 def main():
     scoping.safe_output()
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0],
@@ -1448,10 +1470,11 @@ def main():
     doubts = scoping.doubtful_tests(tests, paths, args.test)
     paths = [p for p in paths if p not in tests]
 
-    measured, failed, unreadable = {}, [], []
+    measured, failed, unreadable, missing = {}, [], [], []
     for path in sorted(set(paths + shows)):
         full = os.path.join(repo, path)
         if not os.path.isfile(full):
+            missing += [path] if path in paths else []
             continue
         try:
             data = open(full, "rb").read()
@@ -1539,6 +1562,8 @@ def main():
         print("Couldn't read %s, so %s left out: %s." % (
             "1 file" if len(unreadable) == 1 else "%d files" % len(unreadable),
             "it's" if len(unreadable) == 1 else "they're", ", ".join(unreadable)))
+    if missing:
+        print("Not in the working tree, so not measured: %s." % not_there(repo, missing))
     print()
 
     def file_band(language, lines):

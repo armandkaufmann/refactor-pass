@@ -328,7 +328,6 @@ class NotInTheWorkingTree(unittest.TestCase):
     """Files git tracks in the scope that the working tree doesn't hold, which can't be measured: the output says
     how many, which, and why."""
 
-    @unittest.expectedFailure
     def test_a_sparse_checkout_and_a_deletion(self):
         repo = support.Repo("sparse")
         repo.commit("2026-01-01", "Start", dict(("src/%s.py" % n, "x = 1\n") for n in "abcdefgh"))
