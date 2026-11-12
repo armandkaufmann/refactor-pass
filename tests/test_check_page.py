@@ -24,8 +24,8 @@ def good():
                 "plan": ["Pin today's behaviour", "Replace Primitive with Object"],
                 "files": ["src/checkout.py"], "size": "M", "risk": "Medium", "verify": "`make test`",
                 "commits": ["a1b2c3d", "0123456789abcdef0123456789abcdef01234567"], "outcome": "Done: 40 tests pass.",
-                "fixes": [{"file": "src/checkout.py", "read": 14, "marked": ["a1b2c3d4e"], "found": ["b2c3d4e5f"],
-                           "dropped": ["c3d4e5f6a"]}]}
+                "fixes": [{"file": "src/checkout.py", "read": 12, "newer": 1, "marked": ["a1b2c3d4e"],
+                           "found": ["b2c3d4e5f"], "dropped": ["c3d4e5f6a"]}]}
     carried = dict(refactor, id="R3", status="todo", title="Give each report one definition", commits=[], outcome="",
                    **{"from": "2026-11-03"})
     return {
@@ -182,7 +182,8 @@ class Errors(unittest.TestCase):
 
     def test_bad_cited_fixes(self):
         def entry(**change):
-            return [dict({"file": "src/a.py", "read": 9, "marked": ["a1b2c3d"], "found": [], "dropped": []}, **change)]
+            return [dict({"file": "src/a.py", "read": 9, "newer": 0, "marked": ["a1b2c3d"], "found": [], "dropped": []},
+                         **change)]
         self.assertError(changed(lambda d: item(d, "R2").update(fixes={"marked": []})),
                          "R2's fixes should be a list, an entry per file.")
         self.assertError(changed(lambda d: item(d, "R2").update(fixes=[{"file": "a.py", "marked": []}])),
@@ -195,6 +196,8 @@ class Errors(unittest.TestCase):
                          "R2.fixes[0] lists a1b2c3d twice")
         self.assertError(changed(lambda d: item(d, "R2").update(fixes=entry(read=1, found=["b2c3d4e"]))),
                          "R2.fixes[0] lists 2 commits but read 1")
+        self.assertError(changed(lambda d: item(d, "R2").update(fixes=entry(newer=2))),
+                         "R2.fixes[0] says 2 of its fixes are in the newer half, of the 1 it counts.")
 
     def test_the_fixes_a_heatmap_counts(self):
         facts = {"fixes": 3, "revert": 1, "type": 0, "words": 2, "typed": 0.0, "labels": False, "closing": 1,

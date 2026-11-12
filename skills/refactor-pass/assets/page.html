@@ -414,15 +414,16 @@ function outcome(item) {
   return `<div class="outcome ${esc(item.status)}"><span class="eyebrow">${head}</span><p>${rich(item.outcome)}</p></div>`;
 }
 
-// The fixes an item cites as evidence, per file: how many of its newest commits were read, the fixes the
-// heatmap marked, those found by reading, and those it marked that weren't fixes of the file.
+// The fixes an item cites as evidence, per file: in a sample of its newest commits, how many fixed a defect in
+// it and how many of those are in the newer half; the fixes the heatmap marked, those found by reading, and
+// those it marked that weren't fixes of the file.
 function cited(item) {
   return list(item.fixes).map(f => {
     const marked = list(f.marked), found = list(f.found), dropped = list(f.dropped);
     const shas = xs => `<span class="sha">${xs.map(short).join(", ")}</span>`;
     const parts = [[marked, "the heatmap marked"], [found, "found by reading"]].filter(x => x[0].length).map(x => `${x[0].length} ${x[1]} (${shas(x[0])})`);
     const n = marked.length + found.length;
-    let text = `${path(f.file)}: ${n ? `at least ${n}` : "none"} of its newest ${number(f.read)} commits fixed a defect in it${parts.length ? `: ${parts.join(", ")}` : ""}.`;
+    let text = `${path(f.file)}: ${n || "none"} of its newest ${number(f.read)} commits fixed a defect in it${n ? `, ${number(f.newer)} of them in the newer half` : ""}${parts.length ? `: ${parts.join(", ")}` : ""}.`;
     if (dropped.length) text += ` ${dropped.length} the heatmap marked ${dropped.length === 1 ? "wasn't a fix" : "weren't fixes"} of it (${shas(dropped)}).`;
     return text;
   }).join("<br>");
@@ -644,8 +645,8 @@ document.addEventListener("DOMContentLoaded", () => {
         "files": ["src/checkout.py", "src/payment.py"],
         "size": "M", "risk": "Medium",
         "verify": "`make test`; the checkout snapshots",
-        "fixes": [{"file": "src/checkout.py", "read": 14, "marked": ["a1b2c3d"],
-                   "found": ["b2c3d4e", "c3d4e5f"], "dropped": []}],
+        "fixes": [{"file": "src/checkout.py", "read": 12, "newer": 2,
+                   "marked": ["a1b2c3d"], "found": ["b2c3d4e", "c3d4e5f"], "dropped": []}],
         "commits": [], "outcome": ""}
        {"id": "Fn", "status": "todo", "title": "…",
         "note": "…",
@@ -653,9 +654,10 @@ document.addEventListener("DOMContentLoaded", () => {
      L and D items have the same fields as F. An item carried over from an
      earlier checklist adds "from": "2026-11-03", the date it first appeared.
      An item that cites fixes as evidence adds "fixes", as above, an entry per
-     file: how many of its newest commits were read, the fixes the heatmap
-     marked, those found by reading, and those it marked that weren't fixes
-     of the file; leave it out otherwise.
+     file: how many of its newest commits were read (the sample), how many of
+     its fixes are in the newer half, the fixes the heatmap marked among
+     those read, those found by reading, and those it marked that weren't
+     fixes of the file; leave it out otherwise.
      After an earlier pass, "earlier" says what came of its refactors:
        {"checklist": ".refactor-pass/2026-11-03.html", "results": [
         {"id": "Rn", "title": "…", "eases": "…", "cost": {"today": "…", "after": "…"},

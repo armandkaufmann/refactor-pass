@@ -129,7 +129,7 @@ def made_pages(folder):
         {"id": "R1", "status": "doing", "title": "Name it", "eases": "x", "smells": ["Long Function"],
          "cost": {"today": "2", "after": "1"}, "plan": ["Extract Function"], "files": ["src/a.py"], "size": "S",
          "risk": "Low", "verify": "the tests", "commits": [], "outcome": "",
-         "fixes": [{"file": "src/a.py", "read": 5, "marked": ["a1b2c3d"], "found": ["b2c3d4e"],
+         "fixes": [{"file": "src/a.py", "read": 5, "newer": 1, "marked": ["a1b2c3d"], "found": ["b2c3d4e"],
                     "dropped": ["c3d4e5f"]}]},
         {"id": "F1", "status": "done", "title": "Fix it", "note": "x", "commits": ["a1b2c3d"], "outcome": "Done."},
         {"id": "D1", "status": "waiting", "title": "Your call", "note": "x", "commits": [], "outcome": ""}],

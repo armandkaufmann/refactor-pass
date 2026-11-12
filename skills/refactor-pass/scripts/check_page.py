@@ -12,7 +12,8 @@ so a status update stays a one-line edit:
 It checks too that dates are written 2026-11-10, and that a refactor's size
 is S, M or L and its risk Low, Medium or High, as the page shows them. An
 item that cites fixes has them per file: how many of its newest commits
-were read, the fixes the heatmap marked, those found by reading, and those
+were read (the sample), how many of its fixes are in the newer half, the
+fixes the heatmap marked among those read, those found by reading, and those
 it marked that were left out, each a hash once, no more than were read. The
 heatmap block is heatmap.py's to write; where it counts fixes (a heatmap
 from before it did has none), those counts are checked too.
@@ -56,9 +57,10 @@ OTHER = {"id": str, "status": str, "title": str, "note": str, "commits": list, "
 COST = {"today": str, "after": str}
 EARLIER = {"checklist": str, "results": list}
 RESULT = {"id": str, "title": str, "eases": str, "cost": dict, "change": str, "actual": str, "note": str}
-# An item's fixes, per file: how many of its newest commits were read, the fixes the heatmap marked, those found
-# by reading, and those it marked that weren't fixes of the file.
-FIXES = {"file": str, "read": int, "marked": list, "found": list, "dropped": list}
+# An item's fixes, per file: how many of its newest commits were read (the sample), how many of its fixes are in
+# the window's newer half, the fixes the heatmap marked among those read, those found by reading, and those it
+# marked that weren't fixes of the file.
+FIXES = {"file": str, "read": int, "newer": int, "marked": list, "found": list, "dropped": list}
 # The fixes trace's facts in the heatmap block's window, as heatmap.py writes them.
 FIX_FACTS = {"fixes": int, "revert": int, "type": int, "words": int, "typed": (int, float), "labels": bool,
              "closing": int, "withdrawn": int, "thin": bool}
@@ -164,10 +166,15 @@ def check_fixes(ident, entries, errors):
         if twice:
             errors.append("%s lists %s twice: a commit read is one of marked, found or dropped, or none."
                           % (where, " and ".join(twice)))
-        read = entry.get("read")
+        read, newer = entry.get("read"), entry.get("newer")
         if isinstance(read, int) and not isinstance(read, bool) and read < len(cited):
             errors.append("%s lists %d commits but read %d: read counts every commit read, newest first."
                           % (where, len(cited), read))
+        counted = len(entry["marked"] if isinstance(entry.get("marked"), list) else []) + \
+            len(entry["found"] if isinstance(entry.get("found"), list) else [])
+        if isinstance(newer, int) and not isinstance(newer, bool) and not 0 <= newer <= counted:
+            errors.append("%s says %d of its fixes are in the newer half, of the %d it counts."
+                          % (where, newer, counted))
 
 
 def check_item(item, page, seen, errors, warnings, spread):
