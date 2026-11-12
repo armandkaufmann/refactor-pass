@@ -692,6 +692,20 @@ class Interrupted(unittest.TestCase):
         self.assertIn("couldn't remove it: Permission denied; what's left of it is in ", run.out)
         self.assertIn("%s: remove that folder yourself, as an agent may load it as a second copy." % left[0], run.out)
 
+    @unittest.expectedFailure
+    def test_uninstall_stopped_once_the_record_is_gone_puts_no_shell_back(self):
+        # Every file it installed and its record are gone; an empty folder put back would be one it didn't make.
+        skills, copy = Refusals.installed(self)
+        run = install("uninstall", "--dir", skills, around=AROUND.format(
+            name="rmdir", where=r"^scripts$", when="PermissionError(13, 'Permission denied')"))
+        self.assertEqual(run.code, 1, run)
+        left = [n for n in os.listdir(skills) if n.startswith(".refactor-pass.old-")]
+        self.assertNotIn("refactor-pass", os.listdir(skills))
+        self.assertEqual(len(left), 1, (os.listdir(skills), run))
+        self.assertIn("couldn't remove it: Permission denied; what's left of it, its files and record already "
+                      "removed, is in ", run.out)
+        self.assertIn("%s: remove that folder yourself." % left[0], run.out)
+
     def test_a_name_the_output_cant_show(self):
         skills = os.path.join(support.new_folder("skills"), "sk\u00e9lls-\u2603")
         run = install("--source", Sources.tagged(), "--dir", skills, env={"PYTHONIOENCODING": "ascii"})

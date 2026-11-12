@@ -566,17 +566,19 @@ class GitSettings(unittest.TestCase):
         hostile = support.run("measure.py", "-C", repo.path, env=variables)
         self.assertEqual((hostile.code, hostile.out, hostile.err), (plain.code, plain.out, plain.err))
 
+    @unittest.expectedFailure
     def test_a_subject_or_author_holding_any_character(self):
         repo = support.Repo("odd")
         repo.commit("2026-01-01", "Start", {"a.py": lines(3, "a")})
         repo.commit("2026-01-02", "Tidy up", {"a.py": lines(4, "a")}, author="Odd\x1fName <odd@example.com>")
         repo.commit("2026-01-03", "odd\x1esubject\x1fhere", {"a.py": lines(5, "a")})
+        repo.commit("2026-01-04", "red \x1b[31malert\x7f", {"a.py": lines(6, "a")})
         repo.done()
         result = support.run("heatmap.py", "-C", repo.path, "--show", "a.py")
         self.assertEqual(result.code, 0, result)
-        # Split at line ends only: splitlines() would split at \x1e too.
+        # A control character is written as its escape, so a subject can't drive the terminal.
         shown = [line.split(" ", 4)[-1] for line in result.out.split("\n")[1:] if line.strip()]
-        self.assertEqual(shown, ["odd\x1esubject\x1fhere", "Tidy up", "Start"])
+        self.assertEqual(shown, ["red \\x1b[31malert\\x7f", "odd\\x1esubject\\x1fhere", "Tidy up", "Start"])
 
 
 class Unusual(unittest.TestCase):
