@@ -330,14 +330,13 @@ class Warnings(unittest.TestCase):
 # >, ends the block there; and after a <!--, a <script hides its end, as HTML's escapes of old scripts do,
 # until a -->. Each of these breaks the page; the ones after are harmless.
 BREAKS = ["`layout.html:12` still opens with `<!-- legacy` and loads an inline `<script>` block", "a </SCRIPT> tag",
-          "</script >", "</Script/x", "<!--<SCRIPT\tsrc", "<!-- <script> </script> <script>", "<!-- </SCRIPT>"]
+          "</script >", "</Script/x", "<!--<SCRIPT src", "<!-- <script> </script> <script>", "<!-- </SCRIPT>"]
 FINE = ["<!-- alone", "<script> alone", "<!-- <script> -->", "<!-- <script> </script>", "<!--<scripts>",
         "</scripts>", "a < b", "<!--> <script>", "x <!---> <script>", "<!- <script>"]
 
 
 class TextBrowsersReadAsHtml(unittest.TestCase):
 
-    @unittest.expectedFailure
     def test_text_that_moves_or_hides_a_blocks_end(self):
         for text in BREAKS:
             with self.subTest(text=text):
@@ -346,7 +345,6 @@ class TextBrowsersReadAsHtml(unittest.TestCase):
                 errors, _ = problems(page(data))
                 self.assertTrue(any("can't be read by a browser" in e for e in errors), errors)
 
-    @unittest.expectedFailure
     def test_what_it_says(self):
         data = good()
         item(data, "F1")["note"] = BREAKS[0]
@@ -370,7 +368,6 @@ class TextBrowsersReadAsHtml(unittest.TestCase):
                                             heatmap=HEATMAP)
                 self.assertEqual(problems(written), ([], []))
 
-    @unittest.expectedFailure
     def test_harmless_text(self):
         for text in FINE:
             with self.subTest(text=text):
@@ -378,7 +375,6 @@ class TextBrowsersReadAsHtml(unittest.TestCase):
                 item(data, "F1")["note"] = text
                 self.assertEqual(problems(page(data)), ([], []))
 
-    @unittest.expectedFailure
     def test_the_heatmap_block_too(self):
         heat = dict(HEATMAP, window={"commits": 1, "newest": {"sha": "a1b2c3d4e", "date": "2026-11-10",
                                                               "subject": "odd <!-- <script>alert(1)"}})

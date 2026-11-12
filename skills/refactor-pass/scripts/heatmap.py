@@ -359,11 +359,11 @@ def block_span(text, name):
 
 
 def read_pass(page):
-    """A checklist page's pass block, or None if it can't be read."""
+    """A checklist page's pass block, read as a browser reads it, or None if it can't be read."""
     try:
         text = open(page, encoding="utf-8", errors="replace").read()
-        span = block_span(text, "pass")
-        data = json.loads(text[span[0]:span[1]])
+        start = text.index(BLOCK % "pass") + len(BLOCK % "pass")
+        data = json.loads(text[start:scoping.script_end(text, start)[0]])
     except (OSError, TypeError, ValueError):
         return None
     return data if isinstance(data, dict) and isinstance(data.get("items"), list) else None
@@ -489,7 +489,8 @@ def describe(commit):
 
 
 def page_json(value):
-    """JSON for a page's data block: a line per file and pair, and nothing that could close the script tag."""
+    """JSON for a page's data block: a line per file and pair, and no <, which a browser could read as HTML (as
+    a </script, or a <!-- and then a <script), but \\u003c, which JSON reads as <."""
     parts = []
     for key, inner in value.items():
         if isinstance(inner, list) and inner:
@@ -497,7 +498,7 @@ def page_json(value):
         else:
             inner = json.dumps(inner, ensure_ascii=False)
         parts.append("%s: %s" % (json.dumps(key), inner))
-    return ("{\n " + ",\n ".join(parts) + "\n}").replace("</", "<\\/")
+    return ("{\n " + ",\n ".join(parts) + "\n}").replace("<", "\\u003c")
 
 
 def write_page(path, heatmap, project):
@@ -521,7 +522,8 @@ def write_page(path, heatmap, project):
         named = re.match(r"\d{4}-\d{2}-\d{2}", os.path.basename(path))
         day = named.group(0) if named else datetime.now().strftime("%Y-%m-%d")
         data.update(project=project, started=day, base=heatmap["head"], updated=day)
-        text = text[:span[0]] + "\n" + json.dumps(data, indent=1, ensure_ascii=False) + "\n" + text[span[1]:]
+        text = text[:span[0]] + "\n" + json.dumps(data, indent=1, ensure_ascii=False).replace("<", "\\u003c") + \
+            "\n" + text[span[1]:]
     span = block_span(text, "heatmap")
     if not span:
         sys.exit("%s has no heatmap block; is it a checklist made from assets/page.html?" % path)

@@ -339,6 +339,49 @@ def show_path(start, repo, given, tracked):
     return next((way for way in ways if way in tracked), ways[-1])
 
 
+# A script element's end tag and its start tag, as HTML's tokenizer reads them in a script's text: in any case,
+# followed by a space, a / or a >.
+SCRIPT_END = re.compile(r"</script[\t\n\f\r />]", re.I)
+SCRIPT_START = re.compile(r"<script[\t\n\f\r />]", re.I)
+ESCAPED = re.compile(r"<|-->")
+
+
+def script_end(text, start):
+    """Where a browser ends a script element whose text starts at start, as HTML's tokenizer reads a script's
+    text, or -1 if it never does; and where the <!-- and the <script began that hid an end tag before that,
+    or None. A script ends at its first end tag (SCRIPT_END), but after a <!--, a <script hides the end tags
+    after it, until one of them, or a -->, as the escapes of old scripts did."""
+    state, i, hidden, escape_at, double_at = "data", start, None, -1, -1
+    while True:
+        if state == "data":
+            j = text.find("<", i)
+            if j < 0:
+                return -1, hidden
+            if SCRIPT_END.match(text, j):
+                return j, hidden
+            i = j + 1
+            if text.startswith("<!--", j):
+                state, escape_at, i = "escaped", j, j + 4
+                while text.startswith("-", i):
+                    i += 1
+                if text.startswith(">", i):  # <!--> and <!---> close at once.
+                    state, i = "data", i + 1
+            continue
+        found = ESCAPED.search(text, i)
+        if not found:
+            return -1, hidden
+        j, i = found.start(), found.start() + 1
+        if found.group() == "-->":
+            state, i = "data", found.end()
+        elif state == "escaped" and SCRIPT_END.match(text, j):
+            return j, hidden
+        elif state == "escaped" and SCRIPT_START.match(text, j):
+            state, double_at, i = "double", j, j + 8
+        elif state == "double" and SCRIPT_END.match(text, j):
+            hidden = hidden or (escape_at, double_at)
+            state, i = "escaped", j + 9
+
+
 def unknown_file(path, known, repo, where):
     """What to say when --show names a file that's none of known, with the one likeliest meant, if any."""
     near = difflib.get_close_matches(path, sorted(known), n=1, cutoff=0.8)

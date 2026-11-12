@@ -55,29 +55,31 @@ KIND_NAMES = {"R": "refactors", "F": "small fixes", "L": "later", "D": "your cal
 WORDS = {str: "text", list: "a list", dict: "an object"}
 
 
-def span(text, name):
-    """Where a page's data block lies: the start and end of the JSON between its tags, or None."""
-    start = text.find(BLOCK % name)
-    if start < 0:
-        return None
-    start += len(BLOCK % name)
-    end = text.find("</script>", start)
-    return (start, end) if end >= 0 else None
-
-
 def parse(text, name, errors):
-    """A data block's value."""
-    where = span(text, name)
-    if not where:
+    """A data block's value, read as a browser reads it: up to where the browser ends the block."""
+    start = text.find(BLOCK % name)
+    end, hidden = scoping.script_end(text, start + len(BLOCK % name)) if start >= 0 else (-1, None)
+    if end < 0 and not hidden:
         errors.append("No %s block: the page should end with the template's two data blocks." % name)
         return None
+    start += len(BLOCK % name)
     try:
-        return json.loads(text[where[0]:where[1]])
+        if end < 0:
+            raise ValueError("it never ends")
+        return json.loads(text[start:end])
     except ValueError as e:
-        line = text[:where[0]].count("\n") + getattr(e, "lineno", 1)
-        errors.append("The %s block doesn't parse, at line %d of the page: %s. A trailing comma or an "
-                      "unescaped quote is the usual cause; a text holding </script> must write it <\\/script>."
-                      % (name, line, getattr(e, "msg", e)))
+        def line(at):
+            return text[:at].count("\n") + 1
+        if hidden or not text.startswith("</script>", end):
+            why = ("<!-- at line %d, and then <script at line %d, keep it from seeing where the block ends"
+                   % (line(hidden[0]), line(hidden[1])) if hidden else
+                   "the %s at line %d ends the block there" % (text[end:end + 8], line(end)))
+            errors.append("The %s block can't be read by a browser: %s. Write each < in the block's text as "
+                          "\\u003c, which JSON reads as <." % (name, why))
+        else:
+            errors.append("The %s block doesn't parse, at line %d of the page: %s. A trailing comma or an "
+                          "unescaped quote is the usual cause; a text holding </script> must write it <\\/script>."
+                          % (name, text[:start].count("\n") + getattr(e, "lineno", 1), getattr(e, "msg", e)))
         return None
 
 

@@ -4,8 +4,11 @@ default run, since it needs a browser.
 A page fails if its error box shows, or if it shows a different number of items than its pass block holds,
 of file rows than its heatmap block's files, of pair and group rows than its pairs and groups, or of tests
 than its tests. The pages: one heatmap.py makes in a small repo, as made and with a pass written; the
-suite's fixture checklists, their data in today's template; and a page whose heatmap is in an older format,
-with no last dates, no bots and no dates on pairs. It exits 0 with a message when Chrome isn't found.
+suite's fixture checklists, their data in today's template; a page whose heatmap is in an older format,
+with no last dates, no bots and no dates on pairs; and one heatmap.py makes from commits whose subjects hold
+<!-- and <script. Then, for each text test_check_page.py tries in a pass block that a browser might read as
+HTML, a page with it written as it is and one with each < written \u003c: check_page.py must find an error
+in the page exactly when the browser shows its error box. It exits 0 with a message when Chrome isn't found.
 
 It uses the skill's scripts and template, or those REFACTOR_PASS_SCRIPTS names, and git.
 
@@ -119,6 +122,41 @@ def made_pages(folder):
     return [made, written]
 
 
+def html_subjects(folder):
+    """A page heatmap.py makes from commits whose subjects hold <!-- and <script, as the window's newest and
+    oldest."""
+    repo = support.Repo("html", path=os.path.join(folder, "html-repo"))
+    for day, subject in ((1, "odd names <!-- <script>alert(1)</script>"), (2, "Plain"),
+                         (3, "odd <!-- names <SCRIPT src=x>")):
+        repo.commit("2026-01-%02d" % day, subject, {"a.py": support.lines(day + 2)})
+    repo.done()
+    page = os.path.join(folder, "html-subjects.html")
+    result = support.run("heatmap.py", "-C", repo.path, "--page", page)
+    if result.code != 0:
+        raise SystemExit("heatmap.py failed:\n%s" % result)
+    return page
+
+
+def html_texts(folder, made):
+    """Pages whose pass block holds a text a browser might read as HTML, written as it is and with each <
+    written \\u003c, with the heatmap of the page made, each with whether check_page.py finds an error in it."""
+    import test_check_page
+    check = support.load("check_page").check
+    with open(made, encoding="utf-8") as f:
+        heatmap = support.block(f.read(), "heatmap")
+    pages = []
+    for n, text in enumerate(test_check_page.BREAKS + test_check_page.FINE):
+        data = test_check_page.good()
+        test_check_page.item(data, "F1")["note"] = text
+        for kind, pass_json in (("as-is", support.pass_text(data)),
+                                ("u003c", support.pass_text(data).replace("<", "\\u003c"))):
+            path = os.path.join(folder, "text-%02d-%s.html" % (n, kind))
+            page = support.page_with(pass_json=pass_json, heatmap_json=heatmap)
+            support.write_text(path, page)
+            pages.append((path, text, bool(check(page)[0])))
+    return pages
+
+
 def older_format(folder, made):
     """The made page with its heatmap as an earlier version wrote it: no last dates, no bots, no pair dates."""
     with open(made, encoding="utf-8") as f:
@@ -163,7 +201,7 @@ def main():
     failed = 0
     try:
         made = made_pages(folder)
-        for path in made + [older_format(folder, made[0])] + fixtures(folder):
+        for path in made + [older_format(folder, made[0]), html_subjects(folder)] + fixtures(folder):
             with open(path, encoding="utf-8") as f:
                 text = f.read()
             dom = render(chrome, path, profile)
@@ -172,6 +210,20 @@ def main():
             found = problems(dom, text) if dom.strip() else ["Chrome rendered nothing"]
             failed += bool(found)
             print("%s: %s" % (os.path.basename(path), "; ".join(found) if found else "ok"))
+        agreed = 0
+        texts = html_texts(folder, made[0])
+        for path, text, flagged in texts:
+            dom = re.sub(r"<script.*?</script>", "", render(chrome, path, profile), flags=re.S)
+            error = re.search(r'<div class="error" id="error"([^>]*)>', dom)
+            shown = bool(error) and "hidden" not in error.group(1)
+            if shown == flagged:
+                agreed += 1
+            else:
+                failed += 1
+                print("%s: %r: check_page.py %s, the browser %s" % (
+                    os.path.basename(path), text, "finds an error" if flagged else "finds none",
+                    "shows its error box" if shown else "shows the page"))
+        print("check_page.py and the browser agree on %d of the %d pages of text read as HTML." % (agreed, len(texts)))
     finally:
         shutil.rmtree(profile, ignore_errors=True)
         if not args.keep:

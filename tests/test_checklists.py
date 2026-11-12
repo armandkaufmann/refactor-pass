@@ -210,7 +210,6 @@ class HtmlInText(unittest.TestCase):
     """What heatmap.py writes into a page's data blocks holds no <, which a browser could read as HTML: a commit's
     subject or the project's name can hold <!-- and <script."""
 
-    @unittest.expectedFailure
     def test_a_subject_with_html(self):
         repo = support.Repo("html")
         for day, subject in ((1, "odd names <!-- <script>alert(1)</script>"), (2, "Plain"),
@@ -229,7 +228,6 @@ class HtmlInText(unittest.TestCase):
         self.assertEqual(checked.code, 0, checked)
 
     @unittest.skipIf(support.WINDOWS, "a folder's name can't hold < on Windows")
-    @unittest.expectedFailure
     def test_a_project_named_with_html(self):
         repo = support.Repo("a<!--<script>b")
         repo.commit("2026-01-01", "Start", {"a.py": lines(3)})
@@ -243,7 +241,6 @@ class HtmlInText(unittest.TestCase):
         self.assertEqual(json.loads(support.block(text, "pass"))["project"], "a<!--<script>b")
 
 
-    @unittest.expectedFailure
     def test_a_checklist_a_browser_reads_is_read(self):
         # Its </script> is hidden from a browser by the <!-- and <script before it, so the block goes on.
         repo, marks = build()
