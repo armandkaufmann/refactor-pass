@@ -4,6 +4,7 @@ Housekeeping bots' commits are left out and named with their counts; coding agen
 identities are the ones these bots and agents really commit under.
 """
 
+import hashlib
 import json
 import os
 import unittest
@@ -84,6 +85,28 @@ class Bots(unittest.TestCase):
         self.assertEqual((rows["package.json"]["commits"], rows["CHANGELOG.md"]["commits"]), (8, 2))
 
 
+def twins(repo):
+    """Two commits on HEAD whose hashes start with the same four characters, on branches of their own, found
+    by trying messages: as many commits as a hash's first four characters can tell apart need only a few
+    hundred tries to share them. Returns their hashes, in order."""
+    tree = support.git(repo, "rev-parse", "HEAD^{tree}").strip()
+    parent = support.git(repo, "rev-parse", "HEAD").strip()
+    seen = {}
+    for n in range(100000):
+        body = ("tree %s\nparent %s\nauthor %s 1767268800 +0000\ncommitter %s 1767268800 +0000\n\nTry %d\n"
+                % (tree, parent, support.ANN, support.ANN, n)).encode()
+        sha = hashlib.sha1(b"commit %d\0" % len(body) + body).hexdigest()
+        if sha[:4] in seen:
+            pair = []
+            for found in (seen[sha[:4]], body):
+                made = support.git(repo, "hash-object", "-t", "commit", "-w", "--stdin", input=found).strip()
+                support.git(repo, "branch", "twin-%d" % len(pair), made)
+                pair.append(made)
+            return sorted(pair)
+        seen[sha[:4]] = body
+    raise AssertionError("no two commits shared a prefix")
+
+
 class Reformats(unittest.TestCase):
 
     @classmethod
@@ -128,6 +151,46 @@ class Reformats(unittest.TestCase):
         both = "%s,%s" % (self.repo.short(self.marks[2]), self.repo.short(self.marks[5]))
         result, rows = self.run_heatmap("--exclude-commits", both)
         self.assertIn("; left out: 2 asked\n", result.out)  # Asked first, so not counted twice.
+
+    @unittest.expectedFailure
+    def test_an_asked_commit_by_a_tag_a_branch_or_in_capitals(self):
+        support.git(self.repo.path, "tag", "-f", "rename-all", self.repo.sha(self.marks[5]))
+        for value in ("rename-all", self.repo.sha(self.marks[5])[:9].upper(), "HEAD~1"):
+            with self.subTest(value=value):
+                result, rows = self.run_heatmap("--exclude-commits", value)
+                self.assertIn("; left out: 1 asked, 1 in .git-blame-ignore-revs\n", result.out)
+                self.assertEqual(rows["src/b.py"]["commits"], 1)
+
+    @unittest.expectedFailure
+    def test_an_asked_commit_outside_the_window_is_named(self):
+        result, _ = self.run_heatmap("-n", "2", "--exclude-commits", self.repo.short(self.marks[1]))
+        self.assertNotIn("asked", result.out)
+        self.assertEqual(result.err, "heatmap.py: --exclude-commits %s (%s, 2026-01-01) isn't in the window, so "
+                                     "leaving it out changes nothing.\n" % (self.repo.short(self.marks[1]),
+                                                                           self.repo.short(self.marks[1])))
+
+    @unittest.expectedFailure
+    def test_a_value_that_names_no_commit_is_an_error(self):
+        for value, why in (("c", "is too short to name a commit: give 7 or more characters of its hash"),
+                           ("no-such-thing", "isn't a commit here: give a commit's hash, a tag or a branch"),
+                           ("--all", "isn't a commit here: give a commit's hash, a tag or a branch"),
+                           ("a..b", "isn't a commit here: give a commit's hash, a tag or a branch")):
+            with self.subTest(value=value):
+                result = support.run("heatmap.py", "-C", self.repo.path, "--exclude-commits=%s,HEAD" % value)
+                self.assertEqual(result.code, 1, result)
+                self.assertEqual(result.err, "heatmap.py: --exclude-commits %s %s.\n" % (value, why))
+                self.assertEqual(result.out, "")
+
+    @unittest.expectedFailure
+    def test_a_prefix_two_commits_share_is_an_error(self):
+        repo = support.Repo("twins")
+        repo.commit("2026-01-01", "Start", {"a.py": lines(3)})
+        repo.done()
+        first, second = twins(repo.path)
+        result = support.run("heatmap.py", "-C", repo.path, "--exclude-commits", first[:4])
+        self.assertEqual(result.code, 1, result)
+        self.assertEqual(result.err, "heatmap.py: --exclude-commits %s names more than one commit here (%s and %s): "
+                                     "give more characters of its hash.\n" % (first[:4], first[:9], second[:9]))
 
     def test_everything_left_out(self):
         result, _ = self.run_heatmap("-n", "1", "--exclude-commits", self.repo.short(self.marks[6]))
