@@ -242,6 +242,12 @@ class Since(unittest.TestCase):
             self.repo.short(self.marks[11]), self.repo.short(self.marks[3])), result.out)
         self.assertEqual((rows["a.py"]["commits"], rows["a.py"]["growth"]), (2, 2))  # From 4 lines at v1.
 
+    @unittest.expectedFailure
+    def test_growth_is_against_the_revision(self):
+        result, _ = self.window("v1")
+        self.assertIn("Growth is against %s (2026-01-02), just before the window.\n" % self.repo.short(self.marks[2]),
+                      result.out)
+
     def test_a_commit(self):
         result, rows = self.window(self.repo.sha(self.marks[3])[:8])
         self.assertIn("Window: 2 commits", result.out)
