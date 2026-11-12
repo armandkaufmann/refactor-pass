@@ -224,11 +224,14 @@ class NothingAboutTheSuite(unittest.TestCase):
                     self.assertNotIn(name.upper(), ("SKILL.MD", "AGENTS.MD", "CLAUDE.MD", "README.MD", "GEMINI.MD"))
 
     def test_the_suite_stays_small(self):
+        # Its size as git keeps it: a checkout with core.autocrlf (Git for Windows's default) writes each line's
+        # end as CRLF, which isn't in the blob.
         total, biggest = 0, (0, "")
         for folder, dirs, files in os.walk(support.HERE):
             dirs[:] = [d for d in dirs if d != "__pycache__"]
             for name in files:
-                size = os.path.getsize(os.path.join(folder, name))
+                with open(os.path.join(folder, name), "rb") as f:
+                    size = len(f.read().replace(b"\r\n", b"\n"))
                 total += size
                 biggest = max(biggest, (size, name))
         self.assertLess(total, 400 * 1024)
