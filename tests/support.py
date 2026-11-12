@@ -82,9 +82,25 @@ def remove(path):
         shutil.rmtree(path, onerror=make_writable)
 
 
+def git_folder():
+    """On macOS, where /usr/bin/git is a stub that finds Xcode's git on each call, the folder that holds that
+    git; else None. Put first on the PATH, it makes each call to git about twice as fast, and the run with it.
+    (Git for Windows' launcher sets up what its git needs, so it's left as it is.)"""
+    if "git_folder" not in _temp:
+        found = shutil.which("git") if sys.platform == "darwin" else None
+        result = subprocess.run(["git", "--exec-path"], capture_output=True) if found else None
+        folder = os.path.normpath(result.stdout.decode("utf-8", "replace").strip()) if result and \
+            result.returncode == 0 else ""
+        real = os.path.join(folder, "git")
+        _temp["git_folder"] = folder if folder and os.path.isfile(real) and \
+            os.path.realpath(real) != os.path.realpath(found) else None
+    return _temp["git_folder"]
+
+
 def environment(**extra):
     """The environment the scripts and git run in: UTF-8 output, no bytecode written, no git configuration
-    but the run's own empty one, and no repo found above the temporary folder."""
+    but the run's own empty one, no repo found above the temporary folder, and git itself first on the
+    PATH (git_folder)."""
     env = dict(os.environ)
     for key in list(env):
         if key.startswith("GIT_") or key in ("REFACTOR_PASS_SCRIPTS",):
@@ -93,6 +109,8 @@ def environment(**extra):
     env.update(PYTHONIOENCODING="utf-8", PYTHONDONTWRITEBYTECODE="1", GIT_CONFIG_NOSYSTEM="1",
                GIT_CONFIG_GLOBAL=os.path.join(root, "gitconfig"), GIT_CEILING_DIRECTORIES=os.path.dirname(root),
                GIT_TERMINAL_PROMPT="0")
+    if git_folder():
+        env["PATH"] = git_folder() + os.pathsep + env.get("PATH", "")
     env.update(extra)
     return env
 
