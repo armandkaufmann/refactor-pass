@@ -64,11 +64,15 @@ or internal paths is tied to their internals, while a broad test that
 follows features through them, or follows files that already change
 together, isn't.
 
-And the fixes: which of the window's counted commits read as fixes from their
-messages, and per file how many of its commits did and how many of those were
-in the newer half, documentation and tests aside, most first. It's a lead, not
-a verdict: a message says what its author meant, and many fixes don't say so.
-A commit counts once, the strongest way it reads:
+And the fixes: of the window's counted commits, those that fixed a defect in
+the project's own code, as their messages say, and per file how many of its
+commits did and how many of those were in the newer half, most first. A fix
+here corrects a defect in the project's own code: a commit that changed only
+documentation, tests, or CI, build or dependency files never counts, and the
+table of fixes by file sets those files aside. The counts are at least that
+many: many fixes don't say so, and the rest are among the commits --show
+leaves unmarked. It's a lead, not a verdict. A commit counts once, the
+strongest way it reads:
 
   revert  its subject says revert, and its body "This reverts commit <hash>"
           as git writes it, of another author's commit. A revert of a commit
@@ -82,24 +86,43 @@ A commit counts once, the strongest way it reads:
           fix(deps):, fix(ci): and fix(docs):
   words   its subject says fix, bug, error, wrong, correct, crash, overflow,
           CVE, prevent, problem or mistake, in any of their forms, or 修复,
-          修正, 错误, 漏洞, 问题, 越界 or 空指针; and not typo, formatting,
-          lint, docs, warning, release, error message, 注释 or 文档. An issue
-          closed or named (Fixed #12 --, issue #12) and code (in backticks, or
-          an identifier such as should_ignore_error) say nothing
+          修正, 漏洞, 问题, 越界 or 空指针; and not typo, formatting, lint,
+          docs, warning, release, error message, 注释 or 文档. An issue closed
+          or named (Fixed #12 --, issue #12) and code (in backticks, or an
+          identifier such as should_ignore_error) say nothing
 
-A commit that changed documentation only never reads as a fix. The header says
-how many commits read each way, the share of subjects with a type, and how many
+The header says how many commits read each way; the share of subjects with a
+type, and so whether the count is close to complete or a floor; and how many
 more close an issue without saying what kind of change, as Django's Fixed #12
-does; where most subjects are a word or two, it says the trace can't be read,
-and lists no files. How often it's wrong: [ERROR RATES TO COME: precision and
-recall per tier, measured on repos the rules weren't written from]. --no-fixes
-leaves it out.
+does. Where most subjects are a word or two, it says the messages can't be
+read for fixes, and lists no files. --no-fixes leaves it all out.
 
---show FILE prints a file's commits in the window instead, to read the
-reasons it keeps changing, each marked with how it reads as a fix, or why not
-where it might have: a file git tracks, or one a commit in the window
-changed, as one deleted in it; a name a file had before a rename in the
-window means it as it's named today. Any other is an error, as a scope is.
+How far it goes, as measured on commits labelled by reading their message and
+diff: 1,023 commits of ten public repos, labelled by one reader, and 252 of
+nine others, labelled by two readers who agreed on 248. Of the commits it
+reads as fixes, about 9 in 10 are fixes of the project's code (95% of the 490
+the rules were written from, 96% of 180 kept aside, 91% of those that touch
+the code in the nine others). How many of the fixes it finds depends on how a
+repo writes its messages: nearly all where subjects carry a type (88% to 100%
+in four such repos); typically a third to a half where they don't (33% to
+64% in six of seven such repos, 80% in one whose subjects nearly always say
+fix); 35% over the nine others, one of them typed; and none of 14 in one
+whose subjects name the area and the new behaviour, and whose bodies say what
+was wrong. Reading closes most of
+the gap: in one measurement, an agent given those 252 commits and the
+definition found 72% of the fixes from their subjects (43 of its 44 calls
+right) and 83% from their whole messages (all 50 calls right), and wanted the
+diff for 21 commits. Its labels were made by the same kind of model, which
+flatters agreement: one measurement, not an accuracy.
+
+--show FILE prints a file's commits in the window instead, newest first, to
+read the reasons it keeps changing: each with its hash as git show takes it,
+its date and subject, and how it reads as a fix, or why not where it might
+have; --messages adds each one's message after its subject, so the commits
+the trace left unmarked can be read without running git once each. The file
+is one git tracks, or one a commit in the window changed, as one deleted in
+it; a name a file had before a rename in the window means it as it's named
+today. Any other is an error, as a scope is.
 
 History is followed across renames, so a file moved or renamed in the window
 keeps the changes it had under its old name. Merge commits are skipped, and so
@@ -569,9 +592,10 @@ def line_counts(repo, wanted):
     return counts
 
 
-# The fixes trace: which commits read as fixes from their messages. Each rule here was measured on commits
-# labelled fix or not by reading their messages and diffs (tests/tools/measure_fixes.py), and a word or an
-# exclusion stays only where it brought more right calls than wrong ones.
+# The fixes trace: which commits fixed a defect in the project's own code, as their messages say. Each rule
+# here was measured on commits labelled fix or not by reading their messages and diffs
+# (tests/tools/measure_fixes.py), and a word or an exclusion stays only where, dropped alone, it took away
+# more right calls than wrong ones (修复, fix, at one each, shares most commits with 问题).
 #
 # A type at the start of a subject: Conventional Commits' (fix(scope)!: ..., or with a full-width colon),
 # a [tag], or a gitmoji.
@@ -601,7 +625,7 @@ FIX_WORDS = {"fix": "fix fixes fixed fixing hotfix", "bug": "bug bugs bugfix bug
              "overflow": "overflow overflows underflow underflows", "cve": "cve",
              "prevent": "prevent prevents prevented preventing", "problem": "problem problems",
              "mistake": "mistake mistakes mistaken mistakenly"}
-FIX_CHINESE = ["修复", "修正", "错误", "漏洞", "问题", "越界", "空指针"]
+FIX_CHINESE = ["修复", "修正", "漏洞", "问题", "越界", "空指针"]
 NOT_FIX_WORDS = {"typo": "typo typos spelling grammar grammatical wording", "formatting": "formatting reformat",
                  "lint": "lint linting linter clippy eslint codespell mypy pylint flake8",
                  "docs": "docs doc documentation readme changelog docstring docstrings javadoc",
@@ -612,10 +636,43 @@ DOC_FILES = re.compile(r"(?:changelog|changes|history|news|authors|contributors|
                        r"code_of_conduct)(?:[._-][\w.-]*)?$|.*\.(?:md|markdown|rst|adoc|asciidoc|rdoc)$", re.I)
 
 
+# CI, build and dependency files: what a project runs its checks with, builds and packages itself with, and
+# names its dependencies in. A fix in them isn't a fix of the project's code.
+CI_FOLDERS = {".github", ".circleci", ".buildkite", ".gitlab", ".azure-pipelines"}
+CHORE_FILES = re.compile(
+    r"(?:\.gitlab-ci\.yml|\.travis\.yml|appveyor\.yml|\.appveyor\.yml|azure-pipelines\.yml|Jenkinsfile|\.cirrus\.yml|"
+    r"\.pre-commit-config\.yaml|\.?codecov\.ya?ml|renovate\.json5?|\.readthedocs\.ya?ml|"
+    r"Makefile|makefile|GNUmakefile|[\w.-]+\.mk|CMakeLists\.txt|[\w.-]+\.cmake|meson\.build|BUILD(?:\.bazel)?|"
+    r"WORKSPACE|"
+    r"SConstruct|configure\.ac|Makefile\.am|build\.xml|build\.gradle(?:\.kts)?|settings\.gradle(?:\.kts)?|"
+    r"gradle\.properties|pom\.xml|[\w.-]+\.(?:csproj|fsproj|vbproj|vcxproj|sln)|Directory\.(?:Build|Packages)\.props|"
+    r"Dockerfile|docker-compose\.ya?ml|make\.bat|"
+    r"go\.mod|go\.sum|go\.work|pyproject\.toml|setup\.py|setup\.cfg|MANIFEST\.in|requirements[\w.-]*\.(?:txt|in)|"
+    r"Pipfile|Pipfile\.lock|poetry\.lock|uv\.lock|tox\.ini|noxfile\.py|package\.json|package-lock\.json|"
+    r"npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|pnpm-workspace\.yaml|bun\.lockb?|lerna\.json|"
+    r"tsconfig[\w.-]*\.json|(?:vite|vitest|rollup|webpack|babel|jest|tsup|esbuild)\.config\.[cm]?[jt]s|"
+    r"Cargo\.toml|Cargo\.lock|Gemfile|Gemfile\.lock|[\w.-]+\.gemspec|composer\.json|composer\.lock|mix\.exs|"
+    r"mix\.lock|Package\.swift|Package\.resolved|Podfile|Podfile\.lock|packages\.config)$")
+
+
 def is_doc(path):
     """Whether a file is documentation: in a docs folder, a changelog, a readme, or Markdown and the like."""
     return bool(DOC_FILES.match(path.split("/")[-1]) or
                 set(path.lower().split("/")[:-1]) & {"doc", "docs", "documentation"})
+
+
+def is_chore(path):
+    """Whether a file is CI, build or dependency config: a CI folder's, a Makefile, a package's manifest, a lock
+    file and the like."""
+    parts = path.split("/")
+    return bool(set(parts[:-1]) & CI_FOLDERS or CHORE_FILES.match(parts[-1]))
+
+
+def not_code(path, is_test):
+    """What a file is if it isn't the project's own code, as the fixes trace says it: documentation, tests, or
+    CI, build or dependency files; or None."""
+    return ("documentation" if is_doc(path) else "tests" if is_test(path) else
+            "CI, build or dependency files" if is_chore(path) else None)
 
 
 def fix_words(text):
@@ -692,10 +749,11 @@ def read_fix(subject, typed):
     return 0, ("says " + ", ".join(nots)) if fixes else ""
 
 
-def fix_trace(commits, window, typed):
+def fix_trace(commits, window, typed, is_test=None):
     """Per commit, how it reads: (tier, what said so, the seconds a reverted commit stood or None). Tier 1 is a
     revert, 2 a fix by its type, 3 by its words; 0 not a fix, with why not, or "" when nothing said either way.
-    window is every commit read, newest first, where a reverted commit is looked for."""
+    window is every commit read, newest first, where a reverted commit is looked for; is_test tells a test."""
+    is_test = is_test or (lambda path: scoping.is_test(path, [], []))
     by_sha = dict((c[0], c) for c in window)
 
     def find(prefix):
@@ -709,11 +767,11 @@ def fix_trace(commits, window, typed):
         return line.group(1) if line and REVERT_WORD.search(commit[2]) else None
 
     def read(commit, depth=0):
-        """How a commit reads, but a change of documentation only, which never reads as a fix."""
-        paths = [c[0] for c in commit[3]]
+        """How a commit reads; but one that changed none of the project's own code isn't a fix of it."""
         found = reads(commit, depth)
-        if found[0] and paths and all(is_doc(p) for p in paths):
-            return 0, "changes documentation only", None
+        kinds = [not_code(c[0], is_test) for c in commit[3]]
+        if found[0] and kinds and all(kinds):
+            return 0, "changes only %s" % and_list(sorted(set(kinds))), None
         return found
 
     def reads(commit, depth):
@@ -759,9 +817,10 @@ def fix_mark(found):
 
 
 def fix_summary(commits, fixes, typed):
-    """The header's two lines on the fixes trace: how many commits read as fixes and how; and the share of
-    subjects with a type, how many more close an issue without saying what kind of change, and, where most
-    subjects are a word or two, that they can't tell a fix from anything else. And whether that's so."""
+    """The header's two lines on the fixes trace, and its facts for the page. The first: how many commits read
+    as fixes and how, at least, since many fixes don't say so. The second: where the subjects can't tell a fix
+    from anything else, that; the share of subjects with a type, and so how near complete the count is; and how
+    many more commits close an issue without saying what kind of change."""
     tiers = Counter(found[0] for found in fixes.values())
     stood = [found[2] for found in fixes.values() if found[0] == 1]
     known = sorted(t for t in stood if t is not None)
@@ -776,13 +835,17 @@ def fix_summary(commits, fixes, typed):
     withdrawn = sum(1 for found in fixes.values() if found[1].startswith("its author withdraws"))
     ways = [way for count, way in ((tiers[1], reverts), (tiers[2], "%d by their type" % tiers[2]),
                                    (tiers[3], "%d by their words" % tiers[3])) if count]
-    first = "Fixes, a lead and not a verdict: %s of the %d commits read as fixes from their messages%s.%s" % (
-                sum(tiers[t] for t in (1, 2, 3)) or "none", len(commits), ", " + and_list(ways) if ways else "",
-                " %s, of %s author's own commit%s, %s." % (
-                    "1 more revert" if withdrawn == 1 else "%d more reverts" % withdrawn,
-                    "its" if withdrawn == 1 else "their", "" if withdrawn == 1 else "s",
-                    "withdraws it and isn't counted" if withdrawn == 1 else "withdraw them and aren't counted")
-                if withdrawn else "")
+    counted = sum(tiers[t] for t in (1, 2, 3))
+    of = "%d commit%s" % (len(commits), "" if len(commits) == 1 else "s")
+    first = ("Fixes, a lead and not a verdict: at least %d of the %s fixed a defect in the project's own code, as "
+             "their messages say: %s." % (counted, of, and_list(ways)) if counted else
+             "Fixes, a lead and not a verdict: none of the %s says in its message that it fixed a defect in the "
+             "project's own code." % of)
+    if withdrawn:
+        first += " %s, of %s author's own commit%s, %s." % (
+            "1 more revert" if withdrawn == 1 else "%d more reverts" % withdrawn, "its" if withdrawn == 1 else
+            "their", "" if withdrawn == 1 else "s", "withdraws it and isn't counted" if withdrawn == 1 else
+            "withdraw them and aren't counted")
     labelled = typed >= 0.5
     closing = sum(1 for c in commits if not fixes[c[0]][0] and (CLOSER.search(c[2]) or CLOSER.search(c[5]))
                   and not (labelled and type_of(c[2])))
@@ -790,14 +853,35 @@ def fix_summary(commits, fixes, typed):
     plain = [c[2] for c in commits if not (labelled and type_of(c[2]))]
     short = sum(1 for subject in plain if len(re.findall(r"[A-Za-z]+|[\u4e00-\u9fff]{1,2}", subject)) < 3)
     thin = short * 2 > len(plain)
-    second = "%s%d%% of the subjects carry a type, %s.%s" % (
-        "Most subjects here are a word or two (%d of the %d%s), too little to tell a fix from anything else, so "
-        "the fixes by file aren't listed. " % (short, len(plain), " without a type" if len(plain) < len(commits)
-                                               else "") if thin else "",
-        int(round(typed * 100)), "so a type is read as a label" if labelled else "too few to read types as labels",
-        " %d more commit%s close%s an issue without saying what kind of change." % (
-            closing, "" if closing == 1 else "s", "s" if closing == 1 else "") if closing else "")
-    return [first, second], thin
+    share = "%d%% of the subjects carry a type" % int(round(typed * 100))
+    if thin:
+        second = "Most subjects here are a word or two (%d of the %d%s), too little to tell a fix from anything " \
+                 "else, so the count can't be read and the fixes by file aren't listed. %s." % (
+                     short, len(plain), " without a type" if len(plain) < len(commits) else "", share)
+    elif labelled:
+        second = "%s, read as a label, so the count is close to complete." % share
+    else:
+        second = "%s, too few to read as labels, so the count is a floor: subjects without a type typically say " \
+                 "so for a third to a half of the fixes, and the rest are among the commits --show leaves " \
+                 "unmarked." % share
+    if closing:
+        second += " %d more commit%s close%s an issue without saying what kind of change." % (
+            closing, "" if closing == 1 else "s", "s" if closing == 1 else "")
+    facts = {"fixes": counted, "revert": tiers[1], "type": tiers[2], "words": tiers[3],
+             "typed": round(typed, 2), "labels": labelled, "closing": closing, "withdrawn": withdrawn, "thin": thin}
+    return [first, second], facts
+
+
+def message_lines(body, most=12):
+    """A commit's message after its subject, for --show --messages: indented under its line, its blank lines
+    run together, and cut at most lines, saying how many more git show has; or None if it has none."""
+    lines = []
+    for line in body.strip().split("\n"):
+        if line.strip() or (lines and lines[-1]):
+            lines.append(printable(line.rstrip()))
+    if len(lines) > most:
+        lines = lines[:most - 1] + ["(%d more lines)" % (len(lines) - most + 1)]
+    return "\n".join("      " + line if line else "" for line in lines) if lines else None
 
 
 def typed_share(commits):
@@ -938,6 +1022,9 @@ def main():
                              "assets/page.html if it doesn't exist; only the page's heatmap block changes")
     parser.add_argument("--show", action="append", default=[], metavar="FILE",
                         help="print this file's commits in the window (its name today), instead of the heatmap")
+    parser.add_argument("--messages", action="store_true",
+                        help="with --show, each commit's message after its subject too, under its line, to read "
+                             "without running git once per commit")
     parser.add_argument("--no-fixes", action="store_true",
                         help="leave out the fixes trace: the header's count of the commits that read as fixes, the "
                              "table of fixes by file, and --show's marks")
@@ -945,6 +1032,8 @@ def main():
                         help="list the checklists in every worktree's .refactor-pass/, newest first, with their "
                              "items' statuses, and the name a new one takes, and stop; needs no scope")
     args = parser.parse_args()
+    if args.messages and not args.show:
+        parser.error("--messages goes with --show: --show FILE --messages")
 
     repo = scoping.toplevel(args.repo)
     known = scoping.facts(args.repo)
@@ -1041,7 +1130,11 @@ def main():
     newer = set(c[0] for c in commits[:(len(commits) + 1) // 2])
     # The fixes trace, of the commits counted: types are read as labels where most subjects carry one.
     typed = typed_share(commits)
-    fixes = {} if args.no_fixes else fix_trace(commits, everything, typed >= 0.5)
+    def is_test(path):
+        return scoping.is_test(path, args.test, args.not_test)
+
+    fixes = {} if args.no_fixes else fix_trace(commits, everything, typed >= 0.5, is_test)
+    fix_lines, fix_facts = fix_summary(commits, fixes, typed) if fixes else ([], None)
     # Just before the window: --since's revision, or the oldest commit's parent (none at the root).
     base = since_rev or git(repo, "rev-list", "--parents", "-n", "1", everything[-1][0]).split()[1:2]
     base = base if isinstance(base, str) else (base[0] if base else None)
@@ -1117,6 +1210,11 @@ def main():
                "size_before": before.get(path, 0), "growth": sizes[path] - before.get(path, 0)}
         rows.append(row)
     rows.sort(key=lambda r: (-r["commits"] * r["size"], -r["commits"], -r["churn"], r["path"]))
+    # For the page: each file's fixes, at least, where the trace counts them; documentation, tests, and CI,
+    # build and dependency files aside, as in the table of fixes by file.
+    for row in rows:
+        if fix_facts and not fix_facts["thin"] and not not_code(row["path"], is_test):
+            row.update(fixes=files[row["path"]]["fixes"][0], fixes_recent=files[row["path"]]["fixes_recent"])
     by_path = dict((r["path"], r) for r in rows)
     # Tests have their history read like the rest, but stay out of the table and the pairs.
     tests = set() if args.keep_tests else set(r["path"] for r in rows
@@ -1236,6 +1334,8 @@ def main():
               "excluded_checklists": len(recorded), "excluded_bots": len(bots), "bots": bot_names,
               "too_big_for_pairs": too_big,
               "since": args.since, "tests_aside": None if args.keep_tests else len(tests), "shallow": bool(cut)}
+    if fix_facts:
+        window["fixes"] = fix_facts
     if args.show:
         # A file git tracks, or one changed in the window, as a file deleted in it; or a name a file had before
         # it was renamed in the window, read as its name today. Any other is a mistake, as a scope's would be.
@@ -1256,6 +1356,8 @@ def main():
                 info = describe(commit)
                 print("  %s %s %s%s" % (info["sha"], info["date"], printable(info["subject"]),
                                         fix_mark(fixes.get(commit[0]))))
+                if args.messages and message_lines(commit[5]):
+                    print(message_lines(commit[5]))
             print()
         return
     scope = args.scope or ["(everything)"]
@@ -1310,11 +1412,8 @@ def main():
     if own_left_out:
         print("This skill's own files, in %s, are left out; a scope naming that folder counts them."
               % " and ".join(f + "/" for f in sorted(own_left_out)))
-    thin = False
-    if fixes:
-        lines, thin = fix_summary(commits, fixes, typed)
-        for line in lines:
-            print(line)
+    for line in fix_lines:
+        print(line)
     if marked:
         named = marked[:5] + (["%d more" % (len(marked) - 5)] if len(marked) > 5 else [])
         print("Git's attributes mark %s that changed in the window as binary, though %s text at HEAD, so %s left "
@@ -1335,13 +1434,15 @@ def main():
     if len(rows) > args.top:
         print("  ... %d more files changed in the window" % (len(rows) - args.top))
     print()
-    if fixes and not thin:
+    if fix_facts and not fix_facts["thin"]:
         # Fixes by file: where the commits that read as fixes landed, each counted once, its strongest way.
         place = dict((r["path"], i) for i, r in enumerate(rows))
-        fixed = sorted((p for p in place if files[p]["fixes"][0] and not is_doc(p)),
+        fixed = sorted((p for p in place if files[p]["fixes"][0] and not not_code(p, is_test)),
                        key=lambda p: (-files[p]["fixes"][0], -files[p]["fixes_recent"], place[p]))
-        print("Fixes by file: of each file's commits, those that read as fixes, and how many of them were in the "
-              "newer half (documentation%s aside):" % ("" if args.keep_tests else " and tests"))
+        print("Fixes by file, at least: of each file's commits, those whose messages say they fixed a defect in "
+              "it, and how many of those were in the newer half; documentation, tests, and CI, build and "
+              "dependency files aside. A floor, not a count: --show FILE --messages gives each commit's message, "
+              "to read the ones left unmarked.")
         if fixed:
             print("%7s %6s %6s %5s %5s  file" % ("fixes", "recent", "revert", "type", "words"))
         for path in fixed[:args.top]:

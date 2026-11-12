@@ -492,8 +492,9 @@ class GitSettings(unittest.TestCase):
         self.assertEqual((rows["e.py"]["commits"], rows["e.py"]["churn"]), (3, 4 + 1 + 1))
         self.assertEqual((rows["f.py"]["commits"], rows["f.py"]["churn"]), (3, 4 + 1 + 1))
         self.assertIn("Grow a, caf\u00e9", self.plain[1][1])
-        self.assertIn("Fixes, a lead and not a verdict: 2 of the 8 commits read as fixes from their messages, 1 a "
-                      "revert (of a commit that had stood 1 day) and 1 by their words.", self.plain[0][1])
+        self.assertIn("Fixes, a lead and not a verdict: at least 2 of the 8 commits fixed a defect in the project's "
+                      "own code, as their messages say: 1 a revert (of a commit that had stood 1 day) and 1 by their "
+                      "words.", self.plain[0][1])
 
     def test_a_signature_check_in_the_repos_config(self):
         repo = build_settings()

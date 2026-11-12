@@ -47,7 +47,7 @@ c17f37939 f 0 security advisory: key-only session access
 d98eb69a3 f 0 undoes a wrong change to a CLI test
 e82db2ca3 f 3 provide_automatic_options=True couldn't
 663198d7b n 0 dev dependency updates
-976459f7c f 3 the lock file pointed at a local werkzeug
+976459f7c f 0 the lock file pointed at a local werkzeug
 5e621a280 n 0 tests adapted to werkzeug 3.2 (adaptive)
 3d03098a9 f 0 the tutorial's code silently ignored a
 ac5664d22 n 0 docs
@@ -79,7 +79,7 @@ daf1510a4 n 0 feature: decorators without parentheses
 24df8fc89 n 0 docs re-land
 4d69165ab n 0 docs
 cf3089a8f f 0 app factory discovery was nondeterministic
-78b56dbf2 f 1 backs out packaging metadata released the day
+78b56dbf2 f 0 backs out packaging metadata released the day
 64ac1b0d3 n 0 backs out closing tags in an example template
 310fbfcf6 n 0 copyright headers
 f80376027 n 0 test refactor
@@ -114,11 +114,11 @@ ddb5f9dc4 f 3 broken: a broken test
 9c1cf1bc0 n 0 broken: docs link
 52f38bbf8 n 0 broken: docs sentence
 7a5e8ef38 n 0 broken: docs link
-777cc17de f 3 broken: a broken test
+777cc17de f 0 broken: a broken test
 de3b6ab5e n 0 broken: docs sentence
 883cb7ced f 0 leak: the leak test was unreliable
 3d36d6efb f 3 leak: leak detection leaked into other
-f051939d8 f 3 leak: the testsuite leaked a request
+f051939d8 f 0 leak: the testsuite leaked a request
 2262ce491 n 0 leak: skips a test on other interpreters
 57920a580 f 3 prevent: flashes modified the session (#227)
 0887245bf f 3 prevent: blueprint prefixes made double
@@ -142,7 +142,7 @@ aa1d34dc5 n 0 error: docstring grammar
 9a70e62b8 f 3 error: important import errors were
 858cc9cac n 0 wrong: docs example
 0690ce18c n 0 correct: spelling
-392989aaa n 3 correct: package description text
+392989aaa n 0 correct: package description text
 e3c014f9a n 0 correct: docs example
 e328eba97 f 3 correct: prefix detection was wrong
 eae48d97b f 3 exception: exception handling picked wrong
@@ -168,9 +168,9 @@ f904ef27d n 0 not docs: docs typo
 d60e13436 n 0 not docs: docstring typo
 4a9e34a57 n 3 not tests: script refactor
 29ba05f5b n 0 not tests: docs grammar
-8149509f3 f 3 not ci: Travis version definitions were
+8149509f3 f 0 not ci: Travis version definitions were
 65b22926f n 0 not ci: test environments and a dependency
-b34c7174e n 3 not ci: test environments
+b34c7174e n 0 not ci: test environments
 633449a36 f 0 not error message: after_this_request outside a
 d0821edca n 0 not upgrade: docs link
 d5cfcfeba n 3 not link: docstring links
@@ -284,8 +284,8 @@ fabe3df78 f 3 re-lands logger colours off for
 580e7da6e n 0 incorrect: comments and docs
 0b043d088 f 3 regression: router looked up the method
 ab50cf979 n 0 mistake: comment spelling
-6296175f7 n 3 vulnerability: dependency bump
-d4caeee7c n 3 vulnerability: dependency bump
+6296175f7 n 0 vulnerability: dependency bump
+d4caeee7c n 0 vulnerability: dependency bump
 2b6cf3889 f 3 crash: routes not starting with / crashed
 65a65c2ed n 0 panic: feature: time in the panic log
 22f118f3b n 0 panic: feature: a panic on misuse
@@ -362,7 +362,7 @@ ae4e3b2ba n 0 release
 39aae41b9 n 0 refactor: build configuration
 75009b03e n 0 release
 2ed563c01 n 0 readme
-fb2176668 f 2 the package lost its types export field
+fb2176668 f 0 the package lost its types export field
 d797385b1 n 0 CI: pins pnpm (labelled fix)
 bd3d9b3d9 n 0 CI: pnpm install
 acad9f2b0 n 0 CI: pins pnpm
@@ -448,7 +448,7 @@ e9414948e n 0 docs
 5c13b5a19 n 0 feature: QUERY method
 45fe4636d f 3 comment and verbatim tags without spaces
 a2a0b4f27 f 0 generic relation querysets bound a read
-36920bb47 f 3 the GeoDjango workflow ran Python 3.15 where
+36920bb47 f 0 the GeoDjango workflow ran Python 3.15 where
 0e128d524 n 0 docs accessibility
 1b40abab0 n 0 dependency bump
 512b92a49 n 0 deprecation
@@ -460,7 +460,7 @@ a26ceb090 n 3 test adapted to MySQL 9.5 (adaptive)
 @ django revert
 7ff7fcc05 f 3 CVE in header parameter parsing
 fb32a564c f 1 backs out a system check that was wrong
-e7f464ecd f 1 restores test models along with backing out
+e7f464ecd f 0 restores test models along with backing out
 b3af3404b n 0 removes docs
 6bbe2656e f 0 backs out tolerating ordering in compound
 ad073338d f 0 a bad conflict resolution had undone test
@@ -468,7 +468,7 @@ ad073338d f 0 a bad conflict resolution had undone test
 @ django word
 082b3df40 f 3 incorrect: list_display showed wrong values
 019e44f67 f 3 incorrect: CVE: wrong permissions on created
-9b4433948 f 3 regression: a CSP test lost the error it relied
+9b4433948 f 0 regression: a CSP test lost the error it relied
 bd1cd8f0f n 0 regression: adds a test
 581f2969e n 0 broken: docs link
 7cb2221e9 n 0 leak: module namespace tidying
@@ -642,7 +642,7 @@ cff2849fd n 0 withdraws an unfinished experiment by choice
 3fce3b5bb n 0 release
 5055264ae n 0 release
 020687a77 n 0 performance
-7525479a9 n 3 tests adapted to Cargo's new binary location
+7525479a9 n 0 tests adapted to Cargo's new binary location
 5ed408e17 n 0 release
 435f59fc4 f 0 the walker loaded ignore files in folders it
 dffd776a7 n 0 CI: release attestation
@@ -700,7 +700,7 @@ d47663b1b f 3 --line-buffered regressed
 5714dbde0 f 0 symlink loop check opened too many file
 13235b596 n 0 argument name case in help (cosmetic)
 d1a6ab922 n 0 backs out a dependency bump
-fd9870d66 f 1 backs out a packaging change that broke the
+fd9870d66 f 0 backs out a packaging change that broke the
 
 @ ripgrep word
 004bb3569 f 3 regression: performance regression in the
@@ -711,7 +711,7 @@ c4732ca01 n 0 mistake: readme spelling
 cfe357188 n 0 not formatting: code formatting
 a5855a5d7 n 0 not lint: clippy lints
 3ad0e8347 n 0 not docs: doc comment
-f7eaf67fc f 3 not ci: the AppVeyor deployment filter was
+f7eaf67fc f 0 not ci: the AppVeyor deployment filter was
 2bda77c41 f 3 not deps: dependencies pointed at local
 
 @ hutool dev
@@ -719,7 +719,7 @@ f7eaf67fc f 3 not ci: the AppVeyor deployment filter was
 7992965a0 n 0 removes a test
 b2a9932e3 n 0 dependency bump
 90657e5fd f 3 the build broke on a missing import and
-4264da24b n 3 test assertion order (subject names a fix)
+4264da24b n 0 test assertion order (subject names a fix)
 e6a7a1793 f 3 toInstant's wrongly typed overload deprecated
 9f218238f n 0 changelog entry only
 f4a80d0af n 0 changelog entry only
@@ -743,8 +743,8 @@ bfd8e1085 f 0 FileMagicNumber's MP3 and DOC matchers threw
 d541c9b56 f 3 Caesar.encode threw on negative offsets and
 b689988da f 3 ReentrantCache's double check returned null
 787eb0b46 f 3 ReentrantCache's double check returned null
-a6c803fd4 n 3 test assertion order (subject names a fix)
-131cdc5c9 n 3 changelog entry and test cleanup
+a6c803fd4 n 0 test assertion order (subject names a fix)
+131cdc5c9 n 0 changelog entry and test cleanup
 92ebe957d f 3 consecutive carriage returns in quoted CSV
 108da48cf n 0 contributing guide
 9a34eb079 n 0 dependency bump
@@ -753,7 +753,7 @@ a6c803fd4 n 3 test assertion order (subject names a fix)
 2692d01c9 f 3 CSV line numbers went wrong after CRLF
 a2b9c8695 f 0 backs out the redirect header stripping (a
 0bf28d042 n 0 changelog entry for a feature
-3e7941cc3 n 3 dependency exclusion for a CVE in a test
+3e7941cc3 n 0 dependency exclusion for a CVE in a test
 31f9727d6 n 3 parameter name and javadoc
 c2d9a98f8 n 0 removes a test added by mistake within the
 937aa7d0d n 0 removes a file added by mistake within the
@@ -778,7 +778,7 @@ db32eaa2f f 3 NumberUtil.range looped forever on step 0
 0cda68b82 f 3 threads were named Huool-socket- (a
 f37fdf401 f 3 JSONArray.toJSONObject ran past the array's
 ab26585ce f 0 getShortClassName threw on blank package parts
-02b2a0149 f 3 a test for lastIndexOfSub tested indexOfSub
+02b2a0149 f 0 a test for lastIndexOfSub tested indexOfSub
 7dbd94347 f 0 Doubao tokenization dropped additional config
 f37644942 f 0 media URLs with query strings got the wrong
 57f75cb29 f 0 the Gemini upload URL was malformed for
@@ -827,12 +827,12 @@ fc4a71200 f 3 修正: SshjSftp failed on the
 4cf41c444 f 3 解决: interrupt status was lost
 3fb46830b f 3 解决: isSub failed on relative paths
 96e09601e n 3 解决: feature: xml to bean
-29278a10d n 3 解决: adds a test resource
+29278a10d n 0 解决: adds a test resource
 e3c9b4d04 f 3 解决: Oracle failed on
 af9880c5d f 3 解决: copyProperties ignored the field
 fc6081832 f 3 错误: CSV escaped quotes wrongly
 d11693fb2 f 3 错误: Sftp reconnect logic was wrong
-f5c53a8f6 f 3 错误: a test compared a stream with a list
+f5c53a8f6 f 0 错误: a test compared a stream with a list
 30e469509 f 3 错误: trailing newlines broke
 a49523ffa n 3 错误: a misspelled method name, deprecated
 c7ede61ba n 0 错误: readme grammar
@@ -871,9 +871,9 @@ f2686560f f 3 空指针: IoUtil.writeObjects threw on null
 ef299062f f 3 死循环: part of the lastIndexOfSub fix
 aa6b1332d f 3 死循环: recursive Sftp delete looped
 d12fcab0e f 3 死循环: ArrayUtil.lastIndexOfSub looped
-1a4d71823 n 3 not tests: ignores a test
+1a4d71823 n 0 not tests: ignores a test
 081a51ff8 n 3 not tests: comments and a test
-74593a883 n 3 not deps: dependency bump
+74593a883 n 0 not deps: dependency bump
 b2804a15c f 0 not 注释: a concurrency test didn't close its
 0c9046d40 n 0 not 注释: comment
 6fe9f31ea n 0 not 注释: comment
@@ -882,8 +882,8 @@ b2804a15c f 0 not 注释: a concurrency test didn't close its
 1269f0fae n 0 not 文档: doc comment
 6a0ff8b4c n 0 not 文档: doc comment
 eae76eb27 n 0 not 测试: refactor, comments and tests
-e2d71ee56 f 3 not 测试: test assertions were wrong
-c02f3fbb8 n 3 not 测试: a word in a test
+e2d71ee56 f 0 not 测试: test assertions were wrong
+c02f3fbb8 n 0 not 测试: a word in a test
 b86147c4a f 3 not 测试: MapUtil.map threw on null values
 
 @ requests aside
@@ -937,7 +937,7 @@ cbce03132 n 0 CI
 111d2b777 n 0 release
 f0198e6df f 3 malformed Content-Type values parsed wrongly
 bc7dd0fc4 f 3 header validity regexes accepted a trailing
-4443b1a84 f 3 test dependencies were published as an extra
+4443b1a84 f 0 test dependencies were published as an extra
 389eea58d f 0 a test left files in the temporary folder
 7407309c8 n 0 packaging tidy
 bc04dfd6d n 0 release
@@ -1013,13 +1013,13 @@ cc2157b82 f 2 redis requests before the subscription leaked
 @ redis aside
 df10f3239 f 0 DEBUG QUICKLIST left nodes uncompressed
 b83c9c1ee f 0 addresses announced on the cluster bus
-bee4ee2cd f 3 a flaky maxclients test under TLS
+bee4ee2cd f 0 a flaky maxclients test under TLS
 5dd0f4e47 f 3 undefined shifts decoding msgpack ints
 133d7df04 f 3 AOF preload crashed in long working
 0cfe83720 n 0 feature: ZMOVE
 cfda2dbeb f 0 fastjson read past a trailing escape
 01ed15184 f 3 module getkeys callbacks crashed IO threads
-52d11e711 n 3 CI adapted to an unavailable keyserver
+52d11e711 n 0 CI adapted to an unavailable keyserver
 8fccf8591 f 3 set member expiry wrong during slot migration
 27f962f0d n 0 performance
 d866f80d2 n 0 CI adapted to a newer lcov
@@ -1032,10 +1032,10 @@ f09cabd56 f 0 ZRANGESTORE trusted a listpack source's order
 dda59d1f8 f 0 TLS session resumption crossed listeners
 cb4b70e7c f 3 modules reading a zset emptied by ZPOP
 124bc7ef4 f 3 lua pattern matching recursed too deep
-63cf48ce4 f 3 a test failed on Tcl 8.5
+63cf48ce4 f 0 a test failed on Tcl 8.5
 86561a0f4 f 0 slot migration lost keys when the destination
 d973851a7 f 3 MSETEX propagated repeated EX/PX wrongly
-b2f70ec7b f 3 a test failed on Tcl 8.5
+b2f70ec7b f 0 a test failed on Tcl 8.5
 9da5a27ed n 0 refactor for other cluster implementations
 5b69ba2ce f 0 listpack to btree conversion could keep
 4bb71df00 f 0 SORT changed the sorted set's encoding for
@@ -1059,15 +1059,15 @@ a4172f543 f 3 DELEX ignored lazyfree-lazy-user-del
 f729b7c9a f 0 keyspace event flags n, o, c lost with A
 927cc6d77 f 0 bundled jemalloc took over libc's hooks on
 669b2b9ba n 0 dependency update by a release bot
-6a5fee675 f 3 flaky XREADGROUP CLAIM tests
+6a5fee675 f 0 flaky XREADGROUP CLAIM tests
 418883960 n 0 CONFIG REWRITE behaviour change
-d843e6150 n 3 test adapted to rounding on a new Ubuntu
+d843e6150 n 0 test adapted to rounding on a new Ubuntu
 a76a3689a n 0 feature: set member expiration
 da925a2ca f 0 listpack backlen width broke data from 8.8 to
 9a5c6e978 f 3 out-of-bounds read parsing cluster bus packets
 c2aa3993f f 3 slot memory accounting wrong after IDMP expiry
 157e3f3bb n 0 feature: BITRANGEINTARRAY
 c01d00bed n 0 log message wording
-31edfd806 f 3 flaky defrag test
+31edfd806 f 0 flaky defrag test
 8b5384ae9 n 0 performance
 33c2a2a14 n 3 test adapted to a tmpfs /tmp

@@ -1,11 +1,15 @@
-"""heatmap.py's fixes trace: which commits read as fixes from their messages, and where they landed.
+"""heatmap.py's fixes trace: which commits fixed a defect in the project's own code, as their messages say, and
+where they landed.
 
-The "shop" repo has no types in its subjects. Its commits, a day apart: features, fixes said in words (English
-and Chinese), fixes that aren't (a typo, documentation only, an issue closed), a revert of another author's
-commit, a revert of the author's own, and a squash merge whose body carries a revert from its branch. The
-"typed" repo's subjects carry Conventional Commits types, a [tag] or a gitmoji.
+The "shop" repo has no types in its subjects. Its commits, a day apart: features; fixes said in words (English
+and Chinese); fixes that aren't of the project's code, or aren't fixes (documentation, tests or CI only, a
+typo, an issue closed); a revert of another author's commit, a revert of the author's own, and a squash merge
+whose body carries a revert from its branch. The "typed" repo's subjects carry Conventional Commits types, a
+[tag] or a gitmoji. Each repo is built once, and each run of the heatmap read by the tests that need it.
 """
 
+import json
+import os
 import re
 import unittest
 
@@ -23,7 +27,8 @@ def build_shop():
     marks = {}
     marks["start"] = repo.commit("2026-01-01", "Start", {
         "app.py": lines(10, "app"), "util.py": lines(10, "util"), "docs/guide.md": lines(3, "guide"),
-        "CHANGES.md": lines(2, "change"), "tests/test_app.py": lines(4, "test")})
+        "CHANGES.md": lines(2, "change"), "tests/test_app.py": lines(4, "test"), "package.json": "{}\n",
+        ".github/workflows/ci.yml": lines(3, "ci")})
     repo.commit("2026-01-02", "Add the cart", {"app.py": lines(12, "app")})
     marks["crash"] = repo.commit("2026-01-03", "Fix the crash when the cart is empty", {
         "app.py": lines(13, "app"), "tests/test_app.py": lines(6, "test"), "CHANGES.md": lines(3, "change")})
@@ -31,7 +36,7 @@ def build_shop():
     repo.commit("2026-01-05", "Fix typo in a comment", {"util.py": lines(11, "util")})
     repo.commit("2026-01-06", "Fixed #12 -- Added coupons", {"app.py": lines(14, "app")})
     repo.commit("2026-01-07", "Rename fix_price to fixed_price", {"util.py": lines(12, "util")})
-    repo.commit("2026-01-07", "Fix: bump left-pad", {"package.json": "{}\n"}, author=BOT)
+    repo.commit("2026-01-07", "Fix: bump left-pad", {"package.json": "{ }\n"}, author=BOT)
     repo.commit("2026-01-08", "Prevent a negative total", {"util.py": lines(13, "util")})
     repo.commit("2026-01-09", "修复价格计算错误的问题", {"util.py": lines(14, "util")})
     repo.commit("2026-01-10", "Add the prefix and fixture helpers", {"util.py": lines(15, "util")})
@@ -45,6 +50,10 @@ def build_shop():
                 {"app.py": lines(14, "app")})
     repo.commit("2026-01-14", "Make totals faster (#7)\n\n* Speed up\n\n* Revert it\n\nThis reverts commit %s.\n"
                 % repo.sha(marks["start"]), {"util.py": lines(16, "util")})
+    repo.commit("2026-01-15", "Fix the flaky cart test", {"tests/test_app.py": lines(7, "test")})
+    repo.commit("2026-01-16", "Fix the CI workflow", {".github/workflows/ci.yml": lines(4, "ci")})
+    marks["rounding"] = repo.commit("2026-01-17", "Fix the total's rounding\n\nIt rounded half down.\n", {
+        "app.py": lines(16, "app"), "package.json": "{\n}\n"})
     repo.done()
     return repo, marks
 
@@ -74,7 +83,7 @@ def fix_rows(out):
 def marks_of(out):
     """--show's lines: per subject, its mark or ''."""
     found = {}
-    for line in out.splitlines()[1:]:
+    for line in out.splitlines():
         match = re.match(r"  [0-9a-f]{9} \d{4}-\d{2}-\d{2} (.*?)(?:  \[(.*)\])?$", line)
         if match:
             found[match.group(1)] = match.group(2) or ""
@@ -86,60 +95,101 @@ class Shop(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.repo, cls.marks = build_shop()
-        cls.result = support.run("heatmap.py", "-C", cls.repo.path)
-        assert cls.result.code == 0, cls.result
+        cls.page = os.path.join(support.new_folder("shop-page"), "pass.html")
+        cls.result = support.run("heatmap.py", "-C", cls.repo.path, "--page", cls.page)
+        cls.shown = support.run("heatmap.py", "-C", cls.repo.path, "--messages", *[
+            arg for name in ("util.py", "app.py", "docs/guide.md", "tests/test_app.py", ".github/workflows/ci.yml")
+            for arg in ("--show", name)])
+        assert cls.result.code == 0 and cls.shown.code == 0, (cls.result, cls.shown)
 
-    def test_the_header_says_how_many_read_as_fixes_and_how(self):
-        # 15 commits counted (the bot's is left out): the crash, the negative total and the Chinese one by their
-        # words, and the revert of Bob's commit. The guide's fix changed documentation only.
+    def test_the_header_says_how_many_at_least_and_how(self):
+        # 18 commits counted (the bot's is left out): the crash, the negative total, the Chinese one and the
+        # rounding by their words, and the revert of Bob's commit. The fixes of the guide, the cart's test and
+        # the CI changed none of the project's code.
         self.assertEqual(fixes_lines(self.result.out), [
-            "Fixes, a lead and not a verdict: 4 of the 15 commits read as fixes from their messages, 1 a revert (of "
-            "a commit that had stood 1 day) and 3 by their words. 1 more revert, of its author's own commit, "
-            "withdraws it and isn't counted.",
-            "0% of the subjects carry a type, too few to read types as labels. 1 more commit closes an issue "
-            "without saying what kind of change."])
+            "Fixes, a lead and not a verdict: at least 5 of the 18 commits fixed a defect in the project's own "
+            "code, as their messages say: 1 a revert (of a commit that had stood 1 day) and 4 by their words. 1 "
+            "more revert, of its author's own commit, withdraws it and isn't counted.",
+            "0% of the subjects carry a type, too few to read as labels, so the count is a floor: subjects without "
+            "a type typically say so for a third to a half of the fixes, and the rest are among the commits --show "
+            "leaves unmarked. 1 more commit closes an issue without saying what kind of change."])
 
-    def test_fixes_by_file(self):
-        # util.py: the negative total, the Chinese fix and the revert, all in the newer half (its 8 newest
-        # commits). app.py: the crash, in the older half. Documentation and tests are aside.
-        self.assertEqual(fix_rows(self.result.out), {"util.py": (3, 3, 1, 0, 2), "app.py": (1, 0, 0, 0, 1)})
-        self.assertIn("Fixes by file: of each file's commits, those that read as fixes, and how many of them were in "
-                      "the newer half (documentation and tests aside):\n", self.result.out)
+    def test_fixes_by_file_at_least(self):
+        # util.py: the negative total and the Chinese fix, older, and the revert, in the newer half (the 9
+        # newest). app.py: the crash, older, and the rounding. package.json had the rounding too, but it's a
+        # dependency file, set aside like documentation and tests.
+        self.assertEqual(fix_rows(self.result.out), {"util.py": (3, 1, 1, 0, 2), "app.py": (2, 1, 0, 0, 2)})
+        self.assertIn("Fixes by file, at least: of each file's commits, those whose messages say they fixed a "
+                      "defect in it, and how many of those were in the newer half; documentation, tests, and CI, "
+                      "build and dependency files aside. A floor, not a count: --show FILE --messages gives each "
+                      "commit's message, to read the ones left unmarked.\n", self.result.out)
 
     def test_the_table_of_files_is_as_it_was(self):
         rows = support.heatmap_rows(self.result.out)
-        self.assertEqual((rows["util.py"]["commits"], rows["app.py"]["commits"]), (9, 6))
+        self.assertEqual((rows["util.py"]["commits"], rows["app.py"]["commits"], rows["package.json"]["commits"]),
+                         (9, 7, 2))
 
     def test_show_marks_each_commit(self):
-        result = support.run("heatmap.py", "-C", self.repo.path, "--show", "util.py", "--show", "app.py",
-                             "--show", "docs/guide.md")
-        self.assertEqual(result.code, 0, result)
-        marks = marks_of(result.out)
+        marks = marks_of(self.shown.out)
         self.assertEqual(marks['Revert "Speed up totals"'], "fix, revert: reverts %s, 1 day after it"
                          % self.repo.short(self.marks["speed"]))
         self.assertEqual(marks['Revert "Try a cache"'], "not a fix: its author withdraws %s"
                          % self.repo.short(self.marks["cache"]))
         self.assertEqual(marks["Prevent a negative total"], "fix, words: prevent")
-        self.assertEqual(marks["修复价格计算错误的问题"], "fix, words: 修复, 错误, 问题")
+        self.assertEqual(marks["修复价格计算错误的问题"], "fix, words: 修复, 问题")
         self.assertEqual(marks["Fix the crash when the cart is empty"], "fix, words: fix, crash")
         self.assertEqual(marks["Fix typo in a comment"], "not a fix: says typo")
-        self.assertEqual(marks["Fix the guide's wrong example"], "not a fix: changes documentation only")
+        self.assertEqual(marks["Fix the guide's wrong example"], "not a fix: changes only documentation")
+        self.assertEqual(marks["Fix the flaky cart test"], "not a fix: changes only tests")
+        self.assertEqual(marks["Fix the CI workflow"], "not a fix: changes only CI, build or dependency files")
         # An issue closed, an identifier, words that start like fix, a squash merge's branch revert: nothing.
         for subject in ["Fixed #12 -- Added coupons", "Rename fix_price to fixed_price",
                         "Add the prefix and fixture helpers", "Make totals faster (#7)", "Add the cart", "Start"]:
             self.assertEqual(marks[subject], "", subject)
 
+    def test_show_gives_each_message_and_a_hash_git_show_takes(self):
+        out = self.shown.out
+        self.assertIn("  %s 2026-01-17 Fix the total's rounding  [fix, words: fix]\n      It rounded half down.\n"
+                      % self.repo.short(self.marks["rounding"]), out)
+        self.assertIn("Make totals faster (#7)\n      * Speed up\n\n      * Revert it\n\n      This reverts commit",
+                      out)
+        self.assertIn("Add the cart\n  ", out)  # No message past its subject: nothing under it.
+        for sha in re.findall(r"(?m)^  ([0-9a-f]{9}) ", out):
+            self.assertEqual(support.git(self.repo.path, "rev-parse", "--verify", "-q", sha + "^{commit}")[:9], sha)
+
+    def test_a_message_is_cut_at_twelve_lines(self):
+        heatmap = support.load("heatmap")
+        shown = heatmap.message_lines("\n".join("line %d" % n for n in range(1, 31)) + "\n\n\n\nend\n")
+        self.assertEqual(shown.split("\n")[-2:], ["      line 11", "      (21 more lines)"])
+        self.assertEqual(heatmap.message_lines("  \n\n"), None)
+        self.assertEqual(heatmap.message_lines("a\n\n\n\nb\x1b"), "      a\n\n      b\\x1b")
+
+    def test_messages_goes_with_show(self):
+        result = support.run("heatmap.py", "-C", self.repo.path, "--messages")
+        self.assertEqual(result.code, 2, result)
+        self.assertIn("--messages goes with --show: --show FILE --messages", result.err)
+
+    def test_the_page_carries_the_fixes(self):
+        with open(self.page, encoding="utf-8") as f:
+            heat = json.loads(support.block(f.read(), "heatmap"))
+        self.assertEqual(heat["window"]["fixes"], {"fixes": 5, "revert": 1, "type": 0, "words": 4, "typed": 0.0,
+                                                   "labels": False, "closing": 1, "withdrawn": 1, "thin": False})
+        rows = dict((r["path"], r) for r in heat["files"])
+        self.assertEqual((rows["app.py"]["fixes"], rows["app.py"]["fixes_recent"]), (2, 1))
+        self.assertEqual((rows["util.py"]["fixes"], rows["util.py"]["fixes_recent"]), (3, 1))
+        for aside in ("package.json", "CHANGES.md", "docs/guide.md", ".github/workflows/ci.yml"):
+            self.assertNotIn("fixes", rows[aside], aside)
+        self.assertEqual(support.run("check_page.py", self.page).code, 0)
+
     def test_left_out_commits_dont_count(self):
-        # The bot's "Fix: bump left-pad" is left out by default, so package.json has no fixes; and a fix left out
-        # with --exclude-commits counts toward nothing.
-        self.assertNotIn("package.json", fix_rows(self.result.out))
+        # The bot's "Fix: bump left-pad" is left out by default; and a fix left out with --exclude-commits
+        # counts toward nothing.
         result = support.run("heatmap.py", "-C", self.repo.path, "--exclude-commits",
                              self.repo.short(self.marks["crash"]))
         self.assertEqual(result.code, 0, result)
         self.assertTrue(fixes_lines(result.out)[0].startswith(
-            "Fixes, a lead and not a verdict: 3 of the 14 commits read as fixes"), result.out)
-        # 14 commits now, so the newer half is the 7 newest, which leaves out the negative total's fix.
-        self.assertEqual(fix_rows(result.out), {"util.py": (3, 2, 1, 0, 2)})
+            "Fixes, a lead and not a verdict: at least 4 of the 17 commits fixed"), result.out)
+        self.assertEqual(fix_rows(result.out), {"util.py": (3, 1, 1, 0, 2), "app.py": (1, 1, 0, 0, 1)})
 
     def test_no_fixes_leaves_it_all_out(self):
         result = support.run("heatmap.py", "-C", self.repo.path, "--no-fixes")
@@ -151,7 +201,6 @@ class Shop(unittest.TestCase):
         self.assertEqual(support.heatmap_rows(result.out), support.heatmap_rows(self.result.out))
 
 
-
 TYPED = [("feat: add the cart", "", ""), ("fix(cart)!: the total ignores discounts", "fix, type: fix(cart)!:", "fix"),
          ("docs: fix the docstring of total", "not a fix: labelled docs:", ""),
          ("fix(deps): bump left-pad", "not a fix: labelled fix(deps):", ""),
@@ -159,11 +208,13 @@ TYPED = [("feat: add the cart", "", ""), ("fix(cart)!: the total ignores discoun
          ("\U0001F41B wrong rounding", "fix, type: \U0001F41B", "fix"),
          ("Correct the rounding of totals", "fix, words: correct", "fix"),
          ("refactor: split the cart", "", ""), ("chore: release 1.0", "", ""), ("perf: cache totals", "", "")]
+PLAIN = ["Add the cart", "Add the coupons", "Speed up totals", "Split the cart", "Tidy the totals", "Add a red hat",
+         "Add a blue scarf", "Add the shoes", "Add a coat", "Add the gloves", "Add the socks"]
 
 
-def build_typed(subjects):
+def build_typed(subjects, name="typed"):
     """A repo whose commits, a day apart, each change app.py, with the subjects given."""
-    repo = support.Repo("typed")
+    repo = support.Repo(name)
     repo.commit("2026-01-01", "feat: start", {"app.py": lines(5, "app")})
     for day, subject in enumerate(subjects, 2):
         repo.commit("2026-01-%02d" % day, subject, {"app.py": lines(5 + day, "app")})
@@ -182,89 +233,88 @@ class Typed(unittest.TestCase):
         heatmap = support.run("heatmap.py", "-C", repo.path)
         # 10 of the 11 subjects carry a type: all but the one that reads by its words.
         self.assertEqual(fixes_lines(heatmap.out), [
-            "Fixes, a lead and not a verdict: 4 of the 11 commits read as fixes from their messages, 3 by their "
-            "type and 1 by their words.",
-            "91% of the subjects carry a type, so a type is read as a label."])
+            "Fixes, a lead and not a verdict: at least 4 of the 11 commits fixed a defect in the project's own "
+            "code, as their messages say: 3 by their type and 1 by their words.",
+            "91% of the subjects carry a type, read as a label, so the count is close to complete."])
         self.assertEqual(fix_rows(heatmap.out), {"app.py": (4, 3, 0, 3, 1)})
 
     def test_types_read_as_words_where_few_subjects_carry_one(self):
-        plain = ["Add the cart", "Add coupons", "Speed up totals", "Split the cart", "Tidy the totals", "Add a hat",
-                 "Add a scarf", "Add shoes", "Add a coat", "Add gloves", "Add socks"]
-        repo = build_typed(plain + ["fix(cart): the total ignores discounts", "docs: fix the docstring of total",
-                                    "[fix] crash on an empty cart"])
+        repo = build_typed(PLAIN + ["fix(cart): the total ignores discounts", "docs: fix the docstring of total",
+                                    "[fix] crash on an empty cart"], "untyped")
         result = support.run("heatmap.py", "-C", repo.path, "--show", "app.py")
         marks = marks_of(result.out)
         self.assertEqual(marks["fix(cart): the total ignores discounts"], "fix, words: fix")
         self.assertEqual(marks["docs: fix the docstring of total"], "not a fix: says docs")
         self.assertEqual(marks["[fix] crash on an empty cart"], "fix, words: fix, crash")
         # 4 of the 15 subjects carry a type, with "feat: start".
-        self.assertEqual(fixes_lines(support.run("heatmap.py", "-C", repo.path).out)[1],
-                         "27% of the subjects carry a type, too few to read types as labels.")
+        self.assertTrue(fixes_lines(support.run("heatmap.py", "-C", repo.path).out)[1].startswith(
+            "27% of the subjects carry a type, too few to read as labels, so the count is a floor"))
 
 
 class Reverts(unittest.TestCase):
+    """One repo: reverts of reverts, whose original is in the window (a.py, b.py) or isn't (c.py), and reverts
+    as GitHub writes them and without their line (d.py)."""
+
+    @classmethod
+    def setUpClass(cls):
+        repo = cls.repo = support.Repo("reverts")
+        repo.commit("2026-01-01", "Start", {"a.py": lines(3, "a"), "b.py": lines(3, "b"), "c.py": lines(3, "c"),
+                                           "d.py": lines(3, "d")})
+        cls.crash = repo.commit("2026-01-02", "Fix the crash in a", {"a.py": lines(4, "a")})
+        cls.hat = repo.commit("2026-01-03", "Add a hat to b", {"b.py": lines(4, "b")}, author=support.BOB)
+        cls.github = repo.commit("2026-01-04", "Fix the crash in d (#12)", {"d.py": lines(4, "d")},
+                                 author=support.BOB)
+        cls.coupons = repo.commit("2026-01-05", "Add coupons (#13)", {"d.py": lines(5, "d")}, author=support.BOB)
+        repo.done()
+        back = repo.commit("2026-01-06", 'Revert "Fix the crash in a"\n\nThis reverts commit %s.\n'
+                           % repo.sha(cls.crash), {"a.py": lines(3, "a")}, author=support.BOB)
+        undo = repo.commit("2026-01-07", 'Revert "Add a hat to b"\n\nThis reverts commit %s.\n' % repo.sha(cls.hat),
+                           {"b.py": lines(3, "b")})
+        repo.commit("2026-01-08", 'Revert "Fix the crash in d (#12)" (#14)\n\nThis reverts commit %s.\n'
+                    % repo.sha(cls.github), {"d.py": lines(6, "d")})
+        # Without the line, a subject that starts with Revert reads by its words at most.
+        repo.commit("2026-01-09", 'Revert "Add coupons (#13)"', {"d.py": lines(7, "d")})
+        repo.commit("2026-01-10", 'Revert "Fix the crash in d (#12)"', {"d.py": lines(8, "d")})
+        # A revert of a change to the docs, or of a chore, isn't a fix of the code.
+        repo.commit("2026-01-11", 'Revert "docs: say more"\n\nThis reverts commit %s.\n' % repo.sha(cls.coupons),
+                    {"d.py": lines(9, "d")})
+        repo.commit("2026-01-12", 'Revert "Reword the readme"\n\nThis reverts commit %s.\n' % ("f" * 40),
+                    {"d.py": lines(10, "d")})
+        # Re-landings of what was reverted outside the window: read by their words.
+        repo.commit("2026-01-13", 'Revert "Revert "Fix the crash in c""\n\nThis reverts commit %s.\n' % ("d" * 40),
+                    {"c.py": lines(4, "c")})
+        repo.commit("2026-01-14", 'Revert "Revert "Add a hat""\n\nThis reverts commit %s.\n' % ("e" * 40),
+                    {"c.py": lines(5, "c")})
+        repo.done()
+        repo.commit("2026-01-15", 'Revert "Revert "Fix the crash in a""\n\nThis reverts commit %s.\n'
+                    % repo.sha(back), {"a.py": lines(4, "a")})
+        repo.commit("2026-01-16", 'Revert "Revert "Add a hat to b""\n\nThis reverts commit %s.\n' % repo.sha(undo),
+                    {"b.py": lines(4, "b")}, author=support.BOB)
+        repo.done()
+        result = support.run("heatmap.py", "-C", repo.path, *[a for f in "abcd" for a in ("--show", f + ".py")])
+        assert result.code == 0, result
+        cls.marks = marks_of(result.out)
 
     def test_a_revert_of_a_revert_reads_as_what_it_relands(self):
-        repo = support.Repo("relands")
-        repo.commit("2026-01-01", "Start", {"a.py": lines(3, "a"), "b.py": lines(3, "b")})
-        crash = repo.commit("2026-01-02", "Fix the crash in a", {"a.py": lines(4, "a")})
-        hat = repo.commit("2026-01-03", "Add a hat to b", {"b.py": lines(4, "b")}, author=support.BOB)
-        repo.done()
-        back = repo.commit("2026-01-04", 'Revert "Fix the crash in a"\n\nThis reverts commit %s.\n'
-                           % repo.sha(crash), {"a.py": lines(3, "a")}, author=support.BOB)
-        undo = repo.commit("2026-01-05", 'Revert "Add a hat to b"\n\nThis reverts commit %s.\n' % repo.sha(hat),
-                           {"b.py": lines(3, "b")})
-        repo.done()
-        repo.commit("2026-01-06", 'Revert "Revert "Fix the crash in a""\n\nThis reverts commit %s.\n'
-                    % repo.sha(back), {"a.py": lines(4, "a")})
-        repo.commit("2026-01-07", 'Revert "Revert "Add a hat to b""\n\nThis reverts commit %s.\n'
-                    % repo.sha(undo), {"b.py": lines(4, "b")}, author=support.BOB)
-        repo.done()
-        result = support.run("heatmap.py", "-C", repo.path, "--show", "a.py", "--show", "b.py")
-        marks = marks_of(result.out)
+        marks = self.marks
         self.assertEqual(marks['Revert "Revert "Fix the crash in a""'], "fix, words: re-lands fix, crash")
         self.assertEqual(marks['Revert "Revert "Add a hat to b""'], "not a fix: re-lands a change that wasn't a fix")
-        # The reverts themselves: of another author's commits, each a day after it.
-        self.assertEqual(marks['Revert "Fix the crash in a"'], "fix, revert: reverts %s, 2 days after it"
-                         % repo.short(crash))
-        self.assertEqual(marks['Revert "Add a hat to b"'], "fix, revert: reverts %s, 2 days after it"
-                         % repo.short(hat))
+        # The reverts themselves: of another author's commits.
+        self.assertEqual(marks['Revert "Fix the crash in a"'], "fix, revert: reverts %s, 4 days after it"
+                         % self.repo.short(self.crash))
+        self.assertEqual(marks['Revert "Add a hat to b"'], "fix, revert: reverts %s, 4 days after it"
+                         % self.repo.short(self.hat))
 
     def test_a_relanding_whose_revert_is_outside_the_window_reads_by_its_words(self):
-        repo = support.Repo("relands-outside")
-        repo.commit("2026-01-01", "Start", {"a.py": lines(3, "a")})
-        repo.commit("2026-01-02", 'Revert "Revert "Fix the crash in a""\n\nThis reverts commit %s.\n' % ("d" * 40),
-                    {"a.py": lines(4, "a")})
-        repo.commit("2026-01-03", 'Revert "Revert "Add a hat""\n\nThis reverts commit %s.\n' % ("e" * 40),
-                    {"a.py": lines(5, "a")})
-        repo.done()
-        marks = marks_of(support.run("heatmap.py", "-C", repo.path, "--show", "a.py").out)
-        self.assertEqual(marks['Revert "Revert "Fix the crash in a""'], "fix, words: re-lands fix, crash")
-        self.assertEqual(marks['Revert "Revert "Add a hat""'], "not a fix: re-lands a change that wasn't a fix")
+        self.assertEqual(self.marks['Revert "Revert "Fix the crash in c""'], "fix, words: re-lands fix, crash")
+        self.assertEqual(self.marks['Revert "Revert "Add a hat""'], "not a fix: re-lands a change that wasn't a fix")
 
     def test_reverts_as_github_writes_them_and_without_their_line(self):
-        repo = support.Repo("github")
-        repo.commit("2026-01-01", "Start", {"a.py": lines(3, "a")})
-        crash = repo.commit("2026-01-02", "Fix the crash in a (#12)", {"a.py": lines(4, "a")}, author=support.BOB)
-        coupons = repo.commit("2026-01-03", "Add coupons (#13)", {"a.py": lines(5, "a")}, author=support.BOB)
-        repo.done()
-        repo.commit("2026-01-04", 'Revert "Fix the crash in a (#12)" (#14)\n\nThis reverts commit %s.\n'
-                    % repo.sha(crash), {"a.py": lines(6, "a")})
-        # Without the line, a subject that starts with Revert reads by its words at most.
-        repo.commit("2026-01-05", 'Revert "Add coupons (#13)"', {"a.py": lines(7, "a")})
-        repo.commit("2026-01-06", 'Revert "Fix the crash in a (#12)"', {"a.py": lines(8, "a")})
-        # A revert of a change to the docs, or of a chore, isn't a fix of the code.
-        repo.commit("2026-01-07", 'Revert "docs: say more"\n\nThis reverts commit %s.\n' % repo.sha(coupons),
-                    {"a.py": lines(9, "a")})
-        repo.commit("2026-01-08", 'Revert "Reword the readme"\n\nThis reverts commit %s.\n' % ("f" * 40),
-                    {"a.py": lines(10, "a")})
-        repo.done()
-        result = support.run("heatmap.py", "-C", repo.path, "--show", "a.py")
-        marks = marks_of(result.out)
-        self.assertEqual(marks['Revert "Fix the crash in a (#12)" (#14)'], "fix, revert: reverts %s, 2 days after it"
-                         % repo.short(crash))
+        marks = self.marks
+        self.assertEqual(marks['Revert "Fix the crash in d (#12)" (#14)'],
+                         "fix, revert: reverts %s, 4 days after it" % self.repo.short(self.github))
         self.assertEqual(marks['Revert "Add coupons (#13)"'], "")
-        self.assertEqual(marks['Revert "Fix the crash in a (#12)"'], "fix, words: fix, crash")
+        self.assertEqual(marks['Revert "Fix the crash in d (#12)"'], "fix, words: fix, crash")
         self.assertEqual(marks['Revert "docs: say more"'], "not a fix: reverts a change that isn't to the code")
         self.assertEqual(marks['Revert "Reword the readme"'], "not a fix: reverts a change that isn't to the code")
 
@@ -284,26 +334,26 @@ class Reverts(unittest.TestCase):
         self.assertEqual(marks_of(cut.out)['Revert "Speed up a"'], "fix, revert: reverts %s, from before the window"
                          % repo.short(old))
         header = fixes_lines(support.run("heatmap.py", "-C", repo.path, "-n", "2").out)
-        self.assertEqual(header[0], "Fixes, a lead and not a verdict: 1 of the 2 commits read as fixes from their "
-                                    "messages, 1 a revert.")
+        self.assertEqual(header[0], "Fixes, a lead and not a verdict: at least 1 of the 2 commits fixed a defect in "
+                                    "the project's own code, as their messages say: 1 a revert.")
 
 
 class Thin(unittest.TestCase):
 
     def test_subjects_of_a_word_or_two_cant_support_the_trace(self):
         repo = build_typed(["wip", "update", "fix", "more", "Fix the crash in the cart", "stuff", "fix it", "Add a "
-                            "hat to the shop"])
+                            "hat to the shop"], "thin")
         result = support.run("heatmap.py", "-C", repo.path)
         self.assertEqual(result.code, 0, result)
         # 9 commits, 7 of them a word or two: "feat: start" carries a type, but few do, so its words count.
         self.assertEqual(fixes_lines(result.out)[1], "Most subjects here are a word or two (7 of the 9), too little "
-                         "to tell a fix from anything else, so the fixes by file aren't listed. 11% of the subjects "
-                         "carry a type, too few to read types as labels.")
+                         "to tell a fix from anything else, so the count can't be read and the fixes by file aren't "
+                         "listed. 11% of the subjects carry a type.")
         self.assertNotIn("Fixes by file", result.out)
 
 
 class Words(unittest.TestCase):
-    """The words read, one subject at a time."""
+    """The words read, one subject at a time, and the files that aren't the project's code."""
 
     def setUp(self):
         self.heatmap = support.load("heatmap")
@@ -314,7 +364,7 @@ class Words(unittest.TestCase):
         self.assertEqual(says("Fixed typos in the docs"), (["fix"], ["typo", "docs"]))
         self.assertEqual(says("Better error messages for vararg-table fields"), (["error"], ["error message"]))
         self.assertEqual(says("Prevented a CVE"), (["cve", "prevent"], []))
-        self.assertEqual(says("修复注释中的错误"), (["修复", "错误"], ["注释"]))
+        self.assertEqual(says("修复注释中的错误"), (["修复"], ["注释"]))
 
     def test_issue_references_identifiers_and_code_say_nothing(self):
         says = self.heatmap.says
@@ -323,12 +373,25 @@ class Words(unittest.TestCase):
                         "Add a regression test for totals"]:
             self.assertEqual(says(subject), ([], []), subject)
 
+    def test_files_that_arent_the_projects_code(self):
+        not_code = self.heatmap.not_code
+
+        def test(path):
+            return path.startswith("tests/")
+        chore = "CI, build or dependency files"
+        for path, kind in [("docs/conf.py", "documentation"), ("CHANGES.rst", "documentation"),
+                           ("tests/test_app.py", "tests"), (".github/workflows/ci.yml", chore), ("go.mod", chore),
+                           ("src/Makefile", chore), ("packages/core/package.json", chore), ("pyproject.toml", chore),
+                           ("Dockerfile", chore), ("vite.config.ts", chore), ("src/app.py", None),
+                           ("lib/build.py", None), ("src/server.c", None), ("ci/check.py", None)]:
+            self.assertEqual(not_code(path, test), kind, path)
+
     def test_types(self):
         type_of = self.heatmap.type_of
         self.assertEqual(type_of("fix(router)!: x"), ("fix", "fix(router)!:"))
         self.assertEqual(type_of("hotfix: x"), ("fix", "hotfix:"))
         self.assertEqual(type_of("Bugfix: x"), ("fix", "Bugfix:"))
-        self.assertEqual(type_of("fix\uff1a\u4fee\u590d"), ("fix", "fix\uff1a"))
+        self.assertEqual(type_of("fix：修复"), ("fix", "fix："))
         self.assertEqual(type_of("fix(deps): bump x"), ("chore", "fix(deps):"))
         self.assertEqual(type_of("[Fix] x"), ("fix", "[Fix]"))
         self.assertEqual(type_of("[docs] x"), ("other", "[docs]"))
@@ -346,6 +409,18 @@ class Words(unittest.TestCase):
         # A blank name, or a blank email, is no one's: two such authors aren't one person by it.
         self.assertFalse(same(" <ann@example.com>", " <bob@example.com>"))
         self.assertFalse(same("Ann Dev <>", "Bob Dev <>"))
+
+    def test_a_window_where_no_message_says_fix(self):
+        heatmap = support.load("heatmap")
+        commits = [("%040d" % n, n, "Add the shop's %d hats" % n, [("a.py", None, 1, 0)], "Ann <a@b>", "")
+                   for n in (1, 2)]
+        lines, facts = heatmap.fix_summary(commits, heatmap.fix_trace(commits, commits, False), 0.0)
+        self.assertEqual(lines, ["Fixes, a lead and not a verdict: none of the 2 commits says in its message that it "
+                                 "fixed a defect in the project's own code.", "0% of the subjects carry a type, too "
+                                 "few to read as labels, so the count is a floor: subjects without a type typically "
+                                 "say so for a third to a half of the fixes, and the rest are among the commits "
+                                 "--show leaves unmarked."])
+        self.assertEqual((facts["fixes"], facts["thin"]), (0, False))
 
     def test_how_long(self):
         how_long = self.heatmap.how_long

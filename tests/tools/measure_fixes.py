@@ -1,11 +1,14 @@
 """Measure the heatmap's fixes trace against commits labelled by hand, on public repos pinned to exact commits,
 outside the default run, and fail where a set falls below its recorded floors.
 
-Each commit in tests/fixes_labels.txt was labelled fix or not by reading its message and its diff, before the
-rules were written: a fix corrects a defect in the repo's own code as it stood (wrong behaviour, a crash, a
+Each commit in tests/fixes_labels.txt was labelled fix or not by one reader, from its message and its diff,
+before the rules were written: a fix corrects a defect in the repo as it stood (wrong behaviour, a crash, a
 security hole, a regression, wrong public types, a build or a test that was broken, a revert of a change that
 broke something); features, refactors, performance work, documentation, formatting, lint, CI and tooling,
-dependency bumps, releases and changes for a new version of a dependency or a platform are not. Its sets:
+dependency bumps, releases and changes for a new version of a dependency or a platform are not. The trace's
+own definition is narrower, a fix of the project's own code, so a commit counts as a fix here only if it's
+labelled one and changed a file of the project's code: not documentation, tests, or CI, build or dependency
+files, as the heatmap tells them apart. --broad counts every commit labelled fix, as the reader did. Its sets:
 
   dev       the latest commits of each development repo, people's only (as the heatmap counts them),
             which the rules were written from
@@ -51,29 +54,29 @@ class Repo(object):
         self.name, self.url, self.sha, self.window, self.floors = name, url, sha, window, floors
 
 
-# The floors, in percent: per set, precision and recall. Recorded on 2026-11-12 from that day's numbers, two
-# points under them.
+# The floors, in percent: per set, precision and recall of fixes of the project's own code. Recorded on
+# 2026-11-12 from that day's numbers, two points under them.
 REPOS = [
     Repo("flask", "https://github.com/pallets/flask", "49943b5a94413a530761350f04e896f76e8d620e", 4000,
-         {"dev": (85, 44), "revert": (64, 23), "word": (73, 73)}),
+         {"dev": (83, 48), "revert": (48, 18), "word": (78, 73)}),
     Repo("gin", "https://github.com/gin-gonic/gin", "0f09c3a9b4626d9fe9979cf4d0521d6ae32ab646", 2500,
-         {"dev": (91, 71), "revert": (88, 98), "word": (75, 98)}),
+         {"dev": (91, 85), "revert": (88, 98), "word": (98, 98)}),
     Repo("pinia", "https://github.com/vuejs/pinia", "4817135a25431172d363bd928476db7cdbf875c4", 3000,
-         {"dev": (98, 84), "revert": (98, 98)}),
+         {"dev": (98, 90), "revert": (98, 98)}),
     Repo("django", "https://github.com/django/django", "a0f2e29e0a98ee14aa808ebe38ec5fb79c8af71f", 800,
-         {"dev": (91, 53), "revert": (98, 58), "word": (91, 86)}),
+         {"dev": (91, 61), "revert": (98, 64), "word": (91, 91)}),
     Repo("lua", "https://github.com/lua/lua", "8cb93bada561977eb370819e39d7d644e5fd0a3f", 4000,
          {"dev": (92, 56), "word": (73, 73)}),
     Repo("ripgrep", "https://github.com/BurntSushi/ripgrep", "178cc027e283fd965cb72d0a7395b219eada170c", 2500,
-         {"dev": (64, 31), "revert": (98, 64), "word": (98, 98)}),
+         {"dev": (98, 31), "revert": (98, 48), "word": (98, 98)}),
     Repo("hutool", "https://github.com/chinabugotech/hutool", "87ec11862baae72914df703e25939eb44a8a843c", 4000,
-         {"dev": (81, 78), "revert": (98, 64), "word": (85, 89)}),
+         {"dev": (94, 78), "revert": (98, 64), "word": (92, 88)}),
     Repo("requests", "https://github.com/psf/requests", "3c7baaa05ab4aa49cc819ce3a819d260de19c157", 1000,
          {"aside": (98, 36)}),
     Repo("nest", "https://github.com/nestjs/nest", "afa6e3d3801f58750dc80ad0970c0bc52850ed2a", 1000,
          {"aside": (94, 98)}),
     Repo("redis", "https://github.com/redis/redis", "df10f323951f024df7f3a9a86274ef2fab7a7fa1", 1000,
-         {"aside": (84, 50)}),
+         {"aside": (91, 46)}),
 ]
 SETS = ["dev", "revert", "word", "aside"]
 TIERS = {1: "revert", 2: "type", 3: "words"}
@@ -142,7 +145,8 @@ def clone(one, repos_dirs, cache, fetch):
 
 
 def load(heatmap, one, path, labelled):
-    """The repo's window as the heatmap reads it, whether its types read as labels, and its labelled commits."""
+    """The repo's window as the heatmap reads it, whether its types read as labels, its labelled commits, and per
+    labelled short hash whether it changed a file of the project's own code."""
     window = heatmap.read_log(path, ["-n", str(one.window), "HEAD"])
     people = [c for c in window if not heatmap.HOUSEKEEPING.search(c[4])]
     typed = heatmap.typed_share(people[:200]) >= 0.5
@@ -151,14 +155,21 @@ def load(heatmap, one, path, labelled):
     if missing:
         raise LookupError("%d labelled commits aren't among its latest %d: %s" % (
             len(missing), one.window, ", ".join(missing[:5])))
-    return window, typed, [by_short[sha] for sha in labelled]
+    chosen = [by_short[sha] for sha in labelled]
+
+    def is_test(path):
+        return heatmap.scoping.is_test(path, [], [])
+
+    code = dict((c[0][:9], any(not heatmap.not_code(change[0], is_test) for change in c[3])) for c in chosen)
+    return window, typed, chosen, code
 
 
 def read_repo(heatmap, loaded):
-    """Per labelled short hash, how the heatmap reads it: (tier, what said so)."""
-    window, typed, chosen = loaded
-    trace = heatmap.fix_trace(chosen, window, typed)
-    return dict((c[0][:9], trace[c[0]][:2]) for c in chosen)
+    """Per labelled short hash, how the heatmap reads it: (tier, what said so, whether it changed the project's
+    own code)."""
+    window, typed, chosen, code = loaded
+    trace = heatmap.fix_trace(chosen, window, typed, lambda path: heatmap.scoping.is_test(path, [], []))
+    return dict((c[0][:9], trace[c[0]][:2] + (code[c[0][:9]],)) for c in chosen)
 
 
 def scores(pairs):
@@ -198,9 +209,12 @@ def ablate(heatmap, reread):
         place = heatmap.NOT_FIX_CHINESE.index(word)
         without("exclusion", word, lambda: heatmap.NOT_FIX_CHINESE.remove(word),
                 lambda: heatmap.NOT_FIX_CHINESE.insert(place, word))
-    is_doc = heatmap.is_doc
-    without("exclusion", "documentation only", lambda: setattr(heatmap, "is_doc", lambda path: False),
-            lambda: setattr(heatmap, "is_doc", is_doc))
+    for name, module, function in (("documentation only", heatmap, "is_doc"),
+                                   ("CI, build, deps only", heatmap, "is_chore"),
+                                   ("tests only", heatmap.scoping, "is_test")):
+        kept = getattr(module, function)
+        without("exclusion", name, lambda: setattr(module, function, lambda *given: False),
+                lambda: setattr(module, function, kept))
     return base, rows
 
 
@@ -218,6 +232,9 @@ def main():
     parser.add_argument("--words", action="store_true",
                         help="print what each word and exclusion brings, over the dev, revert and word sets")
     parser.add_argument("--record", action="store_true", help="print floors a hair under today's numbers")
+    parser.add_argument("--broad", action="store_true",
+                        help="count every commit labelled fix as one, tests, build and CI fixes included, as the "
+                             "reader labelled them, not only those that changed the project's own code")
     parser.add_argument("--record-tiers", action="store_true",
                         help="write each commit's tier as read today beside its label in tests/fixes_labels.txt")
     args = parser.parse_args()
@@ -255,6 +272,7 @@ def main():
             rows = labels.get((one.name, name), [])
             if not rows:
                 continue
+            rows = [(sha, fix and (args.broad or read[sha][2]), tier, words) for sha, fix, tier, words in rows]
             pairs = [(fix, read[sha][0]) for sha, fix, _, _ in rows]
             every[name] += pairs
             precision, recall, right, called, fixes = scores(pairs)
@@ -300,6 +318,7 @@ def main():
                 read = read_repo(heatmap, window)
                 for kind in ("dev", "revert", "word"):
                     for sha, fix, _, _ in labels.get((name, kind), []):
+                        fix = fix and (args.broad or read[sha][2])
                         if read[sha][0]:
                             right, wrong = right + fix, wrong + (not fix)
             return right, wrong
