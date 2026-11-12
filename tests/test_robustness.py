@@ -191,7 +191,6 @@ print("%.1f" % (time.time() - start))
 
 class Generics(unittest.TestCase):
 
-    @unittest.expectedFailure
     def test_long_lines_of_generic_types(self):
         code = "import sys; sys.path[:0] = [%r, %r]\n" % (support.SCRIPTS, support.HERE) + GENERICS
         try:

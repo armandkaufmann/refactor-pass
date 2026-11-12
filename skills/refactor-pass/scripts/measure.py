@@ -179,9 +179,13 @@ def not_a_name(language):
 # can). Each part of a name can take type arguments, as C#'s Get<T>( and C++'s SkipList<Key, Cmp>::Insert( do;
 # and in C# a part is an interface's, as in IDisposable.Dispose(. Java's names can hold a $, and C#'s start
 # with an @ that makes a reserved word a name.
+# A word of a type is read one way only, so a line that isn't a definition fails at once, however many types
+# it holds: each < opens type arguments where they close (ANGLED, which may hold spaces), and only where they
+# don't is it a character of the word, as are > and the rest; one character at a time, never a run, which
+# could be split in more ways than one.
 ANGLED = r"<(?:[^<>;{}=()]|\([^;{}()]*\)|<(?:[^<>;{}=()]|\([^;{}()]*\))*>)*>"
 TYPE_ARGUMENTS = r"(?:" + ANGLED + r")?"
-TYPE_WORD = r"(?:[\w<>\[\],.?*&:]+|\([\w<>\[\],.?\s]+\)|[\w:.]+" + ANGLED + r"[\w\[\],.?*&:]*)"
+TYPE_WORD = r"(?:(?:[\w>\[\],.?*&:]|" + ANGLED + r"|<(?!" + ANGLED[1:] + r"))+|\([\w<>\[\],.?\s]+\))"
 # Before it all, Java's annotations (@Test, @SuppressWarnings("x")) and C#'s attributes ([InlineData(1)]).
 ANNOTATIONS = r"(?:@[\w.]+(?:\((?:[^()]|\([^()]*\))*\))?\s+|\[(?:[^\[\]()]|\((?:[^()]|\([^()]*\))*\))*\]\s*)*"
 # C++'s template <...> before a definition on its line, whatever its parameters hold (= false, enable_if(...)).
