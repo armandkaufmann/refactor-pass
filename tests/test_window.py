@@ -77,6 +77,14 @@ class Bots(unittest.TestCase):
         self.assertIn("Devin AI 1", result.out)
         self.assertEqual(support.heatmap_rows(result.out)["src/agent_work.py"]["commits"], 5)
 
+    @unittest.expectedFailure
+    def test_a_blank_bot_is_an_error(self):
+        for value in ("", "  "):
+            with self.subTest(value=value):
+                result = support.run("heatmap.py", "-C", self.repo, "--bot", value)
+                self.assertEqual(result.code, 2, result)
+                self.assertIn("argument --bot: a bot's name can't be blank: it would match every commit", result.err)
+
     def test_keep_bots(self):
         result = support.run("heatmap.py", "-C", self.repo, "--keep-bots")
         self.assertIn("Window: 18 commits", result.out)
@@ -251,6 +259,14 @@ class Since(unittest.TestCase):
         self.assertEqual(result.code, 1, result)
         self.assertIn("--since 'zzz-no-such-thing' is neither a revision here (a tag, branch or commit) nor a date git "
                       "can read, such as '3 months ago' or 2026-06-01.", result.err)
+
+    @unittest.expectedFailure
+    def test_a_date_a_minute_or_seconds_ago(self):
+        for since in ("1 minute ago", "30 seconds ago", "now"):
+            with self.subTest(since=since):
+                result = support.run("heatmap.py", "-C", self.repo.path, "--since", since)
+                self.assertEqual(result.code, 0, result)
+                self.assertEqual(result.out, "Nothing has landed since %s: the window has no commits.\n" % since)
 
     def test_an_empty_window(self):
         page = os.path.join(support.new_folder("page"), "2026-01-11.html")

@@ -176,6 +176,22 @@ class Pages(unittest.TestCase):
                       % os.path.join(folder, "2026-01-20.html"), result.err)
 
 
+    @unittest.expectedFailure
+    def test_a_page_that_isnt_utf_8(self):
+        repo, _ = build()
+        page = repo.write(FOLDER + "/2026-01-20.html", support.page_with().encode("utf-8").replace(b"<title>",
+                                                                                                    b"<title>\xff"))
+        with open(page, "rb") as f:
+            before = f.read()
+        result = support.run("heatmap.py", "-C", repo.path, "--page", FOLDER + "/2026-01-20.html")
+        self.assertEqual(result.code, 1, result)
+        self.assertEqual(result.out, "")
+        self.assertEqual(result.err, "heatmap.py: couldn't read %s, so it's left as it was: it isn't UTF-8 text, at "
+                                     "byte %d. check_page.py says the same.\n" % (page, before.index(b"\xff")))
+        with open(page, "rb") as f:
+            self.assertEqual(f.read(), before)
+
+
 class RecordedCommits(unittest.TestCase):
 
     def test_recorded_commits_are_left_out(self):
