@@ -692,7 +692,6 @@ class Interrupted(unittest.TestCase):
         self.assertIn("couldn't remove it: Permission denied; what's left of it is in ", run.out)
         self.assertIn("%s: remove that folder yourself, as an agent may load it as a second copy." % left[0], run.out)
 
-    @unittest.expectedFailure
     def test_uninstall_stopped_once_the_record_is_gone_puts_no_shell_back(self):
         # Every file it installed and its record are gone; an empty folder put back would be one it didn't make.
         skills, copy = Refusals.installed(self)

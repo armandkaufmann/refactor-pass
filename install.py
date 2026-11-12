@@ -542,12 +542,18 @@ def remove_copy(folder, force, dry_run):
             os.rename(retired, folder)
             return "removed, but for the files it didn't install: " + ", ".join(kept)
     except BaseException as error:  # An error or an interrupt: what's left goes back, or the output says where.
+        # Back in place while its record is there, or files it didn't install are; else what's left is empty
+        # folders, which put back would be a folder this installer didn't make.
         try:
+            if not (os.path.isfile(os.path.join(retired, RECORD)) or kept):
+                raise OSError("its record is gone")
             os.rename(retired, folder)
             left = "what's left of it is back in its place"
         except OSError:
             left = ("what's left of it is in %s: remove that folder yourself, as an agent may load it as a second "
-                    "copy" % shown_path(retired))
+                    "copy" % shown_path(retired)) if os.path.isfile(os.path.join(retired, RECORD)) else \
+                ("what's left of it, its files and record already removed, is in %s: remove that folder yourself"
+                 % shown_path(retired))
         if isinstance(error, OSError):
             raise OSError(error.errno, "%s; %s." % (error.strerror or error, left))
         say("%s: stopped; %s." % (shown_path(folder), left))
