@@ -324,5 +324,26 @@ class Unusual(unittest.TestCase):
         self.assertIn("src/b.py: couldn't read it.", shown.out)
 
 
+class NotInTheWorkingTree(unittest.TestCase):
+    """Files git tracks in the scope that the working tree doesn't hold, which can't be measured: the output says
+    how many, which, and why."""
+
+    @unittest.expectedFailure
+    def test_a_sparse_checkout_and_a_deletion(self):
+        repo = support.Repo("sparse")
+        repo.commit("2026-01-01", "Start", dict(("src/%s.py" % n, "x = 1\n") for n in "abcdefgh"))
+        repo.done()
+        os.remove(os.path.join(repo.path, "src", "b.py"))
+        for name in "cdefgh":  # Left out as a sparse checkout leaves files out.
+            support.git(repo.path, "update-index", "--skip-worktree", "src/%s.py" % name)
+            os.remove(os.path.join(repo.path, "src", "%s.py" % name))
+        result = support.run("measure.py", "-C", repo.path, "src")
+        self.assertEqual(result.code, 0, result)
+        self.assertIn("Not in the working tree, so not measured: 6 files a sparse checkout leaves out (src/c.py, "
+                      "src/d.py, src/e.py, src/f.py, src/g.py and 1 more), and 1 deleted and not committed "
+                      "(src/b.py).\n", result.out)
+        self.assertIn("Python           1      0", result.out)
+
+
 if __name__ == "__main__":
     unittest.main()
