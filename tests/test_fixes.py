@@ -52,8 +52,10 @@ def build_shop():
                 % repo.sha(marks["start"]), {"util.py": lines(16, "util")})
     repo.commit("2026-01-15", "Fix the flaky cart test", {"tests/test_app.py": lines(7, "test")})
     repo.commit("2026-01-16", "Fix the CI workflow", {".github/workflows/ci.yml": lines(4, "ci")})
-    marks["rounding"] = repo.commit("2026-01-17", "Fix the total's rounding\n\nIt rounded half down.\n", {
-        "app.py": lines(16, "app"), "package.json": "{\n}\n"})
+    rounding = "Fix the total's rounding\n\nIt rounded half down.\n\nReported-by: Cy <cy@example.com>\n" \
+               "Signed-off-by: Ann Dev <ann@example.com>\n"
+    marks["rounding"] = repo.commit("2026-01-17", rounding, {"app.py": lines(15, "app") + "total = round(x)\n",
+                                                            "package.json": "{\n}\n"})
     repo.done()
     return repo, marks
 
@@ -149,25 +151,58 @@ class Shop(unittest.TestCase):
 
     def test_show_gives_each_message_and_a_hash_git_show_takes(self):
         out = self.shown.out
-        self.assertIn("  %s 2026-01-17 Fix the total's rounding  [fix, words: fix]\n      It rounded half down.\n"
+        # The message without who signed it; who reported it stays.
+        self.assertIn("  %s 2026-01-17 Fix the total's rounding  [fix, words: fix]\n      [+2 -0 in this file; 1 other "
+                      "file]\n      It rounded half down.\n\n      Reported-by: Cy <cy@example.com>\n  "
                       % self.repo.short(self.marks["rounding"]), out)
-        self.assertIn("Make totals faster (#7)\n      * Speed up\n\n      * Revert it\n\n      This reverts commit",
-                      out)
-        self.assertIn("Add the cart\n  ", out)  # No message past its subject: nothing under it.
+        self.assertNotIn("Signed-off-by", out)
+        self.assertIn("Fix the crash when the cart is empty  [fix, words: fix, crash]\n      [+1 -0 in this file; 2 "
+                      "other files, 1 of them a test]\n", out)
+        self.assertIn("Make totals faster (#7)\n      [+1 -0 in this file; no other file]\n      * Speed up\n\n      "
+                      "* Revert it\n\n      This reverts commit", out)
+        self.assertIn("Add the cart\n      [+2 -0 in this file; no other file]\n  ", out)  # No message past it.
         for sha in re.findall(r"(?m)^  ([0-9a-f]{9}) ", out):
             self.assertEqual(support.git(self.repo.path, "rev-parse", "--verify", "-q", sha + "^{commit}")[:9], sha)
 
-    def test_a_message_is_cut_at_twelve_lines(self):
+    def test_a_message_is_cut_at_twelve_lines_without_identity_trailers(self):
         heatmap = support.load("heatmap")
         shown = heatmap.message_lines("\n".join("line %d" % n for n in range(1, 31)) + "\n\n\n\nend\n")
         self.assertEqual(shown.split("\n")[-2:], ["      line 11", "      (21 more lines)"])
         self.assertEqual(heatmap.message_lines("  \n\n"), None)
         self.assertEqual(heatmap.message_lines("a\n\n\n\nb\x1b"), "      a\n\n      b\\x1b")
+        trailers = "Fixes: 1a2b3c4 (\"x\")\nCloses #12\nBug: 99\nReported-by: Cy <c@y>\nSigned-off-by: A <a@b>\n" \
+                   "Co-authored-by: B <b@c>\nreviewed-by: C <c@d>\nCc: D <d@e>\nChange-Id: I12ab\n"
+        self.assertEqual(heatmap.message_lines("It broke.\n\n" + trailers).split("\n"), [
+            "      It broke.", "", "      Fixes: 1a2b3c4 (\"x\")", "      Closes #12", "      Bug: 99",
+            "      Reported-by: Cy <c@y>"])
+        self.assertIsNone(heatmap.message_lines("Signed-off-by: A <a@b>\n"))
 
     def test_messages_goes_with_show(self):
         result = support.run("heatmap.py", "-C", self.repo.path, "--messages")
         self.assertEqual(result.code, 2, result)
         self.assertIn("--messages goes with --show: --show FILE --messages", result.err)
+        result = support.run("heatmap.py", "-C", self.repo.path, "--diffs", "a1b2c3d", "--show", "a.py", "--show",
+                             "app.py")
+        self.assertEqual(result.code, 2, result)
+        self.assertIn("--diffs goes with one --show: --show FILE --diffs SHA,SHA", result.err)
+
+    def test_diffs_give_each_commits_changes_to_the_file_only(self):
+        rounding, crash = self.repo.short(self.marks["rounding"]), self.repo.short(self.marks["crash"])
+        result = support.run("heatmap.py", "-C", self.repo.path, "--show", "app.py", "--diffs",
+                             "%s, %s" % (rounding, crash[:7]))
+        self.assertEqual(result.code, 0, result)
+        self.assertEqual(result.out, "app.py: its changes in 2 of its commits, each cut at 60 lines\n"
+                         "  %s 2026-01-17 Fix the total's rounding  [fix, words: fix]\n"
+                         "      @@ -12,3 +12,5 @@ app 11\n       app 12\n       app 13\n       app 14\n"
+                         "      +app 15\n      +total = round(x)\n"
+                         "  %s 2026-01-03 Fix the crash when the cart is empty  [fix, words: fix, crash]\n"
+                         "      @@ -10,3 +10,4 @@ app 9\n       app 10\n       app 11\n       app 12\n      +app 13\n\n"
+                         % (rounding, crash))
+        wrong = support.run("heatmap.py", "-C", self.repo.path, "--show", "app.py", "--diffs", "%s,zz,%s" % (
+            self.repo.short(self.marks["speed"]), rounding))
+        self.assertEqual(wrong.code, 1, wrong)
+        self.assertIn("--diffs: %s isn't one of its commits in the window; zz isn't one of its commits in the "
+                      "window. Give hashes --show app.py prints." % self.repo.short(self.marks["speed"]), wrong.err)
 
     def test_the_page_carries_the_fixes(self):
         with open(self.page, encoding="utf-8") as f:
@@ -336,6 +371,53 @@ class Reverts(unittest.TestCase):
         header = fixes_lines(support.run("heatmap.py", "-C", repo.path, "-n", "2").out)
         self.assertEqual(header[0], "Fixes, a lead and not a verdict: at least 1 of the 2 commits fixed a defect in "
                                     "the project's own code, as their messages say: 1 a revert.")
+
+
+class Diffs(unittest.TestCase):
+    """--show FILE --diffs: a file's changes in several commits, under the name it had in each, cut at 60 lines."""
+
+    @classmethod
+    def setUpClass(cls):
+        repo = cls.repo = support.Repo("diffs")
+        first = "".join("a %d\n" % n for n in range(1, 101))
+        repo.commit("2026-01-01", "Start", {"old/a.py": first, "img.png": b"\x00\x01\n", "other.py": "x\n"})
+        fix = repo.commit("2026-01-02", "Fix a's first line", {"old/a.py": first.replace("a 1\n", "a one\n", 1),
+                                                                 "other.py": "y\n", "img.png": b"\x00\x02\n"})
+        moved = first.replace("a 1\n", "a one\n", 1).replace("a 50\n", "a fifty\n")
+        move = repo.commit("2026-01-03", "Move a", {"new/a.py": moved}, rename={"old/a.py": "new/a.py"})
+        rewrite = repo.commit("2026-01-04", "Rewrite a", {"new/a.py": "".join("b %d\n" % n for n in range(1, 101))})
+        other = repo.commit("2026-01-05", "Change other", {"other.py": "z\n"})
+        repo.done()
+        cls.marks = dict(fix=fix, move=move, rewrite=rewrite, other=other)
+
+    def test_a_files_changes_under_its_names_cut_at_sixty_lines(self):
+        repo = self.repo
+        shas = [repo.short(self.marks[m]) for m in ("fix", "move", "rewrite")]
+        result = support.run("heatmap.py", "-C", repo.path, "--show", "new/a.py", "--diffs", ",".join(shas))
+        self.assertEqual(result.code, 0, result)
+        out = result.out.split("\n")
+        self.assertEqual(out[0], "new/a.py: its changes in 3 of its commits, each cut at 60 lines")
+        # Before the move, its changes as old/a.py, and nothing of other.py's or img.png's.
+        self.assertEqual(out[1:7], ["  %s 2026-01-02 Fix a's first line  [fix, words: fix]" % shas[0],
+                                    "      @@ -1,4 +1,4 @@", "      -a 1", "      +a one", "       a 2", "       a 3"])
+        self.assertEqual(out[8:12], ["  %s 2026-01-03 Move a" % shas[1], "      (rename from old/a.py)",
+                                     "      @@ -47,7 +47,7 @@ a 46", "       a 47"])
+        rewritten = out[out.index("  %s 2026-01-04 Rewrite a" % shas[2]) + 1:-2]
+        self.assertEqual(len(rewritten), 60)
+        self.assertEqual(rewritten[-1], "      (142 more lines: git show %s -- new/a.py)" % shas[2])
+        binary = support.run("heatmap.py", "-C", repo.path, "--show", "img.png", "--diffs", shas[0])
+        self.assertIn("      (Binary files a/img.png and b/img.png differ)\n", binary.out)
+
+    def test_the_lines_a_file_gives(self):
+        # As file_diffs reads git show's output: one call for several commits, each commit's section of the file.
+        heatmap = support.load("heatmap")
+        fix, other = self.repo.sha(self.marks["fix"]), self.repo.sha(self.marks["other"])
+        found = heatmap.file_diffs(self.repo.path, [(fix, "other.py", None), (other, "other.py", None),
+                                                    (fix, "new/a.py", None)], most=3)
+        self.assertEqual(found[(other, "other.py")], ["@@ -1 +1 @@", "-y", "+z"])
+        self.assertEqual(found[(fix, "other.py")], ["@@ -1 +1 @@", "-x", "+y"])
+        # In that commit new/a.py was old/a.py: under a name it didn't have, no change, not another file's.
+        self.assertEqual(found[(fix, "new/a.py")], ["(no change to new/a.py in this commit)"])
 
 
 class Thin(unittest.TestCase):
