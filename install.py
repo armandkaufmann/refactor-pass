@@ -114,6 +114,14 @@ def say(text=""):
     sys.stdout.flush()
 
 
+def safe_output():
+    """Never fail on printing a path the console can't show, as on Windows with the output piped in its own
+    code page: the character becomes a ?."""
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure") and (stream.encoding or "").lower().replace("-", "") != "utf8":
+            stream.reconfigure(errors="replace")
+
+
 def home():
     return os.path.expanduser("~")
 
@@ -810,6 +818,7 @@ def main(argv=None):
                         help="replace or remove a copy whose files were edited, or that holds files it didn't install")
     parser.add_argument("--dry-run", action="store_true", help="print what it would do, and change nothing")
     args = parser.parse_args(argv)
+    safe_output()
     commands = {"install": run_install, "update": run_update, "check": run_check, "uninstall": run_uninstall}
     try:
         if args.ref:

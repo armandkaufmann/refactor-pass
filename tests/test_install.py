@@ -695,7 +695,6 @@ class Interrupted(unittest.TestCase):
         self.assertIn("couldn't remove it: Permission denied; what's left of it is in ", run.out)
         self.assertIn("%s: remove that folder yourself, as an agent may load it as a second copy." % left[0], run.out)
 
-    @unittest.expectedFailure
     def test_a_name_the_output_cant_show(self):
         skills = os.path.join(support.new_folder("skills"), "sk\u00e9lls-\u2603")
         run = install("--source", Sources.tagged(), "--dir", skills, env={"PYTHONIOENCODING": "ascii"})
