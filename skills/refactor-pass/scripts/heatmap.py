@@ -118,7 +118,6 @@ import argparse
 import json
 import os
 import re
-import subprocess
 import sys
 import time
 from collections import Counter, defaultdict
@@ -147,17 +146,26 @@ KIND_NAMES = {"R": "refactors", "F": "small fixes", "L": "later", "D": "your cal
 
 
 def git(repo, *args):
-    result = subprocess.run(["git", "-C", repo] + list(args), capture_output=True)
+    result = scoping.git(repo, *args)
     if result.returncode != 0:
         sys.exit("git %s failed: %s" % (" ".join(args), result.stderr.decode(errors="replace").strip()))
     return result.stdout.decode("utf-8", errors="replace")
 
 
+# git log as read_log reads it, whatever the user's or the repo's config says: the root commit's changes shown
+# (log.showRoot), no signature checked, whose output would come first (log.showSignature), git's own diff and
+# limit on renames, which change the counts (diff.algorithm, diff.renameLimit), and the subjects in UTF-8
+# (i18n.logOutputEncoding). No text conversion, external diff, notes or colour either, though git leaves them
+# out of --numstat today.
+LOG = ["log", "--no-merges", "-z", "-M", "-l1000", "--numstat", "--root", "--no-show-signature", "--no-textconv",
+       "--no-ext-diff", "--diff-algorithm=myers", "--no-notes", "--no-color", "--encoding=UTF-8",
+       "--format=%x1e%H%x1f%ct%x1f%aN <%aE>%x1f%s"]
+
+
 def read_log(repo, revs):
     """The commits in revs, newest first: (sha, time, subject, [(path, old_path, added, removed)], author).
     old_path is the name before a rename, else None; added and removed are None for a binary file."""
-    out = git(repo, "log", "--no-merges", "-z", "-M", "--numstat",
-              "--format=%x1e%H%x1f%ct%x1f%aN <%aE>%x1f%s", *revs)
+    out = git(repo, *(LOG + revs))
     commits = []
     for record in out.split("\x1e")[1:]:
         header, _, body = record.partition("\0")
@@ -186,9 +194,7 @@ def window_revs(repo, since, count):
     --since takes a revision, or else a date as git log's own --since does."""
     if not since:
         return ["-n", str(count), "HEAD"], None
-    check = subprocess.run(["git", "-C", repo, "rev-parse", "--verify", "--quiet", since + "^{commit}"],
-                           capture_output=True)
-    if check.returncode == 0:
+    if scoping.git(repo, "rev-parse", "--verify", "--quiet", since + "^{commit}").returncode == 0:
         return ["%s..HEAD" % since], since
     # git reads almost anything as a date, and what it can't read as now.
     stamp = git(repo, "rev-parse", "--since=" + since).strip().split("=")[-1]
@@ -375,13 +381,12 @@ def not_landed(repo, shas):
     """Of the recorded commits, those that aren't commits reachable from HEAD. After a squash merge or
     a rebase, the commit that landed the work has another hash, so the heatmap can't leave it out."""
     shas = sorted(set(shas))
-    proc = subprocess.run(["git", "-C", repo, "cat-file", "--batch-check"], capture_output=True,
-                          input="".join("%s^{commit}\n" % s for s in shas).encode())
+    proc = scoping.git(repo, "cat-file", "--batch-check", input="".join("%s^{commit}\n" % s for s in shas).encode())
     lost = set()
     for sha, line in zip(shas, proc.stdout.decode(errors="replace").splitlines()):
         found = line.split()
-        if len(found) != 3 or found[1] != "commit" or subprocess.run(
-                ["git", "-C", repo, "merge-base", "--is-ancestor", found[0], "HEAD"]).returncode != 0:
+        if len(found) != 3 or found[1] != "commit" or \
+                scoping.git(repo, "merge-base", "--is-ancestor", found[0], "HEAD").returncode != 0:
             lost.add(sha)
     return lost
 
@@ -391,8 +396,7 @@ def line_counts(repo, rev, paths):
     paths = [p for p in paths if "\n" not in p]
     if not paths:
         return {}
-    proc = subprocess.run(["git", "-C", repo, "cat-file", "--batch"],
-                          input="".join("%s:%s\n" % (rev, p) for p in paths).encode(), capture_output=True)
+    proc = scoping.git(repo, "cat-file", "--batch", input="".join("%s:%s\n" % (rev, p) for p in paths).encode())
     data = proc.stdout
     counts = {}
     pos = 0
@@ -534,8 +538,7 @@ def main():
     if args.checklists:
         list_checklists(home, folders, repo)
         return
-    if subprocess.run(["git", "-C", repo, "rev-parse", "--verify", "--quiet", "HEAD"],
-                      capture_output=True).returncode != 0:
+    if scoping.git(repo, "rev-parse", "--verify", "--quiet", "HEAD").returncode != 0:
         sys.exit("%s has no commits yet, so there's no history to read." % os.path.basename(repo))
     head = git(repo, "rev-parse", "--short=9", "HEAD").strip()
     tracked = scoping.tracked_files(repo, "HEAD")

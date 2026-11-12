@@ -53,10 +53,27 @@ def safe_output():
             stream.reconfigure(errors="replace")
 
 
+# git's variables that would point it at another repo, index, object store or history than the one -C names,
+# or change what the commands read here print (an external diff, how pathspecs read); left out of every git
+# the scripts run. The settings that would change what git log prints are overridden where it's run.
+GIT_PLACES = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+              "GIT_COMMON_DIR", "GIT_NAMESPACE", "GIT_SHALLOW_FILE", "GIT_GRAFT_FILE", "GIT_REPLACE_REF_BASE",
+              "GIT_NO_REPLACE_OBJECTS", "GIT_EXTERNAL_DIFF", "GIT_DIFF_OPTS", "GIT_LITERAL_PATHSPECS",
+              "GIT_GLOB_PATHSPECS", "GIT_NOGLOB_PATHSPECS", "GIT_ICASE_PATHSPECS")
+
+
+def git(repo, *args, **options):
+    """Run git in repo as every script here runs it, with none of GIT_PLACES; the finished process, with its
+    output as bytes. input, if given, is what git reads."""
+    env = dict((k, v) for k, v in os.environ.items() if k.upper() not in GIT_PLACES)
+    return subprocess.run(["git", "-C", repo] + list(args), capture_output=True, input=options.get("input"),
+                          env=env)
+
+
 def run(repo, *args):
     """A git command's output as text, or None if it failed. Git writes paths in UTF-8 whatever the
     system's code page, so they're read as UTF-8."""
-    result = subprocess.run(["git", "-C", repo] + list(args), capture_output=True)
+    result = git(repo, *args)
     return result.stdout.decode("utf-8", errors="replace") if result.returncode == 0 else None
 
 

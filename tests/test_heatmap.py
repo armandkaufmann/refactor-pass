@@ -366,20 +366,17 @@ class GitSettings(unittest.TestCase):
         self.assertEqual((rows["f.py"]["commits"], rows["f.py"]["churn"]), (3, 4 + 1 + 1))
         self.assertIn("Grow a, caf\u00e9", self.plain[1][1])
 
-    @unittest.expectedFailure
     def test_a_signature_check_in_the_repos_config(self):
         repo = build_settings()
         support.git(repo.path, "config", "log.showSignature", "true")
         support.git(repo.path, "config", "gpg.program", "git")  # Prints its usage, as gpg would its verdict.
         self.assertEqual(outputs(repo), self.plain)
 
-    @unittest.expectedFailure
     def test_the_root_commits_changes_whatever_log_showroot_says(self):
         found = outputs(build_settings(), {"GIT_CONFIG_GLOBAL": user_config("[log]\n\tshowRoot = false\n")})
         self.assertEqual(support.heatmap_rows(found[0][1])["a.py"], support.heatmap_rows(self.plain[0][1])["a.py"])
         self.assertEqual(found, self.plain)
 
-    @unittest.expectedFailure
     def test_no_setting_or_variable_changes_the_output(self):
         repo = build_settings()
         home = support.new_folder("home")
