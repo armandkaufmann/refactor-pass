@@ -108,12 +108,12 @@ in four such repos); typically a third to a half where they don't (33% to
 64% in six of seven such repos, 80% in one whose subjects nearly always say
 fix); 35% over the nine others, one of them typed; and none of 14 in one
 whose subjects name the area and the new behaviour, and whose bodies say what
-was wrong. Reading closes most of
-the gap: in one measurement, an agent given those 252 commits and the
-definition found 72% of the fixes from their subjects (43 of its 44 calls
-right) and 83% from their whole messages (all 50 calls right), and wanted the
-diff for 21 commits. Its labels were made by the same kind of model, which
-flatters agreement: one measurement, not an accuracy.
+was wrong. Reading closes most of the gap: in one measurement, an agent given
+those 252 commits and the definition found 72% of the fixes from their
+subjects (43 of its 44 calls right) and 83% from their whole messages (all 50
+calls right), and wanted the diff for 21 commits. The labels it was scored
+against came from the same kind of model reading the diffs, which flatters
+agreement: one measurement, not an accuracy.
 
 --show FILE prints a file's commits in the window instead, newest first, to
 read the reasons it keeps changing: each with its hash as git show takes it,
