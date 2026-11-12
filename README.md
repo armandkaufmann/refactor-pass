@@ -200,8 +200,8 @@ count and which are tests.
 For contributors; an installed copy doesn't need them. The suite in
 `tests/` uses Python's standard library and git, builds the small repos it
 reads in a temporary folder, and runs in under a minute on macOS and Linux
-and in under two on Windows. It tries the installer against source repos it
-builds there too, never the network, with a home folder of its own. `-B`
+and in under three on Windows. It tries the installer against source repos
+it builds there too, never the network, with a home folder of its own. `-B`
 keeps Python from writing bytecode into the skill's folder:
 
 ```bash
