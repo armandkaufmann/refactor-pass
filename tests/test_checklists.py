@@ -206,6 +206,54 @@ class Pages(unittest.TestCase):
         self.assertNotIn("bug", result.err)
 
 
+class HtmlInText(unittest.TestCase):
+    """What heatmap.py writes into a page's data blocks holds no <, which a browser could read as HTML: a commit's
+    subject or the project's name can hold <!-- and <script."""
+
+    @unittest.expectedFailure
+    def test_a_subject_with_html(self):
+        repo = support.Repo("html")
+        for day, subject in ((1, "odd names <!-- <script>alert(1)</script>"), (2, "Plain"),
+                             (3, "odd names <!-- <script>alert(1)</script>")):
+            repo.commit("2026-01-%02d" % day, subject, {"a.py": lines(day + 2)})
+        repo.done()
+        page = os.path.join(support.new_folder("page"), "2026-01-20.html")
+        result = support.run("heatmap.py", "-C", repo.path, "--page", page)
+        self.assertEqual(result.code, 0, result)
+        with open(page, encoding="utf-8") as f:
+            text = f.read()
+        self.assertNotIn("<", support.block(text, "heatmap"))
+        self.assertEqual(json.loads(support.block(text, "heatmap"))["window"]["newest"]["subject"],
+                         "odd names <!-- <script>alert(1)</script>")
+        checked = support.run("check_page.py", page)
+        self.assertEqual(checked.code, 0, checked)
+
+    @unittest.skipIf(support.WINDOWS, "a folder's name can't hold < on Windows")
+    @unittest.expectedFailure
+    def test_a_project_named_with_html(self):
+        repo = support.Repo("a<!--<script>b")
+        repo.commit("2026-01-01", "Start", {"a.py": lines(3)})
+        repo.done()
+        page = os.path.join(support.new_folder("page"), "2026-01-20.html")
+        result = support.run("heatmap.py", "-C", repo.path, "--page", page)
+        self.assertEqual(result.code, 0, result)
+        with open(page, encoding="utf-8") as f:
+            text = f.read()
+        self.assertNotIn("<", support.block(text, "pass"))
+        self.assertEqual(json.loads(support.block(text, "pass"))["project"], "a<!--<script>b")
+
+
+    @unittest.expectedFailure
+    def test_a_checklist_a_browser_reads_is_read(self):
+        # Its </script> is hidden from a browser by the <!-- and <script before it, so the block goes on.
+        repo, marks = build()
+        repo.write(FOLDER + "/2026-01-20.html", support.page_with(checklist(
+            [refactor("R1", "done", [repo.short(marks[3])], "Done: dropped `<!-- <script> </script>` from it.")])))
+        result = support.run("heatmap.py", "-C", repo.path)
+        self.assertEqual(result.err, "")
+        self.assertIn("; left out: 1 recorded on refactor checklists\n", result.out)
+
+
 class RecordedCommits(unittest.TestCase):
 
     def test_recorded_commits_are_left_out(self):

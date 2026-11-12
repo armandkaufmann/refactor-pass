@@ -326,5 +326,65 @@ class Warnings(unittest.TestCase):
                                             "three sentences.\nOK\n"), result)
 
 
+# Text in a data block that a browser reads as HTML: a </script, in any case and followed by a space, a / or a
+# >, ends the block there; and after a <!--, a <script hides its end, as HTML's escapes of old scripts do,
+# until a -->. Each of these breaks the page; the ones after are harmless.
+BREAKS = ["`layout.html:12` still opens with `<!-- legacy` and loads an inline `<script>` block", "a </SCRIPT> tag",
+          "</script >", "</Script/x", "<!--<SCRIPT\tsrc", "<!-- <script> </script> <script>", "<!-- </SCRIPT>"]
+FINE = ["<!-- alone", "<script> alone", "<!-- <script> -->", "<!-- <script> </script>", "<!--<scripts>",
+        "</scripts>", "a < b", "<!--> <script>", "x <!---> <script>", "<!- <script>"]
+
+
+class TextBrowsersReadAsHtml(unittest.TestCase):
+
+    @unittest.expectedFailure
+    def test_text_that_moves_or_hides_a_blocks_end(self):
+        for text in BREAKS:
+            with self.subTest(text=text):
+                data = good()
+                item(data, "F1")["note"] = text
+                errors, _ = problems(page(data))
+                self.assertTrue(any("can't be read by a browser" in e for e in errors), errors)
+
+    @unittest.expectedFailure
+    def test_what_it_says(self):
+        data = good()
+        item(data, "F1")["note"] = BREAKS[0]
+        text = page(data)
+        line = text[:text.index("<!-- legacy")].count("\n") + 1
+        self.assertIn("The pass block can't be read by a browser: <!-- at line %d, and then <script at line %d, keep "
+                      "it from seeing where the block ends. Write each < in the block's text as \\u003c, which JSON "
+                      "reads as <." % (line, line), problems(text)[0])
+        item(data, "F1")["note"] = "a </SCRIPT> tag"
+        text = page(data)
+        line = text[:text.index("</SCRIPT>")].count("\n") + 1
+        self.assertIn("The pass block can't be read by a browser: the </SCRIPT at line %d ends the block there. Write "
+                      "each < in the block's text as \\u003c, which JSON reads as <." % line, problems(text)[0])
+
+    def test_the_same_text_written_with_u003c(self):
+        for text in BREAKS:
+            with self.subTest(text=text):
+                data = good()
+                item(data, "F1")["note"] = text
+                written = support.page_with(pass_json=support.pass_text(data).replace("<", "\\u003c"),
+                                            heatmap=HEATMAP)
+                self.assertEqual(problems(written), ([], []))
+
+    @unittest.expectedFailure
+    def test_harmless_text(self):
+        for text in FINE:
+            with self.subTest(text=text):
+                data = good()
+                item(data, "F1")["note"] = text
+                self.assertEqual(problems(page(data)), ([], []))
+
+    @unittest.expectedFailure
+    def test_the_heatmap_block_too(self):
+        heat = dict(HEATMAP, window={"commits": 1, "newest": {"sha": "a1b2c3d4e", "date": "2026-11-10",
+                                                              "subject": "odd <!-- <script>alert(1)"}})
+        text = support.page_with(good(), heatmap_json=json.dumps(heat))
+        self.assertTrue(any(e.startswith("The heatmap block can't be read by a browser") for e in problems(text)[0]))
+
+
 if __name__ == "__main__":
     unittest.main()
