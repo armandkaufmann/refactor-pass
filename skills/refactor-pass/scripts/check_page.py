@@ -11,8 +11,9 @@ so a status update stays a one-line edit:
 
 It checks too that dates are written 2026-11-10, and that a refactor's size
 is S, M or L and its risk Low, Medium or High, as the page shows them. An
-item that cites fixes has them as {"marked": [...], "read": [...]}, the
-commits the heatmap marked and those found by reading, each a hash once. The
+item that cites fixes has them per file: how many of its newest commits
+were read, the fixes the heatmap marked, those found by reading, and those
+it marked that were left out, each a hash once, no more than were read. The
 heatmap block is heatmap.py's to write; where it counts fixes (a heatmap
 from before it did has none), those counts are checked too.
 
@@ -55,7 +56,9 @@ OTHER = {"id": str, "status": str, "title": str, "note": str, "commits": list, "
 COST = {"today": str, "after": str}
 EARLIER = {"checklist": str, "results": list}
 RESULT = {"id": str, "title": str, "eases": str, "cost": dict, "change": str, "actual": str, "note": str}
-FIXES = {"marked": list, "read": list}
+# An item's fixes, per file: how many of its newest commits were read, the fixes the heatmap marked, those found
+# by reading, and those it marked that weren't fixes of the file.
+FIXES = {"file": str, "read": int, "marked": list, "found": list, "dropped": list}
 # The fixes trace's facts in the heatmap block's window, as heatmap.py writes them.
 FIX_FACTS = {"fixes": int, "revert": int, "type": int, "words": int, "typed": (int, float), "labels": bool,
              "closing": int, "withdrawn": int, "thin": bool}
@@ -142,6 +145,31 @@ def one_of(where, value, allowed, errors):
         errors.append("%s should be %s or %s, not %r." % (where, ", ".join(allowed[:-1]), allowed[-1], value))
 
 
+def check_fixes(ident, entries, errors):
+    """An item's fixes: a list with an entry per file, each of the right fields, hashes once each, and no more
+    commits listed than were read."""
+    if not isinstance(entries, list):
+        errors.append("%s's fixes should be a list, an entry per file." % ident)
+        return
+    for i, entry in enumerate(entries):
+        where = "%s.fixes[%d]" % (ident, i)
+        if not fields(where, entry, FIXES, errors):
+            continue
+        cited = [c for key in ("marked", "found", "dropped") if isinstance(entry.get(key), list) for c in entry[key]]
+        bad = [c for c in cited if not (isinstance(c, str) and re.fullmatch(r"[0-9a-f]{7,40}", c))]
+        if bad:
+            errors.append("%s: commits are hashes of 7 to 40 hex digits; not %s."
+                          % (where, ", ".join(repr(c) for c in bad)))
+        twice = sorted(set(c for c in cited if isinstance(c, str) and cited.count(c) > 1))
+        if twice:
+            errors.append("%s lists %s twice: a commit read is one of marked, found or dropped, or none."
+                          % (where, " and ".join(twice)))
+        read = entry.get("read")
+        if isinstance(read, int) and not isinstance(read, bool) and read < len(cited):
+            errors.append("%s lists %d commits but read %d: read counts every commit read, newest first."
+                          % (where, len(cited), read))
+
+
 def check_item(item, page, seen, errors, warnings, spread):
     ident = item["id"]
     if not re.fullmatch(r"[RFLD][1-9][0-9]*", ident):
@@ -153,17 +181,8 @@ def check_item(item, page, seen, errors, warnings, spread):
     fields(ident, item, REFACTOR if ident[0] == "R" else OTHER, errors, optional=("from", "fixes"))
     if "from" in item:
         date("%s's from" % ident, item["from"], errors)
-    if "fixes" in item and fields(ident + ".fixes", item["fixes"], FIXES, errors):
-        cited = [c for key in FIXES for c in (item["fixes"].get(key) if isinstance(item["fixes"].get(key), list)
-                                              else [])]
-        bad = [c for c in cited if not (isinstance(c, str) and re.fullmatch(r"[0-9a-f]{7,40}", c))]
-        if bad:
-            errors.append("%s: the fixes it cites are hashes of 7 to 40 hex digits; not %s."
-                          % (ident, ", ".join(repr(c) for c in bad)))
-        twice = sorted(set(c for c in cited if cited.count(c) > 1 and isinstance(c, str)))
-        if twice:
-            errors.append("%s cites %s twice: a fix is either one the heatmap marked or one found by reading."
-                          % (ident, " and ".join(twice)))
+    if "fixes" in item:
+        check_fixes(ident, item["fixes"], errors)
     if ident[0] == "R":
         one_of("%s's size" % ident, item.get("size"), SIZES, errors)
         one_of("%s's risk" % ident, item.get("risk"), RISKS, errors)
