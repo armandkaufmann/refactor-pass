@@ -433,7 +433,8 @@ def build_settings():
     and 4 removed, and its patience diff as 4 and 5; two files renamed and changed in one commit, which a
     rename limit of 1 leaves as two removed and two added; a commit signed with a signature that's no good,
     made by hand, since fast-import can't sign on every git; and one after it, so that what git prints on
-    checking the signature comes between two commits."""
+    checking the signature comes between two commits. Then a fix, its message's body past ASCII, and another
+    author's revert of it, whose body names it: the fixes trace reads bodies."""
     repo = support.Repo("settings")
     repo.commit("2026-01-01", "Start", {"a.py": lines(3, "a"), "b.txt": "{\nx\nx\n}\n}\nz\n", "c.py": lines(4, "c"),
                                         "d.py": lines(4, "d")})
@@ -450,6 +451,10 @@ def build_settings():
     sha = support.git(repo.path, "hash-object", "-t", "commit", "-w", "--stdin", input=signed.encode()).strip()
     support.git(repo.path, "update-ref", "refs/heads/main", sha)
     repo.commit("2026-01-06", "After", {"f.py": lines(6, "d")}, parent=sha)
+    fix = repo.commit("2026-01-07", "Fix the crash in g\n\nThe caf\u00e9's g crashed.\n", {"g.py": lines(3, "g")})
+    repo.done()
+    repo.commit("2026-01-08", 'Revert "Fix the crash in g"\n\nThis reverts commit %s.\n' % repo.sha(fix),
+                {"g.py": lines(2, "g")}, author=support.BOB)
     repo.done()
     return repo
 
@@ -460,7 +465,7 @@ def outputs(repo, env=None):
     env = env or {}
     found = [support.run("heatmap.py", "-C", repo.path, env=env),
              support.run("heatmap.py", "-C", repo.path, "--show", "a.py", "--show", "b.txt", "--show", "e.py",
-                         "--show", "f.py", env=env)]
+                         "--show", "f.py", "--show", "g.py", env=env)]
     return [(r.code, r.out, r.err) for r in found]
 
 
@@ -487,6 +492,8 @@ class GitSettings(unittest.TestCase):
         self.assertEqual((rows["e.py"]["commits"], rows["e.py"]["churn"]), (3, 4 + 1 + 1))
         self.assertEqual((rows["f.py"]["commits"], rows["f.py"]["churn"]), (3, 4 + 1 + 1))
         self.assertIn("Grow a, caf\u00e9", self.plain[1][1])
+        self.assertIn("Fixes, a lead and not a verdict: 2 of the 8 commits read as fixes from their messages, 1 a "
+                      "revert (of a commit that had stood 1 day) and 1 by their words.", self.plain[0][1])
 
     def test_a_signature_check_in_the_repos_config(self):
         repo = build_settings()

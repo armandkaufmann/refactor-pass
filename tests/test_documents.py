@@ -135,9 +135,12 @@ class Help(unittest.TestCase):
     def test_the_heatmaps_columns_are_its_helps(self):
         doc = ast.get_docstring(ast.parse(read(os.path.join(support.SCRIPTS, "heatmap.py"))))
         columns = re.findall(r"(?m)^  (\w+)  ", doc)
-        self.assertEqual(columns, ["commits", "recent", "last", "churn", "rel", "size", "growth"])
+        # The table's columns, then the ways a commit reads as a fix, the fixes table's columns after its counts.
+        self.assertEqual(columns, ["commits", "recent", "last", "churn", "rel", "size", "growth", "revert", "type",
+                                   "words"])
         source = read(os.path.join(support.SCRIPTS, "heatmap.py"))
         self.assertIn('("commits", "recent", "last", "churn", "rel", "size", "growth")', source)
+        self.assertIn('("fixes", "recent", "revert", "type", "words")', source)
         doc = ast.get_docstring(ast.parse(read(os.path.join(support.SCRIPTS, "measure.py"))))
         self.assertEqual(re.findall(r"(?m)^  (\w+)  ", doc), ["lines", "band", "funcs", "longest", "long", "deepest"])
 
@@ -234,7 +237,7 @@ class NothingAboutTheSuite(unittest.TestCase):
                     size = len(f.read().replace(b"\r\n", b"\n"))
                 total += size
                 biggest = max(biggest, (size, name))
-        self.assertLess(total, 400 * 1024)
+        self.assertLess(total, 500 * 1024)
         self.assertLess(biggest[0], 60 * 1024, biggest[1])
 
     def test_a_copy_by_hand_takes_only_the_skill(self):
