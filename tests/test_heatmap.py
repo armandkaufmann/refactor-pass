@@ -304,6 +304,25 @@ class Globs(unittest.TestCase):
             with self.subTest(path=path, pattern=pattern):
                 self.assertEqual(match(path, pattern), want)
 
+    @unittest.expectedFailure
+    def test_a_backslash_on_windows(self):
+        # On Windows a glob's \\ is its /, as fnmatch read --ignore's before: the system is passed in, so this runs
+        # everywhere; --test and --not-test read it the same way.
+        match = support.load("scoping").glob_match
+        for path, pattern, case in (("gen/x.py", "gen\\*.py", False), ("Gen/X.py", "gen\\*.py", False),
+                                    ("tests/fixtures/a.json", "tests\\fixtures\\*", True),
+                                    ("a/b/c.py", "**\\c.py", True)):
+            with self.subTest(path=path, pattern=pattern):
+                self.assertTrue(match(path, pattern, case, windows=True))
+                self.assertFalse(match(path, pattern, case, windows=False))
+
+    @unittest.skipUnless(support.WINDOWS, "a glob's backslash is its / only on Windows")
+    def test_a_backslash_in_ignore_and_test_on_windows(self):
+        self.assertEqual(self.paths("heatmap.py", "--ignore", "**\\gen\\*"), {
+            "top.py", "app/main.py", "app/sub/deep.py", "app/sub/deeper/x.py", "app/readme.md"})
+        result = support.run("heatmap.py", "-C", self.repo.path, "--test", "app\\sub\\*")
+        self.assertIn("Test files: 2 changed in the window", result.out)
+
     def test_a_star_matches_across_folders(self):
         # The lenient reading the help gives: app/*.py takes app/sub/deep.py too.
         self.assertEqual(self.paths("heatmap.py", "app/*.py"), {"app/main.py", "app/sub/deep.py",
