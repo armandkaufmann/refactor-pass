@@ -279,7 +279,11 @@ class LastLineOfDefence(unittest.TestCase):
                 process = subprocess.Popen([sys.executable, os.path.join(support.SCRIPTS, script), "-C", self.repo],
                                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=support.environment())
                 process.stdout.close()
-                err = process.communicate(timeout=60)[1].decode("utf-8", "replace")
+                # Read what it writes to stderr and wait: communicate() would start a thread reading stdout,
+                # closed, which complains on Windows.
+                err = process.stderr.read().decode("utf-8", "replace")
+                process.stderr.close()
+                process.wait(timeout=60)
                 self.assertEqual(err, "")
 
     def test_skill_md_says_what_to_do(self):
