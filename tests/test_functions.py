@@ -180,6 +180,49 @@ class Preprocessor(unittest.TestCase):
         self.assertEqual([f[:3] for f in functions], [("f", 2, 7), ("g", 8, 10)])
 
 
+# Methods whose type arguments hold an annotation, as guava writes them; structs specialized on a function's
+# type, as abseil and nlohmann/json write them, which aren't functions; and Kotlin's and C#'s type arguments.
+ANNOTATED = [("public static <T extends @Nullable Object> T getLast(Iterator<T> iterator) {", "getLast"),
+             ("public Set<Entry<Class<? extends @NonNull B>, B>> entrySet() {", "entrySet"),
+             ("public <K extends @Nullable Object, V> Map<K, @Nullable V> make(K key) {", "make")]
+STRUCTS = ["template <typename T, typename R, typename... P>\nstruct GiveQualifiersToFunImpl<T&&, R(P...)> {\n"
+           "  using type = R(P...);\n};\n",
+           "template <typename D, typename V, typename Ret, typename... Args>\n"
+           "struct MockSingleOverload<D, V, Ret(MockingBitGen&, Args...)> {\n  int x;\n};\n",
+           "template<typename F>\n"
+           "struct is_binary64 : std::integral_constant<bool, has_binary64_format<F>()> {};\n"]
+OTHERS = [("a.kt", "fun <T : @Anno Any> first(list: List<@Anno T>): Map<String, @Anno Int> {\n  return mapOf()\n}\n",
+           "first"),
+          ("a.kt", "fun <T> List<@UnsafeVariance T>.second(): T {\n  return this[1]\n}\n", "second"),
+          ("A.cs", "class A {\n  public Dictionary<string, List<int?>> Get() {\n    return null;\n  }\n}\n", "Get"),
+          ("A.cs", "class A {\n  public IEnumerable<(string Name, int Age)> People() {\n    return null;\n  }\n}\n",
+           "People")]
+
+
+class TypeArguments(unittest.TestCase):
+    """What a type's arguments can hold: an annotation, and spaces, as guava's methods write them; a struct
+    specialized on a function's type isn't a function."""
+
+    def names(self, name, text):
+        return [f[0] for f in support.load("measure").functions(name, text)[1]]
+
+    def test_annotations_in_java_type_arguments(self):
+        for line, name in ANNOTATED:
+            with self.subTest(line=line):
+                self.assertEqual(self.names("A.java", "class A {\n  %s\n    return null;\n  }\n}\n" % line), [name])
+
+    def test_structs_specialized_on_a_functions_type(self):
+        for text in STRUCTS:
+            with self.subTest(text=text.split("\n")[1]):
+                self.assertEqual(self.names("a.hpp", text), [])
+
+    def test_kotlin_and_cs_type_arguments(self):
+        # As v1.0.0 read them too.
+        for name, text, want in OTHERS:
+            with self.subTest(text=text.split("\n")[0]):
+                self.assertEqual(self.names(name, text), [want])
+
+
 class CodeLines(unittest.TestCase):
     """What counts as a code line in a file, in each kind of language."""
 

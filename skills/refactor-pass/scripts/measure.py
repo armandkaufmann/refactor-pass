@@ -182,7 +182,9 @@ def not_a_name(language):
 # A word of a type is read one way only, so a line that isn't a definition fails at once, however many types
 # it holds: each < opens type arguments where they close (ANGLED, which may hold spaces), and only where they
 # don't is it a character of the word, as are > and the rest; one character at a time, never a run, which
-# could be split in more ways than one.
+# could be split in more ways than one. So type arguments holding an annotation and spaces are one word
+# (Java's <T extends @Nullable Object> T last(), Map<K, @Nullable V>); and arguments that close can't be
+# split for a name inside them, as a struct specialized on a function's type would be (struct S<R(P...)> {).
 ANGLED = r"<(?:[^<>;{}=()]|\([^;{}()]*\)|<(?:[^<>;{}=()]|\([^;{}()]*\))*>)*>"
 TYPE_ARGUMENTS = r"(?:" + ANGLED + r")?"
 TYPE_WORD = r"(?:(?:[\w>\[\],.?*&:]|" + ANGLED + r"|<(?!" + ANGLED[1:] + r"))+|\([\w<>\[\],.?\s]+\))"
