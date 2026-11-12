@@ -228,6 +228,59 @@ class Scopes(unittest.TestCase):
         self.assertIn("measure.py: the scope SRC matches no file git tracks in town; did you mean src?", wrong.err)
 
 
+class Globs(unittest.TestCase):
+    """How a glob reads, in a scope, --ignore and --test: * matches across folders, and **/ matches any number
+    of folders, none included."""
+
+    @classmethod
+    def setUpClass(cls):
+        repo = support.Repo("globs")
+        files = ["top.py", "app/main.py", "app/sub/deep.py", "app/sub/deeper/x.py", "gen/made.py", "app/gen/made.py",
+                 "app/readme.md"]
+        repo.commit("2026-01-01", "Start", dict((p, lines(3, "a")) for p in files))
+        repo.commit("2026-01-02", "Grow", dict((p, lines(4, "a")) for p in files))
+        repo.done()
+        cls.repo = repo
+
+    def paths(self, script, *args):
+        result = support.run(script, "-C", self.repo.path, *args)
+        self.assertEqual(result.code, 0, result)
+        if script == "heatmap.py":
+            return set(support.heatmap_rows(result.out))
+        return set(line.split()[-1] for line in result.out.split("\n") if line.rstrip().endswith((".py", ".md")))
+
+    @unittest.expectedFailure
+    def test_a_double_star_matches_no_folder_too(self):
+        for script in ("heatmap.py", "measure.py"):
+            with self.subTest(script=script):
+                self.assertEqual(self.paths(script, "app/**/*.py"), {"app/main.py", "app/sub/deep.py",
+                                                                     "app/sub/deeper/x.py", "app/gen/made.py"})
+                self.assertEqual(self.paths(script, "**/made.py"), {"gen/made.py", "app/gen/made.py"})
+                self.assertEqual(self.paths(script, "app/**/deep.py"), {"app/sub/deep.py"})
+
+    def test_a_star_matches_across_folders(self):
+        # The lenient reading the help gives: app/*.py takes app/sub/deep.py too.
+        self.assertEqual(self.paths("heatmap.py", "app/*.py"), {"app/main.py", "app/sub/deep.py",
+                                                                "app/sub/deeper/x.py", "app/gen/made.py"})
+
+    @unittest.expectedFailure
+    def test_ignore_and_test_globs_read_the_same_way(self):
+        self.assertEqual(self.paths("heatmap.py", "--ignore", "**/gen/*"), {
+            "top.py", "app/main.py", "app/sub/deep.py", "app/sub/deeper/x.py", "app/readme.md"})
+        result = support.run("heatmap.py", "-C", self.repo.path, "--test", "**/top.py")
+        self.assertNotIn("top.py", support.heatmap_rows(result.out))
+        self.assertIn("Test files: 1 changed in the window", result.out)
+
+    @unittest.expectedFailure
+    def test_the_help_says_how_a_glob_reads(self):
+        for script in ("heatmap.py", "measure.py"):
+            with self.subTest(script=script):
+                text = " ".join(support.run(script, "--help").out.split())
+                self.assertIn("In a glob, * matches across folders too, so 'app/*.py' takes app/sub/deep.py; and "
+                              "**/ matches any number of folders, none included, so 'app/**/*.py' takes "
+                              "app/main.py too.", text)
+
+
 class History(unittest.TestCase):
 
     def test_merges_are_skipped(self):
