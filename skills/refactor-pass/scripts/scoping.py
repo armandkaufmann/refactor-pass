@@ -151,6 +151,9 @@ def count(least):
 
 
 _GLOBS = {}
+# A **/ that stands for any number of folders: at a glob's start or after a /; elsewhere, as in app**/x, it's
+# two stars, as fnmatch reads them.
+DOUBLE_STAR = re.compile(r"(?:^|(?<=/))\*\*/")
 
 
 def glob_piece(text):
@@ -207,13 +210,14 @@ def glob_piece(text):
 
 def glob_match(path, pattern, case=True):
     """Whether a glob matches a path: * matches across folders, so 'app/*.py' takes app/sub/deep.py, and **/
-    matches any number of folders, none included, so 'app/**/*.py' takes app/main.py too. With case False,
+    at the start or after a / matches any number of folders, none included, so 'app/**/*.py' takes
+    app/main.py too. With case False,
     as fnmatch.fnmatch reads a glob, in any case on Windows."""
     if not case and os.name == "nt":
         path, pattern = path.lower(), pattern.lower()
     found = _GLOBS.get(pattern)
     if found is None:
-        pieces = [glob_piece(p) for p in pattern.split("**/")]
+        pieces = [glob_piece(p) for p in DOUBLE_STAR.split(pattern)]
         found = _GLOBS[pattern] = re.compile(r"(?s:%s)\Z" % "(?:.*/)?".join(pieces))
     return bool(found.match(path))
 

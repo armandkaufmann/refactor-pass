@@ -294,7 +294,6 @@ class Globs(unittest.TestCase):
                 self.assertEqual(self.paths(script, "**/made.py"), {"gen/made.py", "app/gen/made.py"})
                 self.assertEqual(self.paths(script, "app/**/deep.py"), {"app/sub/deep.py"})
 
-    @unittest.expectedFailure
     def test_a_double_star_is_any_folders_only_at_a_start_or_after_a_slash(self):
         # Elsewhere it's two stars, as fnmatch reads them: app**/main.py needs a / after app.
         match = support.load("scoping").glob_match
