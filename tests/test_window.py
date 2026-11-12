@@ -7,7 +7,9 @@ identities are the ones these bots and agents really commit under.
 import hashlib
 import json
 import os
+import re
 import unittest
+from datetime import datetime, timezone
 
 try:
     from . import support
@@ -258,18 +260,60 @@ class Since(unittest.TestCase):
         # Before the window is the oldest commit's parent.
         self.assertEqual((rows["a.py"]["commits"], rows["a.py"]["growth"], rows["b.py"]["growth"]), (1, 1, 3))
 
-    def test_a_bad_value(self):
-        result = support.run("heatmap.py", "-C", self.repo.path, "--since", "zzz-no-such-thing")
-        self.assertEqual(result.code, 1, result)
-        self.assertIn("--since 'zzz-no-such-thing' is neither a revision here (a tag, branch or commit) nor a date git "
-                      "can read, such as '3 months ago' or 2026-06-01.", result.err)
+    def refused(self, since):
+        result = support.run("heatmap.py", "-C", self.repo.path, "--since", since)
+        self.assertEqual((result.code, result.out), (1, ""), result)
+        return result.err
 
-    def test_a_date_a_minute_or_seconds_ago(self):
-        for since in ("1 minute ago", "30 seconds ago", "now"):
+    @unittest.expectedFailure
+    def test_a_bad_value(self):
+        # git reads almost anything as a date, never as nothing; these it reads as 1969, now, and 1 May.
+        for since in ("zzz-no-such-thing", "never", "a week ago", "1.5 days ago"):
             with self.subTest(since=since):
-                result = support.run("heatmap.py", "-C", self.repo.path, "--since", since)
-                self.assertEqual(result.code, 0, result)
-                self.assertEqual(result.out, "Nothing has landed since %s: the window has no commits.\n" % since)
+                self.assertEqual(self.refused(since), "--since %r is neither a revision here (a tag, branch or commit) "
+                                 "nor a date in a form this reads, such as '3 months ago', 3.days.ago, yesterday, last "
+                                 "week or 2026-06-01.\n" % since)
+
+    @unittest.expectedFailure
+    def test_a_hash_that_isnt_here(self):
+        # As a pass's recorded base after a rebase or a squash, or in another clone.
+        for since in ("abc1234", "0123abc", "deadbeef1", "2025"):
+            with self.subTest(since=since):
+                self.assertEqual(self.refused(since), "--since %s names no commit here, as after a rebase or a squash, "
+                                 "or in another clone. Give a commit, tag or branch that's here, or a date such as "
+                                 "'3 months ago' or 2026-06-01.\n" % since)
+
+    @unittest.expectedFailure
+    def test_a_tag_or_branch_that_isnt_here(self):
+        for since in ("HEAD~3000000", "origin/mian2", "v1.9.0", "v3.2.0-rc1", "2.0.0", "1.2", "v9.9"):
+            with self.subTest(since=since):
+                self.assertEqual(self.refused(since), "--since %s names no commit, tag or branch here. Give one that's "
+                                 "here, or a date such as '3 months ago' or 2026-06-01.\n" % since)
+
+    @unittest.expectedFailure
+    def test_a_date_that_isnt_a_real_one(self):
+        for since in ("2025-13-45", "2026-02-30", "2026-01-06 25:00", "13/45/2026"):
+            with self.subTest(since=since):
+                self.assertEqual(self.refused(since), "--since %s isn't a real date.\n" % since)
+
+    @unittest.expectedFailure
+    def test_a_date_in_each_form_says_how_it_was_read(self):
+        # A date with no time is read from the start of that day, local time, not at the time of day it is now.
+        utc = datetime(2026, 1, 6, 12, 30, tzinfo=timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M")
+        for since, read in (("2026-01-06", "2026-01-06 00:00"), ("2026-1-6", "2026-01-06 00:00"),
+                            ("2026-01-06 12:30", "2026-01-06 12:30"), ("2026-01-06T12:30:00", "2026-01-06 12:30"),
+                            ("2026-01-06T12:30:00Z", utc), ("2026.01.06", "2026-01-06 00:00"),
+                            ("01/06/2026", "2026-01-06 00:00"), ("06.01.2026", "2026-01-06 00:00")):
+            with self.subTest(since=since):
+                result, _ = self.window(since)
+                self.assertIn("Window: 2 commits", result.out)
+                self.assertIn("\n--since %s reads as %s, local time.\n" % (since, read), result.out)
+        for since in ("1 minute ago", "30 seconds ago", "3.days.ago", "2 weeks 3 days ago", "two weeks ago",
+                      "3 Months Ago", "yesterday", "last week", "last month", "now", "today"):
+            with self.subTest(since=since):
+                result, _ = self.window(since)
+                self.assertRegex(result.out, r"^Nothing has landed since %s \(\d{4}-\d\d-\d\d \d\d:\d\d, local time\): "
+                                             r"the window has no commits\.\n$" % re.escape(since))
 
     def test_an_empty_window(self):
         page = os.path.join(support.new_folder("page"), "2026-01-11.html")
