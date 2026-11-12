@@ -61,7 +61,9 @@ follows features through them, or follows files that already change
 together, isn't.
 
 --show FILE prints a file's commits in the window instead, to read the
-reasons it keeps changing.
+reasons it keeps changing: a file git tracks, or one a commit in the window
+changed, as one deleted in it; a name a file had before a rename in the
+window means it as it's named today. Any other is an error, as a scope is.
 
 History is followed across renames, so a file moved or renamed in the window
 keeps the changes it had under its old name. Merge commits are skipped, and so
@@ -860,10 +862,20 @@ def main():
               "too_big_for_pairs": too_big,
               "since": args.since, "tests_aside": None if args.keep_tests else len(tests), "shallow": bool(cut)}
     if args.show:
-        for path in args.show:
-            path = scoping.show_path(args.repo, repo, path, tracked)
+        # A file git tracks, or one changed in the window, as a file deleted in it; or a name a file had before
+        # it was renamed in the window, read as its name today. Any other is a mistake, as a scope's would be.
+        shows, known = [], set(tracked) | set(logs)
+        for given in args.show:
+            path = scoping.show_path(args.repo, repo, given, tracked)
+            if path not in known and today(path) in known:
+                shows.append((today(path), "%s, %s before it was renamed in the window" % (today(path), path)))
+            elif path in known:
+                shows.append((path, path))
+            else:
+                sys.exit(scoping.unknown_file(path, known, repo, "changed in the window"))
+        for path, title in shows:
             print("%s: %d of the %d commits from %s (%s) to %s (%s)" % (
-                path, len(logs.get(path, [])), len(commits), window["oldest"]["sha"], window["oldest"]["date"],
+                title, len(logs.get(path, [])), len(commits), window["oldest"]["sha"], window["oldest"]["date"],
                 window["newest"]["sha"], window["newest"]["date"]))
             for commit in logs.get(path, []):
                 info = describe(commit)

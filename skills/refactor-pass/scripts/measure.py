@@ -1433,6 +1433,9 @@ def main():
     args.scope = scoping.resolve(args.repo, repo, args.scope, tracked)
     patterns = scoping.DEFAULT_IGNORE + args.ignore
     shows = [scoping.show_path(args.repo, repo, p, tracked) for p in args.show]
+    for path in shows:  # A file git tracks, or one in the working tree; any other is a mistake.
+        if path not in tracked and not os.path.isfile(os.path.join(repo, path)):
+            sys.exit(scoping.unknown_file(path, tracked, repo, "in its working tree"))
     in_scope = [p for p in tracked if scoping.in_scope(p, args.scope) and not scoping.ignored(p, patterns)]
     paths, own = scoping.leave_own_out(in_scope, tracked, args.scope)
     tests = set() if args.keep_tests else set(p for p in paths if scoping.is_test(p, args.test, args.not_test))

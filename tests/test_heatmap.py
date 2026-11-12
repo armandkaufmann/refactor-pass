@@ -164,7 +164,6 @@ class Columns(unittest.TestCase):
         self.assertIn("  %s 2026-01-05 Rename\n" % short(self.marks[5]), result.out)
         self.assertNotIn("commits recent", result.out)
 
-    @unittest.expectedFailure
     def test_show_a_file_no_commit_or_tree_knows_is_an_error(self):
         result = support.run("heatmap.py", "-C", self.repo.path, "-n", "8", "--show", "src/big.py", "--show",
                              "src/bgi.py")
@@ -175,6 +174,12 @@ class Columns(unittest.TestCase):
         nothing = support.run("heatmap.py", "-C", self.repo.path, "--show", "zzz/qqq.c")
         self.assertEqual(nothing.err, "heatmap.py: --show zzz/qqq.c names no file git tracks in town, nor one "
                                       "changed in the window.\n")
+
+    def test_show_a_name_a_file_had_before_a_rename(self):
+        result = support.run("heatmap.py", "-C", self.repo.path, "-n", "8", "--show", "src/old_name.py")
+        self.assertEqual(result.code, 0, result)
+        self.assertIn("src/renamed.py, src/old_name.py before it was renamed in the window: 2 of the 8 commits",
+                      result.out)
 
     def test_show_a_file_deleted_in_the_window_or_not_changed_in_it(self):
         result = support.run("heatmap.py", "-C", self.repo.path, "-n", "8", "--show", "src/gone.py", "--show",

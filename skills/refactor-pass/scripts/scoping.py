@@ -8,6 +8,7 @@ counts.
 """
 
 import argparse
+import difflib
 import os
 import posixpath
 import re
@@ -304,6 +305,14 @@ def show_path(start, repo, given, tracked):
     """A file named for --show, as a path from the repo's top."""
     ways = ways_to_read(start, repo, given)
     return next((way for way in ways if way in tracked), ways[-1])
+
+
+def unknown_file(path, known, repo, where):
+    """What to say when --show names a file that's none of known, with the one likeliest meant, if any."""
+    near = difflib.get_close_matches(path, sorted(known), n=1, cutoff=0.8)
+    return "%s: --show %s names no file git tracks in %s, nor one %s%s" % (
+        os.path.basename(sys.argv[0]), path, os.path.basename(repo), where,
+        "; did you mean %s?" % near[0] if near else ".")
 
 
 def resolve(start, repo, scopes, tracked):

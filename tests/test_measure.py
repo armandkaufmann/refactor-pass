@@ -162,7 +162,6 @@ class Sizes(unittest.TestCase):
         # A test is set aside from the percentiles, but --show still lists its functions against them.
         self.assertIn("tests/test_a.py: Python, 300 code lines, band 90th, 1 functions", result.out)
 
-    @unittest.expectedFailure
     def test_show_a_file_neither_tracked_nor_in_the_tree_is_an_error(self):
         result = support.run("measure.py", "-C", self.repo, "--show", "src/a.py", "--show", "src/aa.py")
         self.assertEqual(result.code, 1, result)
