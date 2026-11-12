@@ -59,6 +59,25 @@ class Samples(unittest.TestCase):
             with self.subTest(sample=name):
                 self.assertEqual(found(name, read(os.path.join(FUNCTIONS, name))), want)
 
+    @unittest.expectedFailure
+    def test_a_byte_order_mark(self):
+        # As Visual Studio starts a file by default: it changes nothing, not even the first line.
+        measure = support.load("measure")
+        for name in sorted(self.expected):
+            if not name.startswith("_"):
+                with self.subTest(sample=name):
+                    text = read(os.path.join(FUNCTIONS, name))
+                    self.assertEqual(measure.functions(name, "\ufeff" + text), measure.functions(name, text))
+
+    @unittest.expectedFailure
+    def test_a_byte_order_mark_in_a_repo(self):
+        repo = support.Repo("bom")
+        repo.commit("2026-01-01", "Start", {"Main.cs": b"\xef\xbb\xbfint Main() {\n    return 0;\n}\n"})
+        repo.done()
+        result = support.run("measure.py", "-C", repo.path, "--show", "Main.cs")
+        self.assertIn("Main.cs: C#, 3 code lines, band -, 1 functions", result.out)
+        self.assertRegex(result.out, r"(?m)^\s*1-3\s+3\s+0\s+-\s+Main$")
+
     def test_language_of_each_sample(self):
         measure = support.load("measure")
         names = {".vue": "Vue", ".svelte": "Vue", ".tsx": "TypeScript", ".mjs": "JavaScript", ".jsx": "JavaScript"}
