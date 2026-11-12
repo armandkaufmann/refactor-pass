@@ -89,7 +89,6 @@ class Pairs(unittest.TestCase):
         self.assertEqual(self.commits, 72)
         self.assertIn("Window: 72 commits", self.result.out)
 
-    @unittest.expectedFailure
     def test_groups_in_a_window_short_of_the_first_commit(self):
         # The window's base, whose date the output gives, and groups, which the output lists, together.
         result = support.run("heatmap.py", "-C", self.repo, "-n", "50")

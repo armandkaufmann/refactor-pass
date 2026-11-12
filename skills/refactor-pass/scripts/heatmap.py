@@ -756,10 +756,11 @@ def main():
             sets.append(touched)
             set_dates.append(describe(commit)["date"])
 
-    counts = line_counts(repo, [("HEAD", p) for p in sorted(files)] + ([(base, None)] if base else []) +
-                         [(base, earliest.get(p, p)) for p in sorted(files) if base])
-    sizes = dict((p, counts[("HEAD", p)]) for p in files if ("HEAD", p) in counts)
-    before = dict((p, counts.get((base, earliest.get(p, p)), 0)) for p in files) if base else {}
+    read = line_counts(repo, [("HEAD", p) for p in sorted(files)] + ([(base, None)] if base else []) +
+                       [(base, earliest.get(p, p)) for p in sorted(files) if base])
+    sizes = dict((p, read[("HEAD", p)]) for p in files if ("HEAD", p) in read)
+    before = dict((p, read.get((base, earliest.get(p, p)), 0)) for p in files) if base else {}
+    base_time = read.get((base, None), 0)
     rows = []
     at_head = set(tracked)  # Not symbolic links or submodules.
     for path, stats in files.items():
@@ -948,7 +949,7 @@ def main():
     print("Newer half from %s. Ordered by commits times size." % window["newer_half_from"])
     if base:
         print("Growth is against %s (%s), just before the window." % (
-            base[:9], datetime.fromtimestamp(counts.get((base, None), 0)).strftime("%Y-%m-%d")))
+            base[:9], datetime.fromtimestamp(base_time).strftime("%Y-%m-%d")))
     else:
         print("Growth is from nothing: the window starts at the first commit.")
     if not args.keep_tests:
