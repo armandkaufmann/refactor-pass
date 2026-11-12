@@ -109,11 +109,27 @@ def run(repo, *args):
     return result.stdout.decode("utf-8", errors="replace") if result.returncode == 0 else None
 
 
+_FACTS = {}
+
+
+def facts(start):
+    """What git says of start, the folder -C names, from one git: the top of its repo, its path from there
+    ("" at the top), the repo's git folder and the one its worktrees share, in full, and whether it's a
+    shallow clone; or None outside a repo's working tree."""
+    if start not in _FACTS:
+        lines = (run(start, "rev-parse", "--show-toplevel", "--show-prefix", "--git-dir", "--git-common-dir",
+                     "--is-shallow-repository") or "").split("\n")
+        _FACTS[start] = None if len(lines) < 5 or not lines[0] else {
+            "top": lines[0], "prefix": lines[1], "git_dir": os.path.realpath(os.path.join(start, lines[2])),
+            "common": os.path.realpath(os.path.join(start, lines[3])), "shallow": lines[4] == "true"}
+    return _FACTS[start]
+
+
 def toplevel(start):
     """The top of the repo that start, the folder -C names, is in; or stop with a plain message."""
     if not os.path.isdir(start):
         sys.exit("No such folder: %s" % start)
-    top = (run(start, "rev-parse", "--show-toplevel") or "").strip()
+    top = (facts(start) or {}).get("top")
     if not top:
         if (run(start, "rev-parse", "--is-bare-repository") or "").strip() == "true":
             sys.exit("%s is a bare repo, with no working tree to read; run this in a clone of it." % start)
@@ -315,7 +331,7 @@ def leave_own_out(paths, tracked, scopes):
 
 def prefix(start):
     """The folder -C names, from the repo's top, as git rev-parse --show-prefix gives it ("" at the top)."""
-    return (run(start, "rev-parse", "--show-prefix") or "").strip()
+    return (facts(start) or {}).get("prefix", "").strip()
 
 
 def ways_to_read(start, repo, given):

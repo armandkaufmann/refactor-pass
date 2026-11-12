@@ -213,12 +213,13 @@ def bot_name(text):
 
 
 def window_revs(repo, since, count):
-    """The git log arguments for the window, and the revision just before it if --since named one.
+    """The git log arguments for the window, and the commit just before it if --since named a revision.
     --since takes a revision, or else a date as git log's own --since does."""
     if not since:
         return ["-n", str(count), "HEAD"], None
-    if scoping.git(repo, "rev-parse", "--verify", "--quiet", since + "^{commit}").returncode == 0:
-        return ["%s..HEAD" % since], since
+    check = scoping.git(repo, "rev-parse", "--verify", "--quiet", since + "^{commit}")
+    if check.returncode == 0:
+        return ["%s..HEAD" % since], check.stdout.decode().strip()
     # git reads almost anything as a date, and what it can't read as now: a date that comes out as now is one
     # only if it says so, with a number (1 minute ago) or the word now.
     stamp = git(repo, "rev-parse", "--since=" + since).strip().split("=")[-1]
@@ -285,21 +286,20 @@ def ignore_revs(repo):
     return shas
 
 
-def shallow_edge(repo):
+def shallow_edge(repo, folders):
     """In a shallow clone, the commits where its history stops, whose parents aren't here; else none."""
-    if git(repo, "rev-parse", "--is-shallow-repository").strip() != "true":
+    if not folders[2]:
         return set()
     path = os.path.join(repo, git(repo, "rev-parse", "--git-path", "shallow").strip())
     return set(open(path).read().split()) if os.path.isfile(path) else set()
 
 
-def checklist_places(repo):
+def checklist_places(repo, folders):
     """Where a relative --page path goes, every worktree's .refactor-pass/ folder, and a note when the
     first isn't plain. In a linked worktree, which may be removed once its work is done, a new checklist
     goes in the main checkout, if there is one; the others are read too, since a sandbox may have kept a
     pass out of the main checkout."""
-    git_dir = os.path.realpath(os.path.join(repo, git(repo, "rev-parse", "--git-dir").strip()))
-    common = os.path.realpath(os.path.join(repo, git(repo, "rev-parse", "--git-common-dir").strip()))
+    git_dir, common = folders[:2]
     trees, main = [], None
     for index, entry in enumerate(git(repo, "worktree", "list", "--porcelain").split("\n\n")):
         lines = entry.strip().split("\n")
@@ -458,16 +458,18 @@ def not_landed(repo, shas):
     return lost
 
 
-def line_counts(repo, rev, paths):
-    """Lines in each path at rev, read in one batch; a path missing there, or binary, is left out."""
-    paths = [p for p in paths if "\n" not in p]
-    if not paths:
+def line_counts(repo, wanted):
+    """Lines in each (rev, path) wanted, read in one batch; a path missing at its rev, or binary, is left
+    out. A (rev, None) asks for the commit itself: its committer's time."""
+    wanted = list(dict.fromkeys(w for w in wanted if w[1] is None or "\n" not in w[1]))
+    if not wanted:
         return {}
-    proc = scoping.git(repo, "cat-file", "--batch", input="".join("%s:%s\n" % (rev, p) for p in paths).encode())
+    proc = scoping.git(repo, "cat-file", "--batch", input="".join(
+        ("%s:%s\n" % w) if w[1] is not None else w[0] + "\n" for w in wanted).encode())
     data = proc.stdout
     counts = {}
     pos = 0
-    for path in paths:
+    for path in wanted:
         end = data.index(b"\n", pos)
         header = data[pos:end].split(b" ")
         pos = end + 1
@@ -479,6 +481,9 @@ def line_counts(repo, rev, paths):
         pos += size + 1  # The object, then its newline.
         if header[1] == b"blob" and b"\0" not in blob[:8000]:  # git's own test for binary.
             counts[path] = blob.count(b"\n")
+        elif header[1] == b"commit" and path[1] is None:
+            stamp = re.search(br"(?m)^committer .* (\d+) [+-]\d{4}$", blob.split(b"\n\n", 1)[0])
+            counts[path] = int(stamp.group(1)) if stamp else 0
     return counts
 
 
@@ -613,19 +618,22 @@ def main():
     args = parser.parse_args()
 
     repo = scoping.toplevel(args.repo)
-    home, folders, where = checklist_places(repo)
+    known = scoping.facts(args.repo)
+    places = (known["git_dir"], known["common"], known["shallow"])
+    home, folders, where = checklist_places(repo, places)
     if args.checklists:
         list_checklists(home, folders, repo)
         return
-    if scoping.git(repo, "rev-parse", "--verify", "--quiet", "HEAD").returncode != 0:
+    found = scoping.git(repo, "rev-parse", "--verify", "--quiet", "--short=9", "HEAD")
+    if found.returncode != 0:
         sys.exit("%s has no commits yet, so there's no history to read." % os.path.basename(repo))
-    head = git(repo, "rev-parse", "--short=9", "HEAD").strip()
+    head = found.stdout.decode().strip()
     tracked = scoping.tracked_files(repo, "HEAD")
     args.scope = scoping.resolve(args.repo, repo, args.scope, tracked)
     own = scoping.own_folders(tracked, args.scope)  # Copies of this skill kept in the repo.
     named = asked_commits(repo, args.exclude_commits)
     revs, since_rev = window_revs(repo, args.since, args.commits)
-    edge = shallow_edge(repo)
+    edge = shallow_edge(repo, places)
     everything = read_log(repo, revs)
     cut = [c for c in everything if c[0] in edge]
     everything = [c for c in everything if c[0] not in edge]
@@ -748,11 +756,10 @@ def main():
             sets.append(touched)
             set_dates.append(describe(commit)["date"])
 
-    sizes = line_counts(repo, "HEAD", sorted(files))
-    before = {}
-    if base:
-        then = line_counts(repo, base, sorted(set(earliest.get(p, p) for p in files)))
-        before = dict((p, then.get(earliest.get(p, p), 0)) for p in files)
+    counts = line_counts(repo, [("HEAD", p) for p in sorted(files)] + ([(base, None)] if base else []) +
+                         [(base, earliest.get(p, p)) for p in sorted(files) if base])
+    sizes = dict((p, counts[("HEAD", p)]) for p in files if ("HEAD", p) in counts)
+    before = dict((p, counts.get((base, earliest.get(p, p)), 0)) for p in files) if base else {}
     rows = []
     at_head = set(tracked)  # Not symbolic links or submodules.
     for path, stats in files.items():
@@ -940,9 +947,8 @@ def main():
         window["oldest"]["date"], "; left out: " + reasons if reasons else ""))
     print("Newer half from %s. Ordered by commits times size." % window["newer_half_from"])
     if base:
-        base_sha = git(repo, "rev-parse", "--verify", base + "^{commit}").strip()
         print("Growth is against %s (%s), just before the window." % (
-            base_sha[:9], datetime.fromtimestamp(raw_commit(repo, base_sha)[0]).strftime("%Y-%m-%d")))
+            base[:9], datetime.fromtimestamp(counts.get((base, None), 0)).strftime("%Y-%m-%d")))
     else:
         print("Growth is from nothing: the window starts at the first commit.")
     if not args.keep_tests:
