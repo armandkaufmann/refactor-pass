@@ -192,6 +192,22 @@ class Pages(unittest.TestCase):
             self.assertEqual(f.read(), before)
 
 
+    @unittest.skipIf(support.WINDOWS or (hasattr(os, "geteuid") and os.geteuid() == 0),
+                     "a file can't be made unreadable here")
+    @unittest.expectedFailure
+    def test_a_page_that_cant_be_read(self):
+        repo, _ = build()
+        page = repo.write(FOLDER + "/2026-01-20.html", support.page_with())
+        os.chmod(page, 0)
+        try:
+            result = support.run("heatmap.py", "-C", repo.path, "--page", FOLDER + "/2026-01-20.html")
+        finally:
+            os.chmod(page, 0o644)
+        self.assertEqual(result.code, 1, result)
+        self.assertIn("heatmap.py: couldn't read %s, so it's left as it was: Permission denied.\n" % page, result.err)
+        self.assertNotIn("bug", result.err)
+
+
 class RecordedCommits(unittest.TestCase):
 
     def test_recorded_commits_are_left_out(self):
