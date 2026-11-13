@@ -25,7 +25,7 @@ def good():
                 "files": ["src/checkout.py"], "size": "M", "risk": "Medium", "verify": "`make test`",
                 "commits": ["a1b2c3d", "0123456789abcdef0123456789abcdef01234567"], "outcome": "Done: 40 tests pass.",
                 "fixes": [{"file": "src/checkout.py", "read": 12, "newer": 1, "marked": ["a1b2c3d4e"],
-                           "found": ["b2c3d4e5f"], "dropped": ["c3d4e5f6a"]}]}
+                           "found": ["b2c3d4e5f"], "dropped": []}]}
     carried = dict(refactor, id="R3", status="todo", title="Give each report one definition", commits=[], outcome="",
                    fixes=[dict(refactor["fixes"][0], newer=None)], **{"from": "2026-11-03"})
     return {
@@ -80,6 +80,12 @@ class Good(unittest.TestCase):
         self.assertEqual(result.code, 0, result)
         self.assertEqual(result.out, "refactors: 2 (1 todo, 1 done)\nsmall fixes: 1 (1 todo)\nlater: 1 (1 todo)\n"
                                      "your call: 1 (1 waiting)\nOK\n")
+
+    @unittest.expectedFailure
+    def test_a_note_on_cited_fixes(self):
+        # Why a mark was dropped, or how the item's other files ran: text the page shows after its sentence.
+        fixes = [dict(item(good(), "R2")["fixes"][0], dropped=["c3d4e5f6a"], note="c3d4e5f6a renamed a call.")]
+        self.assertEqual(problems(changed(lambda d: item(d, "R2").update(fixes=fixes))), ([], []))
 
     def test_an_item_all_on_one_line_passes(self):
         # Known behaviour: the skill asks for an item's other fields on the lines after its first, but the
@@ -179,6 +185,11 @@ class Errors(unittest.TestCase):
         self.assertError(changed(lambda d: item(d, "R2").update(commits=["abc", "ABCDEF1", "a1b2c3d", "a1b2 c3d"])),
                          "R2: commits are hashes of 7 to 40 hex digits, one per commit; not 'abc', 'ABCDEF1', "
                          "'a1b2 c3d'.")
+
+    @unittest.expectedFailure
+    def test_a_note_on_cited_fixes_is_text(self):
+        fixes = [dict(item(good(), "R2")["fixes"][0], note=["why"])]
+        self.assertError(changed(lambda d: item(d, "R2").update(fixes=fixes)), "R2.fixes[0]: 'note' should be text.")
 
     def test_bad_cited_fixes(self):
         def entry(**change):
@@ -338,6 +349,14 @@ class Warnings(unittest.TestCase):
         self.assertEqual(errors, [])
         found = [w for w in warnings if all(word in w for word in words)]
         self.assertEqual(len(found), 1, "no single warning with %r in %r" % (words, warnings))
+
+    @unittest.expectedFailure
+    def test_a_dropped_mark_with_no_note(self):
+        # Step 4 asks why a mark was dropped: the entry's note says it.
+        for note in ({}, {"note": " "}):
+            fixes = [dict(item(good(), "R2")["fixes"][0], dropped=["c3d4e5f6a"], **note)]
+            self.assertWarning(changed(lambda d: item(d, "R2").update(fixes=fixes)),
+                               "R2.fixes[0] drops c3d4e5f6a with no note: say why in it.")
 
     def test_a_pass_not_written_yet(self):
         data = dict((k, v) for k, v in good().items())
