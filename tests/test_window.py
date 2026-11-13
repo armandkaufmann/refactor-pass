@@ -445,7 +445,6 @@ class NewestWork(unittest.TestCase):
         self.assertEqual(len(start), 1, "\n".join(out))
         return out[start[0]:out.index("", start[0])]
 
-    @unittest.expectedFailure
     def test_the_newest_work_past_the_top(self):
         self.assertEqual(self.listed(), [
             "Newest work outside the table: files past its top 1 that 2 or more of the window's newest 8 commits "
@@ -454,14 +453,12 @@ class NewestWork(unittest.TestCase):
             "commits    size  growth  file", "      3       5      +5  feature/a.py",
             "      2       4      +4  feature/b.py"])
 
-    @unittest.expectedFailure
     def test_no_more_than_the_newer_half(self):
         self.assertEqual(self.listed("-n", "4")[0], "Newest work outside the table: files past its top 1 that 2 or "
                          "more of the window's newest 2 commits changed (its newer half, from %s); documentation, "
                          "tests, and CI, build and dependency files aside: none." % support.local_day(
                              support.stamp("2026-05-07")))
 
-    @unittest.expectedFailure
     def test_ten_at_most(self):
         repo = support.Repo("newest-many")
         repo.commit("2026-01-01", "Start", {"big.py": lines(100)})
