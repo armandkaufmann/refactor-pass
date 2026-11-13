@@ -668,7 +668,7 @@ CHORE_FILES = re.compile(
     r"SConstruct|configure\.ac|Makefile\.am|build\.xml|build\.gradle(?:\.kts)?|settings\.gradle(?:\.kts)?|"
     r"gradle\.properties|pom\.xml|[\w.-]+\.(?:csproj|fsproj|vbproj|vcxproj|sln)|Directory\.(?:Build|Packages)\.props|"
     r"Dockerfile|docker-compose\.ya?ml|make\.bat|"
-    r"go\.mod|go\.sum|go\.work|pyproject\.toml|setup\.py|setup\.cfg|MANIFEST\.in|requirements[\w.-]*\.(?:txt|in)|"
+    r"go\.mod|go\.sum|go\.work|pyproject\.toml|setup\.cfg|MANIFEST\.in|requirements[\w.-]*\.(?:txt|in)|"
     r"Pipfile|Pipfile\.lock|poetry\.lock|uv\.lock|tox\.ini|noxfile\.py|package\.json|package-lock\.json|"
     r"npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|pnpm-workspace\.yaml|bun\.lockb?|lerna\.json|"
     r"tsconfig[\w.-]*\.json|(?:vite|vitest|rollup|webpack|babel|jest|tsup|esbuild)\.config\.[cm]?[jt]s|"
@@ -676,27 +676,51 @@ CHORE_FILES = re.compile(
     r"mix\.lock|Package\.swift|Package\.resolved|Podfile|Podfile\.lock|packages\.config)$")
 
 
+# Code by its extension: in a docs folder, such a file is taken for code, as cobra's doc/ is a package of the
+# library and tokio's src/doc/ a module, though some are documentation's own scripts (docs/conf.py).
+CODE_EXTENSIONS = set(".c .cc .cpp .cxx .h .hh .hpp .hxx .m .mm .cs .fs .vb .java .kt .kts .scala .groovy .clj .go .rs "
+                      ".swift .py .pyx .rb .php .pl .pm .lua .js .jsx .mjs .cjs .ts .tsx .mts .cts .vue .svelte .dart "
+                      ".ex .exs .erl .hs .ml .elm .jl .r .zig .nim .cr .gd .sh .ps1 .sql".split())
+
+
 def is_doc(path):
-    """Whether a file is documentation: in a docs folder, a changelog, a readme, or Markdown and the like."""
+    """Whether a file is documentation: a changelog, a readme, Markdown and the like, or in a docs folder and not
+    code by its extension."""
     name = path.split("/")[-1]
     _, dot, extension = name.rpartition(".")
     named = DOC_NAMES.match(name) and (not dot or extension.lower() in DOC_EXTENSIONS or extension.isupper())
-    return bool(named or DOC_FILES.match(name) or set(path.lower().split("/")[:-1]) & {"doc", "docs", "documentation"})
+    in_docs = set(path.lower().split("/")[:-1]) & {"doc", "docs", "documentation"}
+    return bool(named or DOC_FILES.match(name) or in_docs and not (dot and "." + extension.lower() in CODE_EXTENSIONS))
 
 
-def is_chore(path):
+def package_tops(paths):
+    """The folders where a setup.py is a package's manifest, of the paths a repo holds: its top, and a folder
+    with a pyproject.toml, a setup.cfg or a package (a folder with an __init__.py) in it."""
+    tops = {""}
+    for path in paths:
+        folder, _, name = path.rpartition("/")
+        if name in ("pyproject.toml", "setup.cfg"):
+            tops.add(folder)
+        elif name == "__init__.py" and folder:
+            tops.add(folder.rpartition("/")[0])
+    return tops
+
+
+def is_chore(path, tops=None):
     """Whether a file is CI, build or dependency config: a CI folder's, a Makefile, a package's manifest, a lock
-    file, a list in a requirements folder (requirements/tests.txt) and the like."""
+    file, a list in a requirements folder (requirements/tests.txt) and the like; a setup.py at a package's top,
+    of tops (package_tops; the repo's top alone where not given), and not one elsewhere (src/setup.py)."""
     parts = path.split("/")
     return bool(set(parts[:-1]) & CI_FOLDERS or CHORE_FILES.match(parts[-1]) or
-                "requirements" in parts[:-1] and re.search(r"\.(?:txt|in)$", parts[-1]))
+                "requirements" in parts[:-1] and re.search(r"\.(?:txt|in)$", parts[-1]) or
+                parts[-1] == "setup.py" and "/".join(parts[:-1]) in (tops if tops is not None else {""}))
 
 
-def not_code(path, is_test):
+def not_code(path, is_test, tops=None):
     """What a file is if it isn't the project's own code, as the fixes trace says it: documentation, tests, or
-    CI, build or dependency files; or None."""
+    CI, build or dependency files (tops as is_chore takes them); or None."""
     return ("documentation" if is_doc(path) else "tests" if is_test(path) else
-            "CI, build or dependency files" if is_chore(path) else None)
+            "CI, build or dependency files" if is_chore(path, tops) else None)
 
 
 def fix_words(text):
@@ -810,11 +834,12 @@ def outside_window(repo, commits, window):
     return dict((n, find_commit(read, n)) for n in names if find_commit(read, n))
 
 
-def fix_trace(commits, window, typed, is_test=None, outside=None):
+def fix_trace(commits, window, typed, is_test=None, outside=None, tops=None):
     """Per commit, how it reads: (tier, what said so, the seconds a reverted commit stood or None). Tier 1 is a
     revert, 2 a fix by its type, 3 by its words; 0 not a fix, with why not, or "" when nothing said either way.
     window is every commit read, newest first, where a reverted commit is looked for, and outside those named
-    from outside it (outside_window); is_test tells a test."""
+    from outside it (outside_window); is_test tells a test, and tops (package_tops) a setup.py that's a
+    manifest."""
     is_test = is_test or (lambda path: scoping.is_test(path, [], []))
     by_sha = dict((c[0], c) for c in window)
     outside = outside or {}
@@ -826,7 +851,7 @@ def fix_trace(commits, window, typed, is_test=None, outside=None):
     def read(commit, depth=0):
         """How a commit reads; but one that changed none of the project's own code isn't a fix of it."""
         found = reads(commit, depth)
-        kinds = [not_code(c[0], is_test) for c in commit[3]]
+        kinds = [not_code(c[0], is_test, tops) for c in commit[3]]
         if found[0] and kinds and all(kinds):
             return 0, "changes only %s" % and_list(sorted(set(kinds))), None
         return found
@@ -1381,8 +1406,9 @@ def main():
     def is_test(path):
         return scoping.is_test(path, args.test, args.not_test)
 
+    tops = package_tops(tracked)
     fixes = {} if args.no_fixes else fix_trace(commits, everything, typed >= 0.5, is_test,
-                                                 outside_window(repo, commits, everything))
+                                                 outside_window(repo, commits, everything), tops)
     fix_lines, fix_facts = fix_summary(commits, fixes, typed) if fixes else ([], None)
     # Newest first, so a rename is met before the older commits that used the
     # old name: from then on the old name means the file's name today. And the
@@ -1504,7 +1530,7 @@ def main():
     # For the page: each file's fixes, at least, where the trace counts them; documentation, tests, and CI,
     # build and dependency files aside, as in the table of fixes by file.
     for row in rows:
-        if fix_facts and not fix_facts["thin"] and not not_code(row["path"], is_test):
+        if fix_facts and not fix_facts["thin"] and not not_code(row["path"], is_test, tops):
             row.update(fixes=files[row["path"]]["fixes"][0], fixes_recent=files[row["path"]]["fixes_recent"])
     by_path = dict((r["path"], r) for r in rows)
     # Tests have their history read like the rest, but stay out of the table and the pairs.
@@ -1703,7 +1729,7 @@ def main():
     if fix_facts and not fix_facts["thin"]:
         # Fixes by file: where the commits that read as fixes landed, each counted once, its strongest way.
         place = dict((r["path"], i) for i, r in enumerate(rows))
-        fixed = sorted((p for p in place if files[p]["fixes"][0] and not not_code(p, is_test)),
+        fixed = sorted((p for p in place if files[p]["fixes"][0] and not not_code(p, is_test, tops)),
                        key=lambda p: (-files[p]["fixes"][0], -files[p]["fixes_recent"], place[p]))
         print("Fixes by file, at least: of each file's commits, those whose messages say they fixed a defect in "
               "it, and how many of those were in the newer half; documentation, tests, and CI, build and "

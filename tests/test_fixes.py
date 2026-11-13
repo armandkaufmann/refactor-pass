@@ -607,7 +607,7 @@ class Words(unittest.TestCase):
         def test(path):
             return path.startswith("tests/")
         chore = "CI, build or dependency files"
-        for path, kind in [("docs/conf.py", "documentation"), ("CHANGES.rst", "documentation"),
+        for path, kind in [("docs/conf.py", None), ("CHANGES.rst", "documentation"),
                            ("tests/test_app.py", "tests"), (".github/workflows/ci.yml", chore), ("go.mod", chore),
                            ("src/Makefile", chore), ("packages/core/package.json", chore), ("pyproject.toml", chore),
                            ("Dockerfile", chore), ("vite.config.ts", chore), ("src/app.py", None),
@@ -618,12 +618,11 @@ class Words(unittest.TestCase):
         not_code, doc, chore = self.heatmap.not_code, "documentation", "CI, build or dependency files"
         for path, kind in [("src/history.ts", None), ("news.py", None), ("lib/authors.rb", None), ("changes.js", None),
                            ("app/controllers/news_controller.rb", None), ("license_checker.go", None),
-                           ("build.rs", None), ("ci.py", None), ("pkg/setup.py", chore), ("HISTORY.md", doc),
+                           ("build.rs", None), ("ci.py", None), ("setup.py", chore), ("HISTORY.md", doc),
                            ("NEWS", doc), ("LICENSE-MIT", doc), ("COPYING.LESSER", doc), ("LICENSE.APACHE2", doc),
                            ("AUTHORS.txt", doc), ("README.zh-CN.md", doc), ("Changes", doc)]:
             self.assertEqual(not_code(path, lambda p: False), kind, path)
 
-    @unittest.expectedFailure
     def test_code_in_a_docs_folder_and_a_setup_py_at_no_packages_top(self):
         # In a docs folder, only what isn't code by its extension is documentation: cobra's doc/ is a package of
         # the library. setup.py is a manifest at a package's top: the repo's, or beside a pyproject.toml, a

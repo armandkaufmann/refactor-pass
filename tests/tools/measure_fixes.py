@@ -168,15 +168,16 @@ def load(heatmap, one, path, labelled):
     def is_test(path):
         return heatmap.scoping.is_test(path, [], [])
 
-    code = dict((c[0][:9], any(not heatmap.not_code(change[0], is_test) for change in c[3])) for c in chosen)
-    return window, typed, chosen, code
+    tops = heatmap.package_tops(heatmap.scoping.tracked_files(path, "HEAD"))
+    code = dict((c[0][:9], any(not heatmap.not_code(change[0], is_test, tops) for change in c[3])) for c in chosen)
+    return window, typed, chosen, code, tops
 
 
 def read_repo(heatmap, loaded):
     """Per labelled short hash, how the heatmap reads it: (tier, what said so, whether it changed the project's
     own code)."""
-    window, typed, chosen, code = loaded
-    trace = heatmap.fix_trace(chosen, window, typed, lambda path: heatmap.scoping.is_test(path, [], []))
+    window, typed, chosen, code, tops = loaded
+    trace = heatmap.fix_trace(chosen, window, typed, lambda path: heatmap.scoping.is_test(path, [], []), tops=tops)
     return dict((c[0][:9], trace[c[0]][:2] + (code[c[0][:9]],)) for c in chosen)
 
 
