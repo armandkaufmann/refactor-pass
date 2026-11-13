@@ -92,7 +92,10 @@ what it said, and go on without it, from `git log` and the code.
   comes with the next change; a bug keeps its standing, as it hurts whoever
   runs the code. Where the window spans years, its counts mix code since
   rewritten with today's: weigh `recent` and `last` above `commits`, and say
-  so.
+  so. Where it says this checkout is behind its upstream, or that its
+  history has gone quiet while another ref's work goes on, a pass here would
+  read stale history: tell the user, and ask whether to update the checkout
+  or check out that ref, before going on.
 - **A hot spot** has many commits and is also big, so the list puts those
   first: it's ordered by commits times size. Many commits on a small file is
   often fine, like a config edited for each feature. A big file nobody
