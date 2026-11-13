@@ -72,39 +72,82 @@ def git(repo, *args, **options):
                           env=env)
 
 
+# What a write to a pipe whose reader has gone fails with: EPIPE, or on Windows before Python 3.14, EINVAL.
+GONE = (errno.EPIPE, errno.EINVAL)
+
+
+class Watched(object):
+    """The script's output, keeping the error a write or a flush to it failed with: so a reader that has gone
+    is told from an error anywhere else, though argparse (from Python 3.12) ignores a failed write of the help,
+    and a write too big for the buffer is lost when it fails, so a flush after it succeeds."""
+
+    def __init__(self, stream):
+        self.stream, self.error = stream, None
+
+    def write(self, text):
+        try:
+            return self.stream.write(text)
+        except OSError as e:
+            self.error = e
+            raise
+
+    def flush(self):
+        try:
+            return self.stream.flush()
+        except OSError as e:
+            self.error = e
+            raise
+
+    def gone(self):
+        """Whether its reader has gone: a write or a flush failed as one does then."""
+        return self.error is not None and self.error.errno in GONE
+
+    def __getattr__(self, name):
+        return getattr(self.stream, name)
+
+
 def guard(main):
     """Run a script's main. An exception nothing foresaw, a bug in the script, ends it with one plain line that
     says so and where, and exit code 3, so it can't pass for a problem with the repo; a reader that stops
-    reading the output, as head does, ends it quietly, as one gone before the script writes a line does."""
+    reading the output, as head does, ends it quietly with exit code 1, as one gone before the script writes a
+    line does; and an error the script reports is reported whether the reader has gone or not."""
+    out = sys.stdout = Watched(sys.stdout)
+    stopped = None
     try:
         try:
             main()
-        except SystemExit:
-            sys.stdout.flush()  # What it wrote before it stopped, as argparse's --help.
-            raise
-        sys.stdout.flush()
+        except SystemExit as e:
+            stopped = e
+        if not out.gone():
+            out.flush()  # What it wrote, as argparse's --help before it stops.
     except Exception as e:
-        # A pipe with no reader: EPIPE, or EINVAL on Windows, where it can mean other things too.
-        if isinstance(e, OSError) and (e.errno == errno.EPIPE or e.errno == errno.EINVAL and not writable(sys.stdout)):
-            os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())  # So the last flush has somewhere to go.
-            sys.exit(1)
-        here = os.path.dirname(os.path.abspath(__file__))
-        frames = traceback.extract_tb(e.__traceback__)
-        where = ([f for f in frames if os.path.dirname(os.path.abspath(f.filename)) == here] or frames)[-1]
-        sys.stderr.write("%s: stopped on a bug in the script itself, not a problem with the repo or the command: "
-                         "%s: %s (%s, line %d, in %s).\n" % (
-                             os.path.basename(sys.argv[0]), type(e).__name__, " ".join(str(e).split()),
-                             os.path.basename(where.filename), where.lineno, where.name))
-        sys.exit(3)
+        if not (isinstance(e, OSError) and e.errno in GONE and out.gone()):  # A bug, not a reader gone.
+            settle(out)
+            here = os.path.dirname(os.path.abspath(__file__))
+            frames = traceback.extract_tb(e.__traceback__)
+            where = ([f for f in frames if os.path.dirname(os.path.abspath(f.filename)) == here] or frames)[-1]
+            sys.stderr.write("%s: stopped on a bug in the script itself, not a problem with the repo or the "
+                             "command: %s: %s (%s, line %d, in %s).\n" % (
+                                 os.path.basename(sys.argv[0]), type(e).__name__, " ".join(str(e).split()),
+                                 os.path.basename(where.filename), where.lineno, where.name))
+            sys.exit(3)
+    settle(out)
+    if stopped is not None and (stopped.code or not out.gone()):
+        raise stopped  # An error it reports, which Python writes, reader or not; or the end it chose.
+    if out.gone():
+        sys.exit(1)
 
 
-def writable(stream):
-    """Whether a stream can still be written: a pipe whose reader has gone can't."""
+def settle(out):
+    """Flush the output; where its reader has gone, point it at the null device, so the last flush, as Python
+    exits, has somewhere to go."""
     try:
-        stream.flush()
-        return True
+        out.flush()
     except OSError:
-        return False
+        if not out.gone():
+            raise
+    if out.gone():
+        os.dup2(os.open(os.devnull, os.O_WRONLY), out.fileno())
 
 
 def run(repo, *args):

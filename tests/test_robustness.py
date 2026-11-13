@@ -261,13 +261,14 @@ def main():
 scoping.guard(main)
 """
 BUG = (r"^-c: stopped on a bug in the script itself, not a problem with the repo or the command: %s "
-       r"\(<string>, line 7, in main\)\.\n$")
+       r"\(\S+, line \d+, in \w+\)\.\n$")
 
 
 # A pipe whose reader has gone, as Windows tells it before Python 3.14: a write fails with EINVAL, not EPIPE, and
-# one too big for the 8 KiB buffer, its lines ending in \r\n, is lost with it, so a flush after it succeeds
-# (3.14's 128 KiB buffer keeps a help whole, so its flush fails as a reader gone). Once the script points its
-# output at devnull, as it does when it sees the reader gone, writes go through, as they would there.
+# one too big for the 8 KiB buffer, its lines ending in \r\n, is lost with it, so a flush after it succeeds.
+# From Python 3.12 argparse ignores a failed write of the help, so on 3.13 the script ends as if all were well,
+# as it did on Linux too; 3.14's 128 KiB buffer keeps a help whole, so a flush of it fails. Once the script
+# points its output at the null device, as it does when it sees the reader gone, writes go through.
 GONE_ON_WINDOWS = """
 import errno, io, os, runpy, sys
 class Gone(io.RawIOBase):
@@ -346,7 +347,6 @@ class LastLineOfDefence(unittest.TestCase):
             with self.subTest(script=script):
                 self.assertEqual(self.gone(script, "--help"), ("", 1))
 
-    @unittest.expectedFailure
     def test_a_reader_gone_as_windows_says_it(self):
         for args in (["heatmap.py", "--help"], ["measure.py", "--help"], ["check_page.py", "--help"],
                      ["heatmap.py", "-C", self.repo]):
@@ -354,19 +354,16 @@ class LastLineOfDefence(unittest.TestCase):
                 result = support.run_python(GONE_ON_WINDOWS, *args)
                 self.assertEqual((result.err, result.code), ("", 1))
 
-    @unittest.expectedFailure
     def test_an_error_is_reported_though_the_reader_is_gone(self):
         # sys.exit with a message: the message, even where flushing what was printed before it fails.
         self.assertEqual(self.gone("-c", GUARDED.format(end="sys.exit('heatmap.py: couldn\\'t write the page.')")),
                          ("heatmap.py: couldn't write the page.\n", 1))
 
-    @unittest.expectedFailure
     def test_a_bug_is_one_line_though_the_reader_is_gone(self):
         err, code = self.gone("-c", GUARDED.format(end="raise RuntimeError('boom')"))
         self.assertEqual(code, 3)
         self.assertRegex(err, BUG % "RuntimeError: boom")
 
-    @unittest.expectedFailure
     def test_a_broken_pipe_of_its_own_is_a_bug(self):
         # Not the output's: a reader of the output that's still there sees the bug.
         result = support.run_python(GUARDED.format(end="raise BrokenPipeError(errno.EPIPE, 'a pipe of its own')"))
