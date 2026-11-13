@@ -547,7 +547,6 @@ class Words(unittest.TestCase):
                            ("AUTHORS.txt", doc), ("README.zh-CN.md", doc), ("Changes", doc)]:
             self.assertEqual(not_code(path, lambda p: False), kind, path)
 
-    @unittest.expectedFailure
     def test_a_program_named_for_documentation(self):
         # Without an extension, a name with more after the documentation word is documentation only where that
         # word is in capitals, as LICENSE-MIT and README_zh: license-checker is a program.

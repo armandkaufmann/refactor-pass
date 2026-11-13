@@ -663,10 +663,11 @@ NOT_FIX_WORDS = {"typo": "typo typos spelling grammar grammatical wording", "for
                  "warning": "warning warnings", "release": "release"}
 NOT_FIX_PHRASES = {"error message": ("error message", "error messages")}
 NOT_FIX_CHINESE = ["注释", "文档"]
-# Documentation by its name: a changelog, a readme, a licence and the like, with no extension, a documentation
-# one or one in capitals (COPYING.LESSER), as against src/history.ts or news.py; or Markdown and the like.
-DOC_NAMES = re.compile(r"(?:changelog|changes|history|news|authors|contributors|readme|license|copying|contributing|"
-                       r"code_of_conduct)(?:[._-][\w.-]*)?$", re.I)
+# Documentation by its name: a changelog, a readme, a licence and the like, with a documentation extension or
+# one in capitals (COPYING.LESSER), as against src/history.ts or news.py, or with none, where anything after
+# the word needs the word in capitals (LICENSE-MIT, as against bin/license-checker); or Markdown and the like.
+DOC_NAMES = re.compile(r"(?P<word>changelog|changes|history|news|authors|contributors|readme|license|copying|"
+                       r"contributing|code_of_conduct)(?P<more>[._-][\w.-]*)?$", re.I)
 DOC_EXTENSIONS = {"md", "markdown", "rst", "txt", "text", "adoc", "asciidoc", "rdoc", "org", "pod"}
 DOC_FILES = re.compile(r".*\.(?:md|markdown|rst|adoc|asciidoc|rdoc)$", re.I)
 
@@ -702,7 +703,9 @@ def is_doc(path):
     code by its extension."""
     name = path.split("/")[-1]
     _, dot, extension = name.rpartition(".")
-    named = DOC_NAMES.match(name) and (not dot or extension.lower() in DOC_EXTENSIONS or extension.isupper())
+    found = DOC_NAMES.match(name)
+    named = found and (extension.lower() in DOC_EXTENSIONS or extension.isupper() if dot else
+                       not found.group("more") or found.group("word").isupper())
     in_docs = set(path.lower().split("/")[:-1]) & {"doc", "docs", "documentation"}
     return bool(named or DOC_FILES.match(name) or in_docs and not (dot and "." + extension.lower() in CODE_EXTENSIONS))
 
