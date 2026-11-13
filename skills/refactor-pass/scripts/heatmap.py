@@ -1030,7 +1030,8 @@ def change_hint(commit, change, is_test):
 def file_diffs(repo, wanted, most=60):
     """One file's changes in several commits, in one git call: for each (hash, its path in that commit, its
     path before, if the commit renamed it), the hunks of that file only, cut at most lines, as a list of lines
-    with a last one saying how many more there are; keyed by (hash, path)."""
+    with a last one saying how many more there are; keyed by (hash, path). Each commit is one that changed the
+    file, so where none of its change is found, the lines say it couldn't be read."""
     names = sorted(set(n for _, path, old in wanted for n in (path, old) if n))
     shas = sorted(set(sha for sha, _, _ in wanted))
     out = git(repo, *(DIFF + shas + ["--"] + names))
@@ -1059,8 +1060,9 @@ def file_diffs(repo, wanted, most=60):
             lines += ["(%s)" % printable(n) for n in notes] + [printable(line) for line in body[start:]]
         while lines and not lines[-1]:
             lines.pop()
-        if not lines:
-            lines = ["(no change to %s in this commit)" % printable(path)]
+        if not lines:  # It's asked only for commits that changed the file: none found is a gap in reading git.
+            lines = ["(its change to %s couldn't be read here: git show %s -- %s shows it)" % (
+                printable(path), sha[:9], printable(path))]
         if len(lines) > most:
             lines = lines[:most - 1] + ["(%d more lines: git show %s -- %s)" % (
                 len(lines) - most + 1, sha[:9], printable(path))]
