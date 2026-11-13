@@ -75,12 +75,17 @@ def git(repo, *args, **options):
 def guard(main):
     """Run a script's main. An exception nothing foresaw, a bug in the script, ends it with one plain line that
     says so and where, and exit code 3, so it can't pass for a problem with the repo; a reader that stops
-    reading the output, as head does, ends it quietly."""
+    reading the output, as head does, ends it quietly, as one gone before the script writes a line does."""
     try:
-        main()
+        try:
+            main()
+        except SystemExit:
+            sys.stdout.flush()  # What it wrote before it stopped, as argparse's --help.
+            raise
         sys.stdout.flush()
     except Exception as e:
-        if isinstance(e, OSError) and e.errno in (errno.EPIPE, errno.EINVAL) and not writable(sys.stdout):
+        # A pipe with no reader: EPIPE, or EINVAL on Windows, where it can mean other things too.
+        if isinstance(e, OSError) and (e.errno == errno.EPIPE or e.errno == errno.EINVAL and not writable(sys.stdout)):
             os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())  # So the last flush has somewhere to go.
             sys.exit(1)
         here = os.path.dirname(os.path.abspath(__file__))

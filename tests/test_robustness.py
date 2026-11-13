@@ -289,7 +289,6 @@ class LastLineOfDefence(unittest.TestCase):
             with self.subTest(script=script):
                 self.assertEqual(self.gone(script, "-C", self.repo)[0], "")
 
-    @unittest.expectedFailure
     def test_a_reader_gone_before_the_help(self):
         for script in ("heatmap.py", "measure.py", "check_page.py"):
             with self.subTest(script=script):
