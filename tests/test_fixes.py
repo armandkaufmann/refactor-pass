@@ -393,65 +393,73 @@ class Reverts(unittest.TestCase):
         assert result.code == 0, result
         cls.marks = marks_of(result.out)
 
-    def test_a_revert_of_a_revert_reads_as_what_it_relands(self):
+    @unittest.expectedFailure
+    def test_a_relanding_reads_as_nothing(self):
         marks = self.marks
-        self.assertEqual(marks['Revert "Revert "Fix the crash in a""'], "fix, words: re-lands fix, crash")
-        self.assertEqual(marks['Revert "Revert "Add a hat to b""'], "not a fix: re-lands a change that wasn't a fix")
+        self.assertEqual(marks['Revert "Revert "Fix the crash in a""'], "not a fix: re-lands a change")
+        self.assertEqual(marks['Revert "Revert "Add a hat to b""'], "not a fix: re-lands a change")
         # The reverts themselves: of another author's commits.
         self.assertEqual(marks['Revert "Fix the crash in a"'], "fix, revert: reverts %s, 4 days after it"
                          % self.repo.short(self.crash))
         self.assertEqual(marks['Revert "Add a hat to b"'], "fix, revert: reverts %s, 4 days after it"
                          % self.repo.short(self.hat))
 
-    def test_a_relanding_whose_revert_is_outside_the_window_reads_by_its_words(self):
-        self.assertEqual(self.marks['Revert "Revert "Fix the crash in c""'], "fix, words: re-lands fix, crash")
-        self.assertEqual(self.marks['Revert "Revert "Add a hat""'], "not a fix: re-lands a change that wasn't a fix")
+    @unittest.expectedFailure
+    def test_a_relanding_whose_revert_is_outside_the_window(self):
+        self.assertEqual(self.marks['Revert "Revert "Fix the crash in c""'], "not a fix: re-lands a change")
+        self.assertEqual(self.marks['Revert "Revert "Add a hat""'], "not a fix: re-lands a change")
 
+    @unittest.expectedFailure
     def test_reverts_as_github_writes_them_and_without_their_line(self):
         marks = self.marks
         self.assertEqual(marks['Revert "Fix the crash in d (#12)" (#14)'],
                          "fix, revert: reverts %s, 4 days after it" % self.repo.short(self.github))
+        # Without the line, only its words outside the quotes are read: the quoted ones are the reverted change's.
         self.assertEqual(marks['Revert "Add coupons (#13)"'], "")
-        self.assertEqual(marks['Revert "Fix the crash in d (#12)"'], "fix, words: fix, crash")
+        self.assertEqual(marks['Revert "Fix the crash in d (#12)"'], "")
         self.assertEqual(marks['Revert "docs: say more"'], "not a fix: reverts a change that isn't to the code")
         self.assertEqual(marks['Revert "Reword the readme"'], "not a fix: reverts a change that isn't to the code")
 
-    def test_each_revert_in_a_chain_is_read_against_the_commit_it_reverts(self):
-        # Reverting a revert re-lands a change; reverting that re-landing is a revert again, of the re-landing:
-        # another author's counts, with the time it stood, and its own author's withdraws it.
+    @unittest.expectedFailure
+    def test_a_relanding_anywhere_in_a_chain_reads_as_nothing(self):
+        # A revert of a revert re-lands a change, whatever it re-lands, as git's Reapply "X" does.
         repo = support.Repo("chain")
         repo.commit("2026-01-01", "Start", {"a.py": lines(3, "a"), "b.py": lines(3, "b")})
         land = repo.commit("2026-01-02", "Speed up the cart", {"a.py": lines(4, "a")}, author=support.BOB)
         other = repo.commit("2026-01-02", "Speed up b", {"b.py": lines(4, "b")})
         repo.done()
-        quoted = "Speed up the cart"
-        marks = {}
-        for day, author, target in (("03", support.ANN, land), ("04", support.BOB, None), ("05", support.ANN, None),
-                                    ("06", support.ANN, None)):
-            quoted = 'Revert "%s"' % quoted
-            marks[day] = repo.commit("2026-01-%s" % day, "%s\n\nThis reverts commit %s.\n" % (
-                quoted, repo.sha(target or marks[str(int(day) - 1).zfill(2)])), {"a.py": lines(int(day), "a")},
-                author=author)
-            repo.done()
-        quoted, target = "Speed up b", other
-        for day, author in (("07", support.BOB), ("08", support.ANN), ("09", support.ANN)):
+        quoted, target, marks = "Speed up the cart", land, {}
+        for day, author in (("03", support.ANN), ("04", support.BOB), ("05", support.ANN), ("06", support.ANN)):
             quoted = 'Revert "%s"' % quoted
             target = marks[day] = repo.commit("2026-01-%s" % day, "%s\n\nThis reverts commit %s.\n" % (
-                quoted, repo.sha(target)), {"b.py": lines(int(day), "b")}, author=author)
+                quoted, repo.sha(target)), {"a.py": lines(int(day), "a")}, author=author)
             repo.done()
+        repo.commit("2026-01-07", 'Reapply "Speed up the cart"\n\nThis reverts commit %s.\n' % repo.sha(marks["03"]),
+                    {"a.py": lines(7, "a")})
+        repo.commit("2026-01-08", 'Revert "Speed up b"\n\nThis reverts commit %s.\n' % repo.sha(other),
+                    {"b.py": lines(8, "b")}, author=support.BOB)
+        repo.done()
         shown = marks_of(support.run("heatmap.py", "-C", repo.path, "--show", "a.py", "--show", "b.py").out)
-        revert = 'Revert "%s"'
-        cart, b = "Speed up the cart", "Speed up b"
+        revert, cart = 'Revert "%s"', "Speed up the cart"
         self.assertEqual(shown[revert % cart], "fix, revert: reverts %s, 1 day after it" % repo.short(land))
-        self.assertEqual(shown[revert % (revert % cart)], "not a fix: re-lands a change that wasn't a fix")
-        self.assertEqual(shown[revert % (revert % (revert % cart))], "fix, revert: reverts %s, 1 day after it"
-                         % repo.short(marks["04"]))
-        self.assertEqual(shown[revert % (revert % (revert % (revert % cart)))],
-                         "not a fix: re-lands a change that wasn't a fix")
-        self.assertEqual(shown[revert % (revert % (revert % b))], "not a fix: its author withdraws %s"
-                         % repo.short(marks["08"]))
+        for subject in (revert % (revert % cart), revert % (revert % (revert % cart)),
+                        revert % (revert % (revert % (revert % cart))), 'Reapply "Speed up the cart"'):
+            self.assertEqual(shown[subject], "not a fix: re-lands a change", subject)
         header = fixes_lines(support.run("heatmap.py", "-C", repo.path).out)[0]
-        self.assertIn("3 reverts (of commits that had stood 1 day, 1 day and 5 days). 1 more revert", header)
+        self.assertTrue(header.endswith("2 reverts (of commits that had stood 1 day and 6 days)."), header)
+
+    @unittest.expectedFailure
+    def test_a_revert_whose_hash_was_rewritten(self):
+        # Rebased and merged, a revert names a hash the repo hasn't: the commit with its quoted subject is it.
+        repo = support.Repo("rewritten")
+        repo.commit("2026-01-01", "Start", {"a.py": lines(3, "a")})
+        mine = repo.commit("2026-01-02", "Speed up a", {"a.py": lines(4, "a")})
+        repo.done()
+        repo.commit("2026-01-03", 'Revert "Speed up a"\n\nThis reverts commit %s.\n' % ("b" * 40),
+                    {"a.py": lines(3, "a")})
+        repo.done()
+        marks = marks_of(support.run("heatmap.py", "-C", repo.path, "--show", "a.py").out)
+        self.assertEqual(marks['Revert "Speed up a"'], "not a fix: its author withdraws %s" % repo.short(mine))
 
     def test_a_revert_of_a_commit_before_the_window(self):
         # Read from the repo, where the window doesn't reach it: who made it and when. Only one the repo hasn't,
@@ -782,6 +790,14 @@ class Words(unittest.TestCase):
         # Words in any script: a run of letters, or a character or two of Chinese or Japanese.
         self.assertEqual([heatmap.words(s) for s in ("Исправлена ошибка при сохранении", "파일 저장 시 오류를 수정했습니다",
                                                      "修复价格计算错误", "wip", "v1.2.3", "Update deps")], [4, 5, 4, 1, 1, 2])
+
+    @unittest.expectedFailure
+    def test_a_revert_without_gits_line_reads_by_its_own_words(self):
+        heatmap = self.heatmap
+        commits = [("%040d" % n, n, subject, [("a.py", None, 1, 0)], "Ann <a@b>", "") for n, subject in enumerate(
+            ['Revert "feat: add error handling page"', 'Reapply "feat: add error handling page"'])]
+        trace = heatmap.fix_trace(commits, commits, True)
+        self.assertEqual([trace[c[0]] for c in commits], [(0, "", None), (0, "re-lands a change", None)])
 
     def test_how_long(self):
         how_long = self.heatmap.how_long
