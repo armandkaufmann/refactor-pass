@@ -1071,3 +1071,101 @@ c01d00bed n 0 log message wording
 31edfd806 f 0 flaky defrag test
 8b5384ae9 n 0 performance
 33c2a2a14 n 3 test adapted to a tmpfs /tmp
+
+@ react tagged
+df6aa4ec7 f 0 Flight lazy element throws after close
+a4168abb8 n 0 lockfile dependency bumps
+542580590 n 0 dependency bumps
+746bd0512 n 0 dev dependency bump
+ae719c2a7 n 0 drops an unused script
+3b75c86b7 n 0 dependency bump
+92557318f n 0 dependency bump
+bc7590eab n 0 dependency bump
+cb7c59ecd f 0 standalone app never opened an editor
+b05c0b75f n 0 feature: Suspense tab entry
+d71b53724 f 3 infinite render loop
+ce01166db n 0 CI on node 24
+e7c3d9d4c f 0 console format consumed wrong args
+47bc5c705 n 0 test only
+64df855d3 f 0 resumed prerender hid content
+16a1d5d78 f 3 compiler panic on non-ASCII
+fd51cb10d f 0 signed zero lost, wrong result
+a6b912fbe f 0 ref validation missed effects
+ab0d927f5 f 0 useId values not unique
+ba39b32a4 f 0 abort discarded rendered shell
+99c106c43 f 3 reverts a change that failed
+efa318955 f 3 false positive ref error
+e8738f0c6 n 0 repo URL migration
+b618bbb44 n 0 flag cleanup
+791476cb6 n 0 flag in test build
+72fdf5cf0 n 0 flag cleanup
+d75b0697a n 0 flag cleanup
+278794d7d f 3 infinite render loop
+8b0da1c6e f 3 wrong code for computed keys
+71f725593 n 0 feature behind a flag
+
+
+@ calcite tagged
+838ec33a0 f 0 decorrelator gives wrong result
+a11dab1c9 f 3 validator crash
+243d5e678 n 0 test disabled
+6e84512ac f 0 must-filter enforcement bypassed
+f8963be2d n 0 site
+6f1cc7a71 f 0 negative sizes
+88041d0c0 f 0 loses StructKind
+07bd13a71 f 0 prepared statement fails
+c989bfb0a f 0 class-name filter not applied
+2311114e3 f 0 char truncated
+1be8d0b37 f 3 DISTINCT ON crash
+dd119578d f 3 wrong results for joins
+cf01ee820 f 3 binds the wrong input
+9e8177360 n 0 site
+fd96e467c f 0 no rows on empty input
+73b05e37c f 3 compiler crash
+a60ad2019 f 0 drops MATCH_CONDITION
+fb7b7fa74 f 0 class init deadlock
+8c3770b22 f 0 casts accepted illegal input
+d54d50ceb n 0 optimization: trims sub-query
+b6f362cab n 0 site lockfile
+334fc71ad f 0 accepted a non-comparable key
+6602a58e7 f 0 wrong cast, lost nullability
+b57785456 f 0 outer join made inner
+6484bed45 n 0 feature: empty row type
+80d2f9c0c f 0 IndexOutOfBoundsException
+6400e14a2 f 0 dialect pushed invalid SQL
+0f8414c0b f 0 type not nullable
+8dcfd1280 n 0 build toolchain
+7478530c5 f 0 ORDER BY failed
+
+
+@ mmengine tagged
+f8a8b1b3b n 0 package rename, lint config
+560280ee1 f 2 get_installed_path broken
+c74ff1817 n 0 lint
+bc3954448 n 0 review refactor
+30efd0cf2 f 3 inverted disable check
+b501f30d1 n 0 test only
+42aa0ebb7 n 0 adapts to new torch
+19f248965 n 0 test only
+151a87ab0 n 2 adapts to new torch
+2a868aaa6 n 0 dependency change
+390ba2fbb n 0 version bump
+698782f92 n 0 CI
+a4475f5ee n 0 CI
+2e0ab7a92 n 2 adapts to new torch
+cc3b74b5e n 2 lint
+85c83ba61 n 0 adapts to new torch_mlu
+acbc5e46d f 2 frozen params kept in groups
+e258c8482 n 0 validates at the end too
+2fe0ecec3 n 0 feature
+4df682ba2 n 0 typos
+b5f2d5860 n 0 docs
+396cac19c n 0 docstring typo
+b51bf6096 f 2 resume repeated trained data
+369f15e27 n 0 docs
+671f3bcdf n 2 adapts to new ColossalAI
+85c0976bc n 0 version bump
+bdd653a8c n 0 CI
+a5db5bedb n 0 CI and a test
+26f22ed28 f 2 resume failed with frozen params
+27ab6a69f n 0 feature

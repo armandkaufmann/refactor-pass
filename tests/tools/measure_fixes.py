@@ -15,6 +15,8 @@ files, as the heatmap tells them apart. --broad counts every commit labelled fix
   revert    commits of the development repos whose subject or body speaks of a revert, from further back
   word      commits of the development repos drawn for one word or exclusion each, to measure it
   aside     the latest commits of three repos kept aside from the rule-writing and labelled after it
+  tagged    every third of the latest 90 commits of three repos that put tags in brackets, labelled after
+            the tags were read: one by component (react), one by ticket (calcite), one by type (mmengine)
 
 Each commit is read as the heatmap reads it: in a window of the repo's latest commits reaching back to the
 oldest labelled one, its type read as a label where at least half the latest 200 people's subjects carry one.
@@ -55,7 +57,7 @@ class Repo(object):
 
 
 # The floors, in percent: per set, precision and recall of fixes of the project's own code. Recorded on
-# 2026-11-12 from that day's numbers, two points under them.
+# 2026-11-12 from that day's numbers, two points under them; the tagged set's on 2026-11-13.
 REPOS = [
     Repo("flask", "https://github.com/pallets/flask", "49943b5a94413a530761350f04e896f76e8d620e", 4000,
          {"dev": (83, 48), "revert": (48, 18), "word": (78, 73)}),
@@ -77,8 +79,14 @@ REPOS = [
          {"aside": (94, 98)}),
     Repo("redis", "https://github.com/redis/redis", "df10f323951f024df7f3a9a86274ef2fab7a7fa1", 1000,
          {"aside": (91, 46)}),
+    Repo("react", "https://github.com/facebook/react", "df6aa4ec76cff5b3adde531c6fe8c36099e0469b", 200,
+         {"tagged": (98, 40)}),
+    Repo("calcite", "https://github.com/apache/calcite", "838ec33a020f9823b95a275fee959f4b6d04dcee", 200,
+         {"tagged": (98, 19)}),
+    Repo("mmengine", "https://github.com/open-mmlab/mmengine", "f8a8b1b3b3051175a8babe5df9c753a981919087", 200,
+         {"tagged": (53, 98)}),
 ]
-SETS = ["dev", "revert", "word", "aside"]
+SETS = ["dev", "revert", "word", "aside", "tagged"]
 TIERS = {1: "revert", 2: "type", 3: "words"}
 
 
