@@ -116,6 +116,7 @@ class Shop(unittest.TestCase):
             "a type typically say so for a third to a half of the fixes, and the rest are among the commits --show "
             "leaves unmarked. 1 more commit closes an issue without saying what kind of change."])
 
+    @unittest.expectedFailure
     def test_fixes_by_file(self):
         # util.py: the negative total and the Chinese fix, older, and the revert, in the newer half (the 9
         # newest). app.py: the crash, older, and the rounding. package.json had the rounding too, but it's a
@@ -124,23 +125,33 @@ class Shop(unittest.TestCase):
         # Neither a floor nor a count of each file's fixes: the commits that say they fixed something, by file.
         self.assertIn("Fixes by file: of each file's commits, those whose messages say they fixed a defect, and how "
                       "many of those were in the newer half; documentation, tests, and CI, build and dependency "
-                      "files aside, and commits of more than 25 files, as in the pairs. A lead, not a count of each "
-                      "file's fixes: a fix elsewhere can touch a file in passing, and many fixes don't say so. --show "
-                      "FILE --messages gives each commit's message, to judge.\n", self.result.out)
+                      "files aside. A lead, not a count of each file's fixes: a fix elsewhere can touch a file in "
+                      "passing, and many fixes don't say so. --show FILE --messages gives each commit's message, to "
+                      "judge.\n", self.result.out)
 
+    @unittest.expectedFailure
     def test_a_commit_of_more_files_than_max_files_adds_to_no_files_number(self):
-        # As it adds to no pair: one fix that renames an import in 29 other files isn't a fix of each.
+        # As it adds to no pair: one fix that renames an import in 29 other files isn't a fix of each. The pairs'
+        # count is of the files in the table, so files since deleted don't make a commit too big.
         repo = support.Repo("sweep")
         files = dict(("src/m%02d.py" % n, lines(3, "m%d" % n)) for n in range(30))
-        repo.commit("2026-01-01", "Start", files)
-        repo.commit("2026-01-02", "Fix the crash on startup", dict((p, lines(4, p)) for p in files))
-        repo.commit("2026-01-03", "Fix the wrong total", {"src/m00.py": lines(5, "m0")})
+        gone = dict(("old/g%02d.py" % n, lines(3, "g%d" % n)) for n in range(10))
+        repo.commit("2026-01-01", "Start", dict(files, **gone))
+        crash = repo.commit("2026-01-02", "Fix the crash on startup", dict((p, lines(4, p)) for p in files))
+        repo.commit("2026-01-03", "Fix the wrong total", dict((p, lines(4, p)) for p in list(files)[:20] + list(gone)))
+        repo.commit("2026-01-04", "Drop the old modules", delete=list(gone))
         repo.done()
-        out = support.run("heatmap.py", "-C", repo.path).out
-        self.assertIn("at least 2 of the 3 commits fixed a defect", out)
-        self.assertEqual(fix_rows(out), {"src/m00.py": (1, 1, 0, 0, 1)})
+        out = support.run("heatmap.py", "-C", repo.path, "--top", "40").out
+        self.assertIn("at least 2 of the 4 commits fixed a defect", out)
+        self.assertEqual((len(fix_rows(out)), fix_rows(out)["src/m00.py"]), (20, (1, 1, 0, 0, 1)))
+        self.assertIn("dependency files aside, and 1 fix commit of more than 25 files, as the pairs leave it out.",
+                      out)
+        shown = marks_of(support.run("heatmap.py", "-C", repo.path, "--show", "src/m00.py").out)
+        self.assertEqual(shown["Fix the crash on startup"], "fix, words: fix, crash; not counted by file: it changed "
+                                                            "30 files")
         wide = support.run("heatmap.py", "-C", repo.path, "--max-files", "40", "--top", "40").out
         self.assertEqual((len(fix_rows(wide)), fix_rows(wide)["src/m00.py"]), (30, (2, 2, 0, 0, 2)))
+        self.assertTrue(crash)
 
     def test_the_table_of_files_is_as_it_was(self):
         rows = support.heatmap_rows(self.result.out)
@@ -792,6 +803,20 @@ class Words(unittest.TestCase):
             ['Revert "feat: add error handling page"', 'Reapply "feat: add error handling page"'])]
         trace = heatmap.fix_trace(commits, commits, True)
         self.assertEqual([trace[c[0]] for c in commits], [(0, "", None), (0, "re-lands a change", None)])
+
+    @unittest.expectedFailure
+    def test_only_a_fix_has_its_files_told_apart(self):
+        # Which files are the project's code matters only for a commit that reads as a fix.
+        heatmap = self.heatmap
+        commits = [("%040d" % n, n, subject, [("f%d.py" % k, None, 1, 0) for k in range(50)], "Ann <a@b>", "")
+                   for n, subject in enumerate(["Add a hat", "Fix the crash"])]
+        told, kept = [], heatmap.not_code
+        heatmap.not_code = lambda path, *args: told.append(path) or kept(path, *args)
+        try:
+            heatmap.fix_trace(commits, commits, False)
+        finally:
+            heatmap.not_code = kept
+        self.assertEqual(len(told), 1)  # The fix's first file is code: that settles it.
 
     def test_how_long(self):
         how_long = self.heatmap.how_long
