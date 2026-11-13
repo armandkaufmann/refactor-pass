@@ -444,7 +444,6 @@ class Diffs(unittest.TestCase):
         binary = support.run("heatmap.py", "-C", repo.path, "--show", "img.png", "--diffs", shas[0])
         self.assertIn("      (Binary files a/img.png and b/img.png differ)\n", binary.out)
 
-    @unittest.expectedFailure
     def test_a_name_git_would_read_as_pathspec_magic(self):
         repo = support.Repo("colon")
         repo.commit("2026-01-01", "Start", {":weird.py": lines(3, "w")})
