@@ -201,6 +201,18 @@ class Errors(unittest.TestCase):
         self.assertError(changed(lambda d: item(d, "R2").update(fixes=entry(newer=True))),
                          "R2.fixes[0]: 'newer' should be a whole number or null.")
 
+    @unittest.expectedFailure
+    def test_cited_fixes_name_each_commit_and_each_file_once(self):
+        def entry(**change):
+            return dict({"file": "src/a.py", "read": 9, "newer": 0, "marked": ["a1b2c3d"], "found": [], "dropped": []},
+                        **change)
+        self.assertError(changed(lambda d: item(d, "R2").update(fixes=[entry(dropped=["a1b2c3d4e"])])),
+                         "R2.fixes[0] lists one commit twice, as a1b2c3d and a1b2c3d4e")
+        self.assertError(changed(lambda d: item(d, "R2").update(fixes=[entry(file=" ")])),
+                         "R2.fixes[0]: 'file' should name the file.")
+        self.assertError(changed(lambda d: item(d, "R2").update(fixes=[entry(), entry(marked=["b2c3d4e"])])),
+                         "R2's fixes have src/a.py twice: an entry per file.")
+
     def test_the_fixes_a_heatmap_counts(self):
         facts = {"fixes": 3, "revert": 1, "type": 0, "words": 2, "typed": 0.0, "labels": False, "closing": 1,
                  "withdrawn": 0, "thin": False}
