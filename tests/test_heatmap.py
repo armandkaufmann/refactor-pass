@@ -465,15 +465,17 @@ def build_settings():
 
 
 def outputs(repo, env=None):
-    """The heatmap, and --show for each of its files, as run with env added to the environment: each as its
-    exit code, its output and its errors."""
+    """The heatmap, --show for each of its files, --diffs, and a window of the revert alone, whose reverted commit
+    is read from the repo, as run with env added to the environment: each as its exit code, its output and its
+    errors."""
     env = env or {}
     shas = support.git(repo.path, "rev-list", "HEAD").split()  # Newest first: the revert, the fix, ...
     found = [support.run("heatmap.py", "-C", repo.path, env=env),
              support.run("heatmap.py", "-C", repo.path, "--show", "a.py", "--show", "b.txt", "--show", "e.py",
                          "--show", "f.py", "--show", "g.py", "--messages", env=env),
              support.run("heatmap.py", "-C", repo.path, "--show", "g.py", "--diffs", ",".join(shas[:2]), env=env),
-             support.run("heatmap.py", "-C", repo.path, "--show", "e.py", "--diffs", shas[4], env=env)]
+             support.run("heatmap.py", "-C", repo.path, "--show", "e.py", "--diffs", shas[4], env=env),
+             support.run("heatmap.py", "-C", repo.path, "-n", "1", "--show", "g.py", env=env)]  # The fix read too.
     return [(r.code, r.out, r.err) for r in found]
 
 

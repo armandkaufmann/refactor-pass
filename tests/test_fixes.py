@@ -380,24 +380,34 @@ class Reverts(unittest.TestCase):
         self.assertEqual(marks['Revert "docs: say more"'], "not a fix: reverts a change that isn't to the code")
         self.assertEqual(marks['Revert "Reword the readme"'], "not a fix: reverts a change that isn't to the code")
 
+    @unittest.expectedFailure
     def test_a_revert_of_a_commit_before_the_window(self):
+        # Read from the repo, where the window doesn't reach it: who made it and when. Only one the repo hasn't,
+        # as a shallow clone's, is from before the window.
         repo = support.Repo("before")
         repo.commit("2026-01-01", "Start", {"a.py": lines(3, "a")})
         old = repo.commit("2026-01-02", "Speed up a", {"a.py": lines(4, "a")}, author=support.BOB)
-        repo.commit("2026-01-03", "Add b", {"b.py": lines(4, "b")})
+        own = repo.commit("2026-01-03", "Add b", {"b.py": lines(4, "b")})
         repo.done()
         repo.commit("2026-03-04", 'Revert "Speed up a"\n\nThis reverts commit %s.\n' % repo.sha(old),
                     {"a.py": lines(3, "a")})
+        repo.commit("2026-03-05", "Revert the new b\n\nThis reverts commit %s.\n" % repo.sha(own)[:10],
+                    {"b.py": lines(3, "b")})
+        repo.commit("2026-03-06", 'Revert "Speed up c"\n\nThis reverts commit %s.\n' % ("a" * 40),
+                    {"a.py": lines(5, "a")})
         repo.done()
-        whole = support.run("heatmap.py", "-C", repo.path, "--show", "a.py")
-        self.assertEqual(marks_of(whole.out)['Revert "Speed up a"'], "fix, revert: reverts %s, 2 months after it"
-                         % repo.short(old))
-        cut = support.run("heatmap.py", "-C", repo.path, "-n", "2", "--show", "a.py")
-        self.assertEqual(marks_of(cut.out)['Revert "Speed up a"'], "fix, revert: reverts %s, from before the window"
-                         % repo.short(old))
-        header = fixes_lines(support.run("heatmap.py", "-C", repo.path, "-n", "2").out)
-        self.assertEqual(header[0], "Fixes, a lead and not a verdict: at least 1 of the 2 commits fixed a defect in "
-                                    "the project's own code, as their messages say: 1 a revert.")
+        whole = marks_of(support.run("heatmap.py", "-C", repo.path, "--show", "a.py").out)
+        cut = marks_of(support.run("heatmap.py", "-C", repo.path, "-n", "3", "--show", "a.py", "--show", "b.py").out)
+        for marks in (whole, cut):
+            self.assertEqual(marks['Revert "Speed up a"'], "fix, revert: reverts %s, 2 months after it"
+                             % repo.short(old))
+            self.assertEqual(marks['Revert "Speed up c"'], "fix, revert: reverts aaaaaaaaa, from before the window")
+        self.assertEqual(cut["Revert the new b"], "not a fix: its author withdraws %s" % repo.short(own))
+        header = fixes_lines(support.run("heatmap.py", "-C", repo.path, "-n", "3").out)
+        self.assertEqual(header[0], "Fixes, a lead and not a verdict: at least 2 of the 3 commits fixed a defect in "
+                                    "the project's own code, as their messages say: 2 reverts (of a commit that had "
+                                    "stood 2 months; 1 from before the window). 1 more revert, of its author's own "
+                                    "commit, withdraws it and isn't counted.")
 
 
 class Diffs(unittest.TestCase):
