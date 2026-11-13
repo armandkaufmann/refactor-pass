@@ -238,10 +238,11 @@ fixed a defect in it, 5 of them in the newer half" ("of its 11 commits in
 the window" where it has fewer), and, where the files differ much, how the
 others ran ("the other four ran 2 to 4 of 12"). It records each file in
 `fixes`: the sample's size (`read`), how many fixes are in the newer half
-(`newer`; null, and not said, where nearly all the sample is in it), and, as
-lists of short hashes, the fixes you count that the script marked (`marked`)
-or didn't (`found`), and those it marked that you don't (`dropped`), saying
-why. Where the header says the messages can't be read, say nothing of fixes.
+(`newer`; null, and not said, where the line under the listing's header says
+so), and, as lists of short hashes, the fixes you count that the script
+marked (`marked`) or didn't (`found`), and those it marked that you don't
+(`dropped`), saying why. Where the header says the messages can't be read,
+say nothing of fixes.
 
 Then apply the restraint. A reviewer asked to find problems will always find
 something, and fixing every finding leaves extra layers and tests for cases
