@@ -555,7 +555,6 @@ class Words(unittest.TestCase):
                            ("requirements/check.py", None)]:
             self.assertEqual(self.heatmap.not_code(path, lambda p: False), kind, path)
 
-    @unittest.expectedFailure
     def test_a_fix_word_in_camelcase_or_by_a_bracket_is_a_word(self):
         # BugFix and HotFix are fix words, not identifiers, as isFixed is one; and a tag's bracket ends a word.
         # [HotFix] is passed over, as Flink's [hotfix] is.

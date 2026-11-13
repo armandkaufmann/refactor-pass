@@ -650,6 +650,7 @@ FIX_WORDS = {"fix": "fix fixes fixed fixing hotfix", "bug": "bug bugs bugfix bug
              "overflow": "overflow overflows underflow underflows", "cve": "cve",
              "prevent": "prevent prevents prevented preventing", "problem": "problem problems",
              "mistake": "mistake mistakes mistaken mistakenly"}
+FIX_FORMS = set(" ".join(FIX_WORDS.values()).split())
 FIX_CHINESE = ["修复", "修正", "漏洞", "问题", "越界", "空指针"]
 NOT_FIX_WORDS = {"typo": "typo typos spelling grammar grammatical wording", "formatting": "formatting reformat",
                  "lint": "lint linting linter clippy eslint codespell mypy pylint flake8",
@@ -730,7 +731,9 @@ def fix_words(text):
     text = re.sub(r"(?i)\bregression[ -](?=tests?\b)", " ", text)
     found = []
     for token in re.findall(r"[A-Za-z][A-Za-z0-9_]*(?:'[a-z]+)?(?:\.[A-Za-z_]\w*)*(?:\(\))?", text):
-        if not ("_" in token or "." in token or "(" in token or re.search(r"[a-z][A-Z]", token)):
+        # A fix word's own form is a word in camelCase too: BugFix, HotFix, not an identifier as isFixed is.
+        if token.lower() in FIX_FORMS or not ("_" in token or "." in token or "(" in token or
+                                              re.search(r"[a-z][A-Z]", token)):
             found.append(token.lower())
     return found, text
 
@@ -803,9 +806,7 @@ def read_fix(subject, typed):
     """A subject read as a fix by its type, where the window's subjects carry types, else by its words: (2 or 3,
     what said so), (0, why not), or (0, "") when it says nothing either way."""
     kind = type_of(subject) if typed else None
-    text = untagged(subject)
-    tag = TAG.match(text)  # A type in brackets is a word, as [BugFix] is bugfix, not an identifier.
-    fixes, nots = says(tag.group("tag").lower() + text[tag.end():] if tag else text)
+    fixes, nots = says(untagged(subject))
     if kind:
         # Another type says it isn't a fix; worth saying only where its words say fix.
         return (2, kind[1]) if kind[0] == "fix" else (0, "labelled %s" % kind[1] if fixes or kind[0] == "chore"
