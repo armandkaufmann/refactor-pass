@@ -454,6 +454,20 @@ class Diffs(unittest.TestCase):
         self.assertIn("      %s... (49800 more characters)\n" % ("y" * 200), messages)
         self.assertLess(len(messages), 2000)
 
+    @unittest.expectedFailure
+    def test_a_quoted_name_with_no_lines_of_change(self):
+        # A name git quotes, past ASCII: a pure rename, and a binary file's change, have only its diff --git line.
+        repo = support.Repo("quoted")
+        repo.commit("2026-01-01", "Start", {"src/\u00e9.py": lines(3), "src/\u00e9.bin": b"\x00\x01\n"})
+        move = repo.commit("2026-01-02", "Move it", rename={"src/\u00e9.py": "src/\u00e8.py"})
+        change = repo.commit("2026-01-03", "Change it", {"src/\u00e9.bin": b"\x00\x02\n"})
+        repo.done()
+        moved = support.run("heatmap.py", "-C", repo.path, "--show", "src/\u00e8.py", "--diffs", repo.short(move)).out
+        self.assertIn('      (rename from "src/\\303\\251.py")\n', moved)
+        changed = support.run("heatmap.py", "-C", repo.path, "--show", "src/\u00e9.bin", "--diffs",
+                              repo.short(change)).out
+        self.assertIn("      (Binary files ", changed)
+
     def test_the_lines_a_file_gives(self):
         # As file_diffs reads git show's output: one call for several commits, each commit's section of the file.
         heatmap = support.load("heatmap")
