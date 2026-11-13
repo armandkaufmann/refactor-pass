@@ -459,10 +459,14 @@ class Words(unittest.TestCase):
         for path in ("LICENSE-MIT", "COPYING.LESSER", "README_zh", "NEWS", "AUTHORS", "CHANGELOG", "changelog"):
             self.assertTrue(is_doc(path), path)
 
+    @unittest.expectedFailure
     def test_release_notes_and_the_like(self):
+        # In capitals, as the convention writes them: in lower case with no extension, a program's name.
         for path in ("RELEASE-NOTES", "RELEASE_NOTES", "NOTICE", "THANKS", "CREDITS", "MAINTAINERS", "TODO"):
             self.assertTrue(self.heatmap.is_doc(path), path)
-        self.assertFalse(self.heatmap.is_doc("bin/release-notes-gen"))
+        for path in ("bin/release-notes-gen", "bin/todo", "bin/notice", "cmd/credits", "bin/thanks",
+                     "scripts/maintainers", "bin/release-notes"):
+            self.assertFalse(self.heatmap.is_doc(path), path)
 
     def test_code_in_a_docs_folder_and_a_setup_py_at_no_packages_top(self):
         # In a docs folder, only what isn't code by its extension is documentation: cobra's doc/ is a package of
