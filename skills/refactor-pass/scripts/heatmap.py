@@ -682,9 +682,10 @@ def is_doc(path):
 
 def is_chore(path):
     """Whether a file is CI, build or dependency config: a CI folder's, a Makefile, a package's manifest, a lock
-    file and the like."""
+    file, a list in a requirements folder (requirements/tests.txt) and the like."""
     parts = path.split("/")
-    return bool(set(parts[:-1]) & CI_FOLDERS or CHORE_FILES.match(parts[-1]))
+    return bool(set(parts[:-1]) & CI_FOLDERS or CHORE_FILES.match(parts[-1]) or
+                "requirements" in parts[:-1] and re.search(r"\.(?:txt|in)$", parts[-1]))
 
 
 def not_code(path, is_test):

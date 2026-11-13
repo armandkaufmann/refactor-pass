@@ -574,7 +574,6 @@ class Words(unittest.TestCase):
                            ("AUTHORS.txt", doc), ("README.zh-CN.md", doc), ("Changes", doc)]:
             self.assertEqual(not_code(path, lambda p: False), kind, path)
 
-    @unittest.expectedFailure
     def test_a_requirements_folder_names_dependencies(self):
         # As open-mmlab keeps them: requirements/runtime.txt, requirements/tests.txt.
         chore = "CI, build or dependency files"
