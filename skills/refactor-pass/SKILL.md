@@ -102,6 +102,9 @@ what it said, and go on without it, from `git log` and the code.
   latest. Read both against the window's dates: eight `recent` commits, all
   on the day the newer half starts, are a burst that has cooled. A file
   that shrank may already have been dealt with.
+- **Newest work.** Under the table, the files the window's newest commits
+  kept changing that the table leaves out, as a wide window leaves out a
+  new feature's small files. Step 6 accounts for every area on it.
 - **`rel`** is lines changed over the file's size. Relative churn predicts
   defects far better than absolute churn. Well above 1 means the file was
   rewritten or grew in the window. Read it with **growth**: a file that only
@@ -325,7 +328,10 @@ nothing else, and says so. You write the `pass` block below it, whose
   its other fields go on the lines after, as the comment above the blocks
   shows. Not the whole item on one line, nor a JSON pretty-printer's
   layout: step 7's status updates edit that first line;
-- `left_alone`: each with `what` and `why`;
+- `left_alone`: each with `what` and `why`. Every area on the heatmap's
+  newest-work list is in an item or here, its `why` saying whether you read
+  the code: "small and new, under the floors, not read" is a `why`, and
+  "fine" for code you didn't read isn't;
 - `checks`: the project's checks, from its instructions, or what you'll
   check by hand if it has none;
 - `earlier`: after an earlier pass, `checklist`, its path as
