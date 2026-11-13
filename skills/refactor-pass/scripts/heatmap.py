@@ -627,6 +627,7 @@ CHORE_TYPES = {"docs", "doc", "chore", "ci", "build", "style", "test", "tests", 
 REVERT_LINE = re.compile(r"(?m)^\s*This reverts commit ([0-9a-fA-F]{7,64})")
 REVERT_WORD = re.compile(r"\brevert(?:s|ed|ing)?\b", re.I)
 QUOTED = re.compile(r'\brevert(?:s|ed)?\s*"(.*)"', re.I)
+REVERT_OF = re.compile(r"(?:[A-Za-z]+(?:\([^)]*\))?!?:\s*)?revert", re.I)  # A subject that says it's a revert.
 # Issue references, whose words name the tracker, not the change: "Fixed #12 --" closes an issue of any kind.
 # An issue is a number (#12, gh-12, org/repo#12), as #include and #ifdef aren't.
 CLOSER = re.compile(r"\b(?:fix(?:e[sd])?|close[sd]?|resolve[sd]?)\s*:?\s*(?:#|gh-|[\w.-]+/[\w.-]+#)\d+\b", re.I)
@@ -828,28 +829,49 @@ def fix_trace(commits, window, typed, is_test=None, outside=None):
             return 0, "changes only %s" % and_list(sorted(set(kinds))), None
         return found
 
+    def chain(commit, depth=0):
+        """The change at the foot of a commit's chain of reverts, its subject, and whether the commit undoes it:
+        a revert undoes the change its commit landed, and a revert of a revert lands it again. A commit outside
+        what's read is told by the reverts its subject quotes, Revert "Revert "X"" landing X again."""
+        target = reverted(commit)
+        if not target:
+            return commit, commit[2], False
+        before = find(target)
+        if before is not None and depth < 20:
+            change, said, undoes = chain(before, depth + 1)
+            return change, said, not undoes
+        said, wrapped = unwrap(commit[2])
+        return None, said, wrapped % 2 == 0
+
+    def unwrap(subject):
+        """What a revert's subject quotes, without the reverts around it, and how many there were: Revert
+        "Revert "X"" quotes X, in one; or "" where it quotes nothing."""
+        quoted = QUOTED.search(subject)
+        said, wrapped = quoted.group(1) if quoted else "", 0
+        while REVERT_OF.match(said) and QUOTED.search(said):
+            said, wrapped = QUOTED.search(said).group(1), wrapped + 1
+        return said, wrapped
+
     def reads(commit, depth):
         sha, stamp, subject, changes, author, body = commit
         target = reverted(commit)
         if not target:
             return read_fix(subject, typed) + (None,)
         before = find(target)
-        quoted = QUOTED.search(subject)
-        inner = quoted.group(1) if quoted else (before[2] if before else "")
-        # A revert of a revert re-lands a change, and reads as that change did.
-        if (before and reverted(before)) or re.match(r"(?:[A-Za-z]+(?:\([^)]*\))?!?:\s*)?revert", inner, re.I):
-            original = find(reverted(before)) if before and reverted(before) else None
-            if original and depth < 20:
-                tier, what, _ = read(original, depth + 1)
+        change, said, undoes = chain(commit)
+        if not undoes:  # It lands again a change a revert undid, and reads as that change did.
+            if change is not None and depth < 20:
+                tier, what, _ = read(change, depth + 1)
             else:
-                while QUOTED.search(inner):
-                    inner = QUOTED.search(inner).group(1)
-                tier, what = read_fix(inner, typed)
+                tier, what = read_fix(said, typed)
             return (tier, "re-lands %s" % what, None) if tier else (0, "re-lands a change that wasn't a fix", None)
+        # It reverts the commit that landed the change, first or again: read against that commit, and against
+        # the change as its subject quotes it, or as the change's own says.
         if before and same_person(before[4], author):
             return 0, "its author withdraws %s" % before[0][:9], None
-        typed_inner = CONVENTIONAL.match(inner)
-        if says(inner)[1] or (typed_inner and (typed_inner.group("type") or "").lower() in CHORE_TYPES):
+        said = unwrap(subject)[0] or said
+        typed_said = CONVENTIONAL.match(said)
+        if says(said)[1] or (typed_said and (typed_said.group("type") or "").lower() in CHORE_TYPES):
             return 0, "reverts a change that isn't to the code", None
         return 1, "reverts %s" % target[:9], (stamp - before[1]) if before else None
 

@@ -399,7 +399,6 @@ class Reverts(unittest.TestCase):
         self.assertEqual(marks['Revert "docs: say more"'], "not a fix: reverts a change that isn't to the code")
         self.assertEqual(marks['Revert "Reword the readme"'], "not a fix: reverts a change that isn't to the code")
 
-    @unittest.expectedFailure
     def test_each_revert_in_a_chain_is_read_against_the_commit_it_reverts(self):
         # Reverting a revert re-lands a change; reverting that re-landing is a revert again, of the re-landing:
         # another author's counts, with the time it stood, and its own author's withdraws it.
@@ -417,12 +416,11 @@ class Reverts(unittest.TestCase):
                 quoted, repo.sha(target or marks[str(int(day) - 1).zfill(2)])), {"a.py": lines(int(day), "a")},
                 author=author)
             repo.done()
-        quoted = "Speed up b"
+        quoted, target = "Speed up b", other
         for day, author in (("07", support.BOB), ("08", support.ANN), ("09", support.ANN)):
             quoted = 'Revert "%s"' % quoted
-            marks[day] = repo.commit("2026-01-%s" % day, "%s\n\nThis reverts commit %s.\n" % (
-                quoted, repo.sha(marks.get(str(int(day) - 1).zfill(2)) or other)), {"b.py": lines(int(day), "b")},
-                author=author)
+            target = marks[day] = repo.commit("2026-01-%s" % day, "%s\n\nThis reverts commit %s.\n" % (
+                quoted, repo.sha(target)), {"b.py": lines(int(day), "b")}, author=author)
             repo.done()
         shown = marks_of(support.run("heatmap.py", "-C", repo.path, "--show", "a.py", "--show", "b.py").out)
         revert = 'Revert "%s"'
