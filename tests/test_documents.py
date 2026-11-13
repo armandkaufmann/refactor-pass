@@ -213,17 +213,33 @@ class NothingAboutTheSuite(unittest.TestCase):
     """What agents load never mentions this suite, and the suite holds nothing an agent would take for
     instructions."""
 
-    def test_documents_agents_load(self):
+    def names(self):
         names = {"unittest", "test suite", "REFACTOR_PASS_SCRIPTS", "tests/", "the skill's tests",
                  "this skill's tests", "the suite", "install.py", ".install.json"}
         for folder, dirs, files in os.walk(support.HERE):
             dirs[:] = [d for d in dirs if d != "__pycache__"]
             names.update(n for n in files if n.endswith(".py") and n != "__init__.py")
+        return names
+
+    def test_documents_agents_load(self):
+        names = self.names()
         for path in loaded_by_agents():
             text = read(path)
             for name in sorted(names):
                 with self.subTest(document=os.path.basename(path), name=name):
                     self.assertNotIn(name, text)
+
+    @unittest.expectedFailure
+    def test_the_scripts(self):
+        # An installed copy has the skill alone: a script names nothing of the suite, in a comment either. It
+        # can name the record an installed copy holds, which scoping.py looks for.
+        names = self.names() - {".install.json"}
+        for name in sorted(os.listdir(support.SCRIPTS)):
+            if name.endswith(".py"):
+                text = read(os.path.join(support.SCRIPTS, name))
+                for found in sorted(n for n in names if n in text):
+                    with self.subTest(script=name, name=found):
+                        self.fail("%s names %s" % (name, found))
 
     def test_no_instructions_for_agents_in_the_suite(self):
         for folder, dirs, files in os.walk(support.HERE):
