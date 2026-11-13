@@ -858,8 +858,9 @@ def fix_trace(commits, window, typed, is_test=None, outside=None, tops=None):
     def read(commit):
         """How a commit reads; but one that changed none of the project's own code isn't a fix of it."""
         found = reads(commit)
-        if found[0] and commit[3] and all(not_code(c[0], is_test, tops) for c in commit[3]):
-            return 0, "changes only %s" % and_list(sorted(set(not_code(c[0], is_test, tops) for c in commit[3]))), None
+        if found[0] and all(not_code(c[0], is_test, tops) for c in commit[3]):  # As one that changed no file.
+            kinds = sorted(set(not_code(c[0], is_test, tops) for c in commit[3]))
+            return 0, "changes only %s" % and_list(kinds) if kinds else "changes no file", None
         return found
 
     def reads(commit):
