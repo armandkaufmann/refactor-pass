@@ -153,7 +153,6 @@ class Reverts(unittest.TestCase):
 
 class Outside(unittest.TestCase):
 
-    @unittest.expectedFailure
     def test_a_reverted_commit_outside_the_window_is_read_without_its_changes(self):
         # Its author, time, subject and body are what the trace reads of it: not its numstat, nor renames.
         heatmap = support.load("heatmap")

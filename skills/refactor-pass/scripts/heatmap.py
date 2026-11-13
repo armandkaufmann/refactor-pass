@@ -226,11 +226,13 @@ COMMIT = re.compile(r"[0-9a-f]{40}(?:[0-9a-f]{24})?\Z")  # A full hash, of SHA-1
 NUMSTAT = re.compile(r"(\d+|-)\t(\d+|-)\t")
 
 
-def read_log(repo, revs, merges=False):
+def read_log(repo, revs, merges=False, changes=True):
     """The commits in revs, newest first: (sha, time, subject, [(path, old_path, added, removed)], author, body).
     old_path is the name before a rename, else None; added and removed are None for a binary file. Read by
-    position, so a message or an author can hold any character. Merges are left out unless merges is true."""
-    tokens = git(repo, *([a for a in LOG if not merges or a != "--no-merges"] + revs)).split("\0")
+    position, so a message or an author can hold any character. Merges are left out unless merges is true, and
+    the changes are read only where changes is."""
+    tokens = git(repo, *([a for a in LOG if (not merges or a != "--no-merges") and
+                          (changes or a not in ("--numstat", "-M", "-l1000", "--root"))] + revs)).split("\0")
     commits = []
     i = 0
     while i < len(tokens):
@@ -828,10 +830,11 @@ def find_commit(commits, prefix):
 
 def outside_window(repo, commits, window):
     """The commits the reverts in commits name that the window doesn't hold, read from the repo in one git
-    call, as read_log reads them, merges too; by the name the revert gives. One the repo hasn't, as a shallow
-    clone's, is left out."""
+    call, as read_log reads them but without their changes, merges too; by the name the revert gives. One the
+    repo hasn't, as a shallow clone's, is left out."""
     names = sorted(set(n for c in commits for n in reverted(c) if not find_commit(window, n)))
-    read = read_log(repo, ["--no-walk=unsorted", "--ignore-missing"] + names, merges=True) if names else []
+    read = read_log(repo, ["--no-walk=unsorted", "--ignore-missing"] + names, merges=True, changes=False) \
+        if names else []
     return dict((n, find_commit(read, n)) for n in names if find_commit(read, n))
 
 
