@@ -273,18 +273,27 @@ class LastLineOfDefence(unittest.TestCase):
                                              r"repo or the command: RuntimeError: boom \(%s, line \d+, in \w+\)\.\n$"
                                  % (re.escape(script), re.escape(script)))
 
+    def gone(self, script, *args):
+        """What a script writes to stderr, and its exit code, when the reader of its output is gone."""
+        process = subprocess.Popen([sys.executable, os.path.join(support.SCRIPTS, script)] + list(args),
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=support.environment())
+        process.stdout.close()
+        # Read what it writes to stderr and wait: communicate() would start a thread reading stdout, closed,
+        # which complains on Windows.
+        err = process.stderr.read().decode("utf-8", "replace")
+        process.stderr.close()
+        return err, process.wait(timeout=60)
+
     def test_a_reader_that_stops_reading(self):
         for script in ("heatmap.py", "measure.py"):
             with self.subTest(script=script):
-                process = subprocess.Popen([sys.executable, os.path.join(support.SCRIPTS, script), "-C", self.repo],
-                                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=support.environment())
-                process.stdout.close()
-                # Read what it writes to stderr and wait: communicate() would start a thread reading stdout,
-                # closed, which complains on Windows.
-                err = process.stderr.read().decode("utf-8", "replace")
-                process.stderr.close()
-                process.wait(timeout=60)
-                self.assertEqual(err, "")
+                self.assertEqual(self.gone(script, "-C", self.repo)[0], "")
+
+    @unittest.expectedFailure
+    def test_a_reader_gone_before_the_help(self):
+        for script in ("heatmap.py", "measure.py", "check_page.py"):
+            with self.subTest(script=script):
+                self.assertEqual(self.gone(script, "--help"), ("", 1))
 
     def test_skill_md_says_what_to_do(self):
         with open(os.path.join(os.path.dirname(support.SCRIPTS), "SKILL.md"), encoding="utf-8") as f:
