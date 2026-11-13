@@ -260,6 +260,12 @@ def main():
     {end}
 scoping.guard(main)
 """
+# A script run as from the command line.
+SCRIPT = """
+import os, runpy, sys
+sys.argv = [os.path.join(os.environ["REFACTOR_PASS_SCRIPTS"], sys.argv[1])] + sys.argv[2:]
+runpy.run_path(sys.argv[0], run_name="__main__")
+"""
 BUG = (r"^-c: stopped on a bug in the script itself, not a problem with the repo or the command: %s "
        r"\(\S+, line \d+, in \w+\)\.\n$")
 
@@ -303,6 +309,7 @@ class LastLineOfDefence(unittest.TestCase):
     def setUpClass(cls):
         repo = support.Repo("defence")
         repo.commit("2026-01-01", "Start", {"a.py": "def f():\n    return 1\n"})
+        repo.commit("2026-01-02", "Return two", {"a.py": "def f():\n    return 2\n"})
         repo.done()
         cls.repo = repo.path
 
@@ -379,6 +386,46 @@ class LastLineOfDefence(unittest.TestCase):
         result = support.run_python(GUARDED.format(end="raise BrokenPipeError(errno.EPIPE, 'a pipe of its own')"))
         self.assertEqual((result.code, result.out), (3, "a line\n"))
         self.assertRegex(result.err, BUG % r"BrokenPipeError: \[Errno %d\] a pipe of its own" % errno.EPIPE)
+
+    def closed(self, fd, code, *args):
+        """Python code run with its output (fd 1) or its errors (fd 2) closed as it starts, as by >&- or 2>&-,
+        which leaves Python's stream for it None: what it writes to the other, and its exit code. Windows can't
+        start a process so, so there the code closes it and sets the stream None first."""
+        options = {}
+        if os.name == "nt":
+            code = "import os, sys\nos.close(%d)\nsys.%s = None\n%s" % (fd, ("stdout", "stderr")[fd - 1], code)
+        else:
+            options["preexec_fn"] = lambda: os.close(fd)
+        result = subprocess.run([sys.executable, "-c", code] + list(args), capture_output=True, timeout=60,
+                                cwd=support.temp_root(), env=support.environment(REFACTOR_PASS_SCRIPTS=support.SCRIPTS),
+                                **options)
+        return support._text(result.stderr if fd == 1 else result.stdout), result.returncode
+
+    @unittest.expectedFailure
+    def test_output_closed(self):
+        # No output to write to: no traceback, and what the script says on stderr, and how it ends, as with one.
+        self.assertEqual(self.closed(1, SCRIPT, "heatmap.py", "-C", self.repo), ("", 0))
+        missing = os.path.join(support.new_folder("closed"), "missing.html")
+        result = support.run("check_page.py", missing)
+        self.assertEqual((result.code, result.out), (1, ""))
+        self.assertEqual(self.closed(1, SCRIPT, "check_page.py", missing), (result.err, 1))
+        self.assertEqual(self.closed(1, GUARDED.format(end="sys.exit('heatmap.py: no page.')")),
+                         ("heatmap.py: no page.\n", 1))
+        err, code = self.closed(1, GUARDED.format(end="raise RuntimeError('boom')"))
+        self.assertEqual(code, 3)
+        self.assertRegex(err, BUG % "RuntimeError: boom")
+
+    @unittest.expectedFailure
+    def test_errors_closed(self):
+        # Nowhere to say what went wrong: the output is what it is with somewhere, with none of the errors in it.
+        args = ["-C", self.repo, "-n", "1", "--exclude-commits", "HEAD~1"]  # Outside the window: it warns.
+        result = support.run("heatmap.py", *args)
+        self.assertEqual(result.code, 0, result)
+        self.assertIn("isn't in the window", result.err)
+        self.assertEqual(self.closed(2, SCRIPT, "heatmap.py", *args), (result.out, 0))
+        missing = os.path.join(support.new_folder("closed"), "missing.html")
+        self.assertEqual(self.closed(2, SCRIPT, "check_page.py", missing), ("", 1))
+        self.assertEqual(self.closed(2, GUARDED.format(end="raise RuntimeError('boom')")), ("a line\n", 3))
 
     def test_skill_md_says_what_to_do(self):
         with open(os.path.join(os.path.dirname(support.SCRIPTS), "SKILL.md"), encoding="utf-8") as f:
