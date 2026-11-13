@@ -570,6 +570,19 @@ class Words(unittest.TestCase):
                            ("requirements/check.py", None)]:
             self.assertEqual(self.heatmap.not_code(path, lambda p: False), kind, path)
 
+    @unittest.expectedFailure
+    def test_a_fix_type_before_an_issue_number(self):
+        # fix: #482 says fix by its type's word; Fix #482:, Fixes #12, Fixes: #12 and Django's Fixed #12 -- close an
+        # issue and say nothing else.
+        heatmap = self.heatmap
+        self.assertEqual([heatmap.read_fix(s, False) for s in (
+            "fix: #482 handle empty payload", "fix: #846 (#847)", "Fix #482: handle empty payload", "Fixes #12",
+            "Fixes: #12", "Fixed #12 -- Added X")], [(3, "fix"), (3, "fix"), (0, ""), (0, ""), (0, ""), (0, "")])
+        commits = [("%040d" % n, n, s, [("a.py", None, 1, 0)], "Ann <a@b>", "") for n, s in enumerate(
+            ["fix: #482 handle empty payload", "Fixes: #12 in the cart", "Fix #13: handle the rest of it"])]
+        lines, _ = heatmap.fix_summary(commits, heatmap.fix_trace(commits, commits, False), 0.0)
+        self.assertTrue(lines[1].endswith(" 2 more commits close an issue without saying what kind of change."), lines)
+
     def test_a_fix_word_in_camelcase_or_by_a_bracket_is_a_word(self):
         # BugFix and HotFix are fix words, not identifiers, as isFixed is one; and a tag's bracket ends a word.
         # [HotFix] is passed over, as Flink's [hotfix] is.
