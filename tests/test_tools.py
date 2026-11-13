@@ -21,7 +21,6 @@ class Pinned(object):
 
 class Clone(unittest.TestCase):
 
-    @unittest.expectedFailure
     def test_a_clone_too_shallow_is_fetched_again(self):
         # A depth-1 clone left in the cache by one tool isn't enough for another that wants more history.
         repo = support.Repo("pinned")
