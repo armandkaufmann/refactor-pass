@@ -665,6 +665,19 @@ class Words(unittest.TestCase):
         facts = heatmap.fix_summary(commits, heatmap.fix_trace(commits, commits, False), 0.0)[1]
         self.assertEqual((facts["fixes"], facts["closing"]), (1, 1))
 
+    @unittest.expectedFailure
+    def test_an_issue_is_a_number(self):
+        # #include, #ifdef and #define are code, not issues: an issue is #12, gh-12 or org/repo#12.
+        heatmap = self.heatmap
+        for subject in ["Fix #include order that broke the build on Windows", "Fix #ifdef guard around the socket code",
+                        "Fixes #define of MAX_PATH on old compilers"]:
+            self.assertEqual(heatmap.says(subject)[0], ["fix"], subject)
+        commits = [("%040d" % n, n, subject, [("a.c", None, 1, 0)], "Ann <a@b>", body) for n, (subject, body) in
+                   enumerate([("Fix #include order that broke the build", ""), ("Add hats", "Fixes #define of MAX"),
+                              ("Fixed #12 -- Added coupons", ""), ("Add a hat", "Closes org/shop#7")])]
+        facts = heatmap.fix_summary(commits, heatmap.fix_trace(commits, commits, False), 0.0)[1]
+        self.assertEqual((facts["fixes"], facts["closing"]), (1, 2))
+
     def test_how_long(self):
         how_long = self.heatmap.how_long
         self.assertEqual([how_long(s) for s in (30, 600, 7200, 86400, 86400 * 45, 86400 * 400, 86400 * 900)],
