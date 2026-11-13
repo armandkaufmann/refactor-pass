@@ -592,7 +592,6 @@ class Words(unittest.TestCase):
         with open(support.TEMPLATE, encoding="utf-8") as f:
             self.assertIn("fx.typed >= %s" % heatmap.NEARLY_ALL, f.read())  # The page says the same.
 
-    @unittest.expectedFailure
     def test_an_issue_closed_counts_only_where_nothing_says_what_it_was(self):
         heatmap = support.load("heatmap")
         commits = [("%040d" % n, n, subject, [("a.py", None, 1, 0)], "Ann <a@b>", "") for n, subject in enumerate(

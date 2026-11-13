@@ -949,7 +949,8 @@ def fix_summary(commits, fixes, typed):
             "their", "" if withdrawn == 1 else "s", "withdraws it and isn't counted" if withdrawn == 1 else
             "withdraw them and aren't counted")
     labelled = typed >= 0.5
-    closing = sum(1 for c in commits if not fixes[c[0]][0] and (CLOSER.search(c[2]) or CLOSER.search(c[5]))
+    # Commits that close an issue and say nothing else either way: not one read as no fix for a reason.
+    closing = sum(1 for c in commits if fixes[c[0]][:2] == (0, "") and (CLOSER.search(c[2]) or CLOSER.search(c[5]))
                   and not (labelled and type_of(c[2])))
     # Subjects of a word or two (Details, wip, update), with no type to read, can't say what a change was; where
     # most of the commits have one, the count can't be read.
