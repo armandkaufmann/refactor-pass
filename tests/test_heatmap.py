@@ -549,7 +549,6 @@ class GitSettings(unittest.TestCase):
         self.assertIn("Git's attributes mark 1 file that changed in the window as binary, though it's text at HEAD, "
                       "so it's left out: a.py.\n", mine.out)
 
-    @unittest.expectedFailure
     def test_no_setting_or_variable_changes_the_output(self):
         repo = build_settings()
         home = support.new_folder("home")

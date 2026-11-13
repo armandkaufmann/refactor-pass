@@ -253,13 +253,14 @@ LOG = ["-c", "core.bigFileThreshold=512m", "log", "--no-merges", "-z", "-M", "-l
        "--no-show-signature", "--no-textconv", "--no-ext-diff", "--diff-algorithm=myers", "--no-notes", "--no-color",
        "--encoding=UTF-8", "--format=%x00%H%x00%ct%x00%aN <%aE>%x00%s%x00%b"]
 # git show as file_diffs reads it, whatever the config says: each commit's patch of the paths given, after a
-# NUL and its hash; git's own diff, context and renames; paths quoted as git does by default, with a/ and b/;
-# blank context lines as a space; nothing run or converted, and no colour, notes or signature.
+# NUL and its hash; git's own diff, context and renames; paths quoted as git does by default, with a/ and b/
+# whatever diff.noprefix, diff.mnemonicPrefix, diff.srcPrefix and diff.dstPrefix say; blank context lines as a
+# space; nothing run or converted, and no colour, notes or signature.
 DIFF = ["-c", "core.bigFileThreshold=512m", "-c", "core.quotePath=true", "-c", "diff.suppressBlankEmpty=false",
         "-c", "diff.indentHeuristic=true", "-c", "diff.interHunkContext=0", "-c", "diff.relative=false",
         "-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false", "show", "--no-color", "--no-ext-diff",
         "--no-textconv", "--diff-algorithm=myers", "-M", "-l1000", "-U3", "--no-notes", "--no-show-signature",
-        "--encoding=UTF-8", "--format=%x00%H", "--patch"]
+        "--encoding=UTF-8", "--src-prefix=a/", "--dst-prefix=b/", "--format=%x00%H", "--patch"]
 COMMIT = re.compile(r"[0-9a-f]{40}(?:[0-9a-f]{24})?\Z")  # A full hash, of SHA-1 or SHA-256.
 NUMSTAT = re.compile(r"(\d+|-)\t(\d+|-)\t")
 
