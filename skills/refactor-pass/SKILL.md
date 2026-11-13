@@ -85,6 +85,14 @@ what it said, and go on without it, from `git log` and the code.
 
 ### Reading it
 
+- **When.** The header says today's date, how old the newest commit is and
+  how long the window spans. Where it says the work has gone quiet, nothing
+  has landed there for over three months: say so in the summary, and give
+  each refactor as worth doing when work resumes there, since its payoff
+  comes with the next change; a bug keeps its standing, as it hurts whoever
+  runs the code. Where the window spans years, its counts mix code since
+  rewritten with today's: weigh `recent` and `last` above `commits`, and say
+  so.
 - **A hot spot** has many commits and is also big, so the list puts those
   first: it's ordered by commits times size. Many commits on a small file is
   often fine, like a config edited for each feature. A big file nobody
@@ -307,7 +315,8 @@ second pass that day). It makes the checklist from
 nothing else, and says so. You write the `pass` block below it, whose
 `project`, `started`, `base` and `updated` are already filled in:
 
-- `summary`: the overall state in two or three sentences;
+- `summary`: the overall state in two or three sentences, first that the
+  work has gone quiet where the heatmap says so;
 - `items`: every item, in the suggested order, with step 5's fields, a
   `status` (`todo`, `doing`, `waiting` on the user, `done`, or `skipped`
   with the reason in its outcome), and `commits` and `outcome`, empty for a

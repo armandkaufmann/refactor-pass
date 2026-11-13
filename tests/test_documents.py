@@ -195,6 +195,11 @@ class Skill(unittest.TestCase):
         help_text = " ".join(support.run("heatmap.py", "--help").out.split())
         self.assertIn("the heatmap's window, scope and options", help_text)
 
+    def test_skill_md_acts_on_the_header_saying_the_work_has_gone_quiet(self):
+        text = " ".join(read(os.path.join(SKILL, "SKILL.md")).split())
+        self.assertIn("Where it says the work has gone quiet, nothing has landed there for over three months", text)
+        self.assertIn("the work it counts%s has gone quiet.", read(os.path.join(support.SCRIPTS, "heatmap.py")))
+
     def test_the_words_skill_md_quotes_are_the_scripts(self):
         text = read(os.path.join(SKILL, "SKILL.md"))
         vocabulary = set()
