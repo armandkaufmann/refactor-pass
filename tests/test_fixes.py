@@ -452,7 +452,6 @@ class Diffs(unittest.TestCase):
         result = support.run("heatmap.py", "-C", repo.path, "--show", ":weird.py", "--diffs", repo.short(drop))
         self.assertIn("\n      -w 3\n", result.out)
 
-    @unittest.expectedFailure
     def test_a_nul_in_a_change_git_diffs_as_text(self):
         repo = support.Repo("nul")
         repo.commit("2026-01-01", "Start", {".gitattributes": "nul.dat diff\n", "nul.dat": b"a\x00b\nc\n"})

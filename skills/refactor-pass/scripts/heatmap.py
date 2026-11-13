@@ -1032,11 +1032,12 @@ def file_diffs(repo, wanted, most=60):
     path before, if the commit renamed it), the hunks of that file only, cut at most lines, as a list of lines
     with a last one saying how many more there are; keyed by (hash, path)."""
     names = sorted(set(n for _, path, old in wanted for n in (path, old) if n))
-    out = git(repo, *(DIFF + [sha for sha, _, _ in wanted] + ["--"] + names))
-    found = {}
-    for part in out.split("\0")[1:]:
-        sha, _, text = part.partition("\n")
-        found[sha.strip()] = text
+    shas = sorted(set(sha for sha, _, _ in wanted))
+    out = git(repo, *(DIFF + shas + ["--"] + names))
+    # Each commit's part starts with a NUL, its hash and a newline: split there, as a change git diffs as text
+    # can hold a NUL.
+    parts = re.split("\0(%s)\n" % "|".join(shas), out)
+    found = dict(zip(parts[1::2], parts[2::2]))
     result = {}
     for sha, path, old in wanted:
         sections = [x for x in re.split(r"(?m)^(?=diff --git )", found.get(sha, "")) if x.strip()]
