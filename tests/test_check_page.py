@@ -240,6 +240,20 @@ class Errors(unittest.TestCase):
             with self.subTest(error=words):
                 self.assertError(page(heatmap=dict(good, files=[change])), "row for src/a.py: " + words)
 
+    @unittest.expectedFailure
+    def test_where_a_heatmap_sits_in_time(self):
+        # The day it was made, whether nothing had landed for over three months, and the newest commit to change
+        # the scope where that isn't the window's newest; a heatmap from before has none of them.
+        when = {"today": "2026-11-13", "quiet": True, "scope_newest": {"sha": "a1b2c3d4e", "date": "2026-01-10",
+                                                                     "subject": "Change a"}}
+        good = dict(HEATMAP, window=dict(HEATMAP["window"], **when))
+        self.assertEqual(problems(page(heatmap=good)), ([], []))
+        for change, words in [(dict(when, today="13 Nov"), "window.today should be a date written as 2026-11-10"),
+                              (dict(when, quiet="no"), "window.quiet should be true or false."),
+                              (dict(when, scope_newest="a1b"), "window.scope_newest should be an object or null.")]:
+            with self.subTest(error=words):
+                self.assertError(page(heatmap=dict(HEATMAP, window=dict(HEATMAP["window"], **change))), words)
+
     def test_a_heatmap_row_whose_commits_arent_a_number(self):
         row = {"path": "src/a.py", "commits": None, "fixes": 3, "fixes_recent": 1}
         for commits in (None, "4"):

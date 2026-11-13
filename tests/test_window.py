@@ -348,5 +348,75 @@ def checklist(items, started="2026-01-01"):
             "checks": ["the tests"], "earlier": None, "items": items, "left_alone": [], "log": []}
 
 
+
+class InTime(unittest.TestCase):
+    """Where the window sits in time: what day it is, how old the newest commit is, and how long the window
+    spans; and, where nothing has landed for over three months, that the work it counts has gone quiet. The day
+    is REFACTOR_PASS_NOW's, a Unix time, which the suite sets; else the clock's."""
+
+    @classmethod
+    def setUpClass(cls):
+        repo = cls.repo = support.Repo("in-time")
+        repo.commit("2026-01-01", "Start", {"src/a.py": lines(3), "docs/guide.md": lines(2)})
+        for day in range(2, 11):
+            repo.commit("2026-01-%02d" % day, "Change a on day %d" % day, {"src/a.py": lines(2 + day)})
+        repo.commit("2026-03-01", "Change the guide", {"docs/guide.md": lines(3)})
+        repo.done()
+
+    def said(self, day, *args):
+        """The header's lines on time, as of noon UTC on day (None: the clock's time)."""
+        result = support.run("heatmap.py", "-C", self.repo.path, *args,
+                             env={"REFACTOR_PASS_NOW": "" if day is None else str(support.stamp(day))})
+        self.assertEqual(result.code, 0, result)
+        found = result.out.split("\n")
+        start = [i for i, line in enumerate(found) if line.startswith("Today is ")]
+        self.assertEqual(len(start), 1, result.out)
+        return found[start[0]:start[0] + 2]
+
+    @unittest.expectedFailure
+    def test_the_newest_commits_age_and_the_windows_span(self):
+        today = "Today is %s: the newest commit is " % support.local_day(support.stamp("2026-03-03"))
+        self.assertEqual(self.said("2026-03-03")[0], today + "2 days old, and the window spans 59 days.")
+
+    @unittest.expectedFailure
+    def test_nothing_landed_for_over_three_months(self):
+        self.assertEqual(self.said("2026-11-13"), [
+            "Today is %s: the newest commit is 8 months old, and the window spans 59 days." % support.local_day(
+                support.NOW), "Nothing has landed for over three months: the work it counts has gone quiet."])
+        self.assertFalse(self.said("2026-05-29")[1].startswith("Nothing"))  # 89 days.
+
+    @unittest.expectedFailure
+    def test_a_quiet_scope(self):
+        # Where the newest commit didn't change the scope, the newest that did is said too, and judged.
+        said = self.said("2026-03-03", "src")
+        self.assertEqual(said[0], "Today is %s: the newest commit is 2 days old, and the newest to change the "
+                                  "scope 52 days old; the window spans 59 days." % support.local_day(
+                                      support.stamp("2026-03-03")))
+        self.assertFalse(said[1].startswith("Nothing"), said)
+        self.assertEqual(self.said("2026-04-15", "src")[1], "Nothing has landed in the scope for over three months: "
+                                                           "the work it counts there has gone quiet.")
+        self.assertEqual(self.said("2026-03-03", "docs")[0], "Today is %s: the newest commit is 2 days old, and "
+                         "the window spans 59 days." % support.local_day(support.stamp("2026-03-03")))
+
+    @unittest.expectedFailure
+    def test_the_clocks_day_where_none_is_given(self):
+        before = datetime.now().strftime("%Y-%m-%d")
+        said = self.said(None)[0]
+        self.assertIn(said[len("Today is "):len("Today is 2026-11-13")], (before, datetime.now().strftime("%Y-%m-%d")))
+
+    @unittest.expectedFailure
+    def test_the_page_carries_it(self):
+        page = os.path.join(support.new_folder("in-time"), "p.html")
+        for args, scope_newest, quiet in (([], None, True), (["src"], "2026-01-10", True)):
+            result = support.run("heatmap.py", "-C", self.repo.path, "--page", page, *args)
+            self.assertEqual(result.code, 0, result)
+            with open(page, encoding="utf-8") as f:
+                window = json.loads(support.block(f.read(), "heatmap"))["window"]
+            self.assertEqual(window["today"], support.local_day(support.NOW))
+            self.assertEqual(window["quiet"], quiet)
+            self.assertEqual((window["scope_newest"] or {}).get("date"), scope_newest and support.local_day(
+                support.stamp(scope_newest)))
+
+
 if __name__ == "__main__":
     unittest.main()
