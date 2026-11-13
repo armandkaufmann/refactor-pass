@@ -296,6 +296,19 @@ class Typed(unittest.TestCase):
         self.assertTrue(fixes_lines(support.run("heatmap.py", "-C", repo.path).out)[1].startswith(
             "27% of the subjects carry a type, too few to read as labels, so the count is a floor"))
 
+    @unittest.expectedFailure
+    def test_tags_that_arent_types_read_by_their_words(self):
+        # Component and ticket tags are areas, not types: none of these subjects carries one but "feat: start".
+        repo = build_typed(["[clang] Fix crash when parsing templates", "[driver] Fix wrong default for the flag",
+                            "[lld] Prevent overflow in section sizes", "[clang] Add the flag",
+                            "[JIRA-123] Fix the bug in the parser when input is empty", "[lld][ELF] Speed up linking"],
+                           "tagged")
+        result = support.run("heatmap.py", "-C", repo.path)
+        self.assertEqual(fixes_lines(result.out)[0], "Fixes, a lead and not a verdict: at least 4 of the 7 commits "
+                         "fixed a defect in the project's own code, as their messages say: 4 by their words.")
+        self.assertTrue(fixes_lines(result.out)[1].startswith("14% of the subjects carry a type"), result.out)
+        self.assertEqual(fix_rows(result.out), {"app.py": (4, 2, 0, 0, 4)})
+
 
 class Reverts(unittest.TestCase):
     """One repo: reverts of reverts, whose original is in the window (a.py, b.py) or isn't (c.py), and reverts
@@ -493,6 +506,27 @@ class Words(unittest.TestCase):
         self.assertEqual(type_of("feat: x"), ("other", "feat:"))
         self.assertIsNone(type_of("ignore: respect the filters"))  # An area, as ripgrep's, not a type.
         self.assertIsNone(type_of("Fix the crash"))
+
+    @unittest.expectedFailure
+    def test_a_tag_or_an_emoji_is_a_type_only_where_its_word_is_one(self):
+        type_of, read_fix = self.heatmap.type_of, self.heatmap.read_fix
+        for subject in ["[clang] Fix crash", "[SPARK-1][SQL] Fix the join", "[hotfix] Fix log levels", "[] x",
+                        "\U0001F600 Fix it", "[JIRA-123] Fix the bug"]:
+            self.assertIsNone(type_of(subject), subject)
+        self.assertEqual(type_of("[PROJ-123][Fix] the removal"), ("fix", "[Fix]"))
+        self.assertEqual(type_of("[Fix][PROJ-123] the removal"), ("fix", "[Fix]"))
+        self.assertEqual(type_of("[Enhance] x"), ("other", "[Enhance]"))
+        self.assertEqual(type_of("[SQL] fix: x"), ("fix", "fix:"))
+        self.assertEqual(type_of("\u267b\ufe0f split"), ("other", "\u267b\ufe0f"))
+        self.assertEqual(type_of(":t-rex: x"), ("other", ":t-rex:"))
+        self.assertEqual(type_of("\U0001F691\ufe0f x"), ("fix", "\U0001F691\ufe0f"))
+        # The rest of the subject read by its words, without the tags that aren't types: Flink's [hotfix] is
+        # a change made without a ticket.
+        self.assertEqual(read_fix("[hotfix] Fix typo in the docs", True), (0, "says typo"))
+        self.assertEqual(read_fix("[hotfix] Update the example URL", True), (0, ""))
+        self.assertEqual(read_fix("[hotfix][runtime] Fix log levels", True), (3, "fix"))
+        self.assertEqual(read_fix("[PROJ-123] Fix the removal of the cache for upgrades", True), (3, "fix"))
+        self.assertEqual(read_fix("[BUG-12] Add a hat", False), (0, ""))
 
     def test_one_person_by_name_or_email_but_not_by_an_empty_one(self):
         same = self.heatmap.same_person
