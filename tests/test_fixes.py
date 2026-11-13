@@ -460,7 +460,6 @@ class Thin(unittest.TestCase):
                          "listed. 11% of the subjects carry a type.")
         self.assertNotIn("Fixes by file", result.out)
 
-    @unittest.expectedFailure
     def test_short_subjects_are_weighed_against_all_the_commits(self):
         # 16 commits, 13 of them typed and 5 of those fix:; the 3 without a type are a word or two.
         repo = build_typed(MOSTLY_TYPED, "mostly-typed")

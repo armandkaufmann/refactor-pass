@@ -925,15 +925,16 @@ def fix_summary(commits, fixes, typed):
     labelled = typed >= 0.5
     closing = sum(1 for c in commits if not fixes[c[0]][0] and (CLOSER.search(c[2]) or CLOSER.search(c[5]))
                   and not (labelled and type_of(c[2])))
-    # Subjects of a word or two (Details, wip, update), with no type to read, can't say what a change was.
-    plain = [c[2] for c in commits if not (labelled and type_of(c[2]))]
-    short = sum(1 for subject in plain if len(re.findall(r"[A-Za-z]+|[\u4e00-\u9fff]{1,2}", subject)) < 3)
-    thin = short * 2 > len(plain)
+    # Subjects of a word or two (Details, wip, update), with no type to read, can't say what a change was; where
+    # most of the commits have one, the count can't be read.
+    short = sum(1 for c in commits if not (labelled and type_of(c[2])) and
+                len(re.findall(r"[A-Za-z]+|[\u4e00-\u9fff]{1,2}", c[2])) < 3)
+    thin = short * 2 > len(commits)
     share = "%d%% of the subjects carry a type" % int(round(typed * 100))
     if thin:
-        second = "Most subjects here are a word or two (%d of the %d%s), too little to tell a fix from anything " \
+        second = "Most subjects here are a word or two (%d of the %d), too little to tell a fix from anything " \
                  "else, so the count can't be read and the fixes by file aren't listed. %s." % (
-                     short, len(plain), " without a type" if len(plain) < len(commits) else "", share)
+                     short, len(commits), share)
     elif labelled:
         second = "%s, read as a label, so the count is close to complete." % share
     else:
