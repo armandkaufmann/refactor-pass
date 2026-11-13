@@ -79,12 +79,13 @@ the first of these that it reads as:
           of another author's commit; one of the author's own withdraws it
           and isn't counted, one of a change to the docs or of a chore isn't
           a fix, and a re-landing (Reapply "X", a revert of a revert) is
-          neither. Without git's line, a revert reads by its own words
+          neither, as is a revert of one, unless that one is a Reapply.
+          Without git's line, a revert reads by its own words
   type    its type says fix (fix:, fix(scope)!:, [fix], the bug emoji), read
           where at least half the subjects carry a type; there another type
           (feat:, [Feature], a gitmoji ...) or fix(deps):, fix(ci): or
-          fix(docs): says it isn't. A tag that isn't a type ([clang],
-          [SPARK-1], [hotfix]) is passed over
+          fix(docs): says it isn't. Other tags ([clang], [SPARK-1],
+          [hotfix]) are passed over
   words   its subject says fix, bug, error, wrong, correct, crash, overflow,
           CVE, prevent, problem or mistake, in any of their forms, or 修复,
           修正, 漏洞, 问题, 越界 or 空指针, and not typo, formatting, lint,
@@ -102,10 +103,9 @@ where they don't (references/smells.md, Counting fixes, has the account).
 --show FILE prints a file's commits in the window instead, newest first: hash,
 date, half, subject and how it reads as a fix; --messages adds what each
 changed and its message, without who signed it, cut at 12 lines, and any line
-it prints is cut at 200 characters. The file is one git tracks, or one a
-commit in the window changed, as one deleted in it; a name a file had before a
-rename in the window means it as it's named today. Any other is an error, as a
-scope is.
+it prints is cut at 200 characters. The file is one git tracks or the window
+changed (one deleted, or a name before a rename, meaning the file today); any
+other is an error, as a scope is.
 
 History is followed across renames, so a file moved or renamed in the window
 keeps the changes it had under its old name. Merge commits are skipped, and so
