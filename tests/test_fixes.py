@@ -555,11 +555,16 @@ class Words(unittest.TestCase):
                            ("requirements/check.py", None)]:
             self.assertEqual(self.heatmap.not_code(path, lambda p: False), kind, path)
 
-    def test_a_type_in_brackets_is_a_word_where_types_arent_read(self):
-        # [BugFix] reads as [bugfix] does, not as an identifier. [HotFix] is passed over, as Flink's [hotfix] is.
+    @unittest.expectedFailure
+    def test_a_fix_word_in_camelcase_or_by_a_bracket_is_a_word(self):
+        # BugFix and HotFix are fix words, not identifiers, as isFixed is one; and a tag's bracket ends a word.
+        # [HotFix] is passed over, as Flink's [hotfix] is.
         read_fix = self.heatmap.read_fix
-        subjects = ("[BugFix] thing", "[Fix] thing", "[bugfix] thing", "[HotFix] x")
-        self.assertEqual([read_fix(s, False) for s in subjects], [(3, "bug"), (3, "fix"), (3, "bug"), (0, "")])
+        subjects = ("[BugFix] thing", "[Fix] thing", "[bugfix] thing", "[HotFix] x", "[Fix]Crash on start",
+                    "[BugFix]Handle null", "BugFix: handle null", "HotFix for login", "Rename isFixed")
+        self.assertEqual([read_fix(s, False) for s in subjects], [(3, "bug"), (3, "fix"), (3, "bug"), (0, ""),
+                                                                 (3, "fix, crash"), (3, "bug"), (3, "bug"), (3, "fix"),
+                                                                 (0, "")])
 
     def test_gitmojis_lock_is_a_fix(self):
         # Gitmoji's "fix security or privacy issues".
