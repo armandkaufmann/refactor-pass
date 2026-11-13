@@ -190,6 +190,8 @@ def check_item(item, page, seen, errors, warnings, spread):
         date("%s's from" % ident, item["from"], errors)
     if "fixes" in item:
         check_fixes(ident, item["fixes"], errors)
+    if item.get("fixes") == []:  # The page shows nothing for it.
+        warnings.append("%s's fixes cite nothing: leave the field out where an item cites no fixes." % ident)
     if ident[0] == "R":
         one_of("%s's size" % ident, item.get("size"), SIZES, errors)
         one_of("%s's risk" % ident, item.get("risk"), RISKS, errors)

@@ -442,7 +442,7 @@ function renderRefactor(item) {
       <dl class="plan">
         <dt>Plan</dt><dd><ol>${list(item.plan).map(s => `<li>${rich(s)}</li>`).join("")}</ol></dd>
         <dt>Files</dt><dd>${list(item.files).map(path).join(", ")}</dd>
-        ${item.fixes ? `<dt>Fixes</dt><dd class="cited">${cited(item)}</dd>` : ""}
+        ${list(item.fixes).length ? `<dt>Fixes</dt><dd class="cited">${cited(item)}</dd>` : ""}
         <dt>Checked by</dt><dd>${rich(item.verify)}</dd>
       </dl>
     </div>
@@ -455,7 +455,7 @@ function renderCompact(item) {
     <div class="body">
       <div class="title-row"><span class="id">${esc(item.id)}</span><h3>${rich(item.title)}</h3>${statusChip(item.status)}${fromChip(item)}</div>
       <p>${rich(item.note)}</p>
-      ${item.fixes ? `<p class="cited">${cited(item)}</p>` : ""}
+      ${list(item.fixes).length ? `<p class="cited">${cited(item)}</p>` : ""}
       ${outcome(item)}
     </div>
   </li>`;

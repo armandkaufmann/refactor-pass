@@ -334,7 +334,6 @@ class Warnings(unittest.TestCase):
         self.assertWarning(page(data), "The pass block isn't written yet: it has no summary and no items. SKILL.md "
                                        "step 6 says what goes in it.")
 
-    @unittest.expectedFailure
     def test_fixes_that_cite_nothing(self):
         self.assertWarning(changed(lambda d: item(d, "F1").update(fixes=[])),
                            "F1's fixes cite nothing: leave the field out where an item cites no fixes.")
