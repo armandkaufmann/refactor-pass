@@ -240,7 +240,8 @@ lists of short hashes, the fixes you count that the script marked
 (`marked`) or didn't (`found`), and those it marked that you don't
 (`dropped`); and a short `note` for what those don't say: why each one was
 dropped, and, where the files differ much, how the others ran ("the other
-four ran 2 to 4 of 12"). The page words the record ("7 of its newest 12
+four ran 2 to 4 of 12"). A commit the script marks outside the sample isn't
+read, and goes in no list. The page words the record ("7 of its newest 12
 commits fixed a defect in it, 5 of them in the newer half"), so the item's
 other fields don't repeat it; your report to the user says that sentence
 ("of its 11 commits in the window" where it has fewer). Where the header
