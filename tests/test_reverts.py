@@ -193,7 +193,6 @@ class OneCommit(unittest.TestCase):
                  "* Revert it\n\nThis reverts commit %s.\n" % land[0])
         self.assertEqual(heatmap.fix_trace([merge], [merge, land], False)[merge[0]], (0, "", None))
 
-    @unittest.expectedFailure
     def test_a_revert_after_the_issue_it_closes(self):
         # As Django writes one: Fixed #37 -- Reverted "...".
         heatmap = self.heatmap

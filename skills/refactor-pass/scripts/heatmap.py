@@ -634,8 +634,9 @@ CHORE_TYPES = {"docs", "doc", "chore", "ci", "build", "style", "test", "tests", 
 # their branch's reverts in their bodies, so the subject has to say it too.
 REVERT_LINE = re.compile(r"(?m)^\s*This reverts commit ([0-9a-fA-F]{7,64})")
 QUOTED = re.compile(r'\brevert(?:s|ed)?\s*"(.*)"', re.I)
-# A subject that says it's a revert, at its start, after a type if it has one; and one that re-lands.
-REVERT_OF = re.compile(r"\s*(?:[A-Za-z]+(?:\([^)]*\))?!?:\s*)?revert(?:s|ed|ing)?\b", re.I)
+# A subject that says it's a revert, at its start, after a type or the issue it closes if it has one (Django's
+# Fixed #12 -- Reverted "..."); and one that re-lands.
+REVERT_OF = re.compile(r"\s*(?:[A-Za-z]+(?:\([^)]*\))?!?:\s*|[A-Za-z]+ #\d+ --\s*)?revert(?:s|ed|ing)?\b", re.I)
 RELANDS = re.compile(r'\s*(?:[A-Za-z]+(?:\([^)]*\))?!?:\s*)?(?:reapply\b|revert\s*"(?:[A-Za-z]+(?:\([^)]*\))?!?:\s*)?'
                      r'revert\b)', re.I)
 # Issue references, whose words name the tracker, not the change: "Fixed #12 --" closes an issue of any kind.
