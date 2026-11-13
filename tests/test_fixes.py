@@ -575,7 +575,6 @@ class Diffs(unittest.TestCase):
         result = support.run("heatmap.py", "-C", repo.path, "--show", "a.txt", "--diffs", repo.short(change))
         self.assertIn("Change b\n      @@ -1,3 +1,3 @@\n       a\n      -b\n      +B\n       c\n", result.out)
 
-    @unittest.expectedFailure
     def test_a_long_line_is_cut_as_a_subject_is(self):
         # A minified file's one line, and a message's: each cut at 200 characters, saying how many more.
         repo = support.Repo("one-line")

@@ -100,11 +100,12 @@ all the fixes where subjects carry a type, and typically a third to a half
 where they don't (references/smells.md, Counting fixes, has the account).
 
 --show FILE prints a file's commits in the window instead, newest first: hash,
-date, half, subject (cut at 200 characters) and how it reads as a fix;
---messages adds what each changed and its message, without who signed it, cut
-at 12 lines. The file is one git tracks, or one a commit in the window
-changed, as one deleted in it; a name a file had before a rename in the
-window means it as it's named today. Any other is an error, as a scope is.
+date, half, subject and how it reads as a fix; --messages adds what each
+changed and its message, without who signed it, cut at 12 lines, and any line
+it prints is cut at 200 characters. The file is one git tracks, or one a
+commit in the window changed, as one deleted in it; a name a file had before a
+rename in the window means it as it's named today. Any other is an error, as a
+scope is.
 
 History is followed across renames, so a file moved or renamed in the window
 keeps the changes it had under its old name. Merge commits are skipped, and so
@@ -1019,7 +1020,7 @@ def message_lines(body, most=12):
         if IDENTITY.match(line):
             continue
         if line.strip() or (lines and lines[-1]):
-            lines.append(printable(line.rstrip()))
+            lines.append(clip(line.rstrip()))
     while lines and not lines[-1]:
         lines.pop()
     if len(lines) > most:
@@ -1072,7 +1073,7 @@ def file_diffs(repo, wanted, most=60):
             notes = [line for line in body[1:start] if line.startswith(("rename from", "new file", "deleted file",
                                                                         "Binary files", "old mode"))]
             # A line's carriage return, as a CRLF file's lines end, says nothing a reader needs.
-            lines += ["(%s)" % printable(n) for n in notes] + [printable(line[:-1] if line.endswith("\r") else line)
+            lines += ["(%s)" % printable(n) for n in notes] + [clip(line[:-1] if line.endswith("\r") else line)
                                                                 for line in body[start:]]
         while lines and not lines[-1]:
             lines.pop()
@@ -1086,14 +1087,15 @@ def file_diffs(repo, wanted, most=60):
     return result
 
 
-SUBJECT_CHARS = 200  # --show's subjects: git's is a message's first paragraph, which can run on.
+LINE_CHARS = 200  # A line --show prints: git's subject is a message's first paragraph, a minified file one line.
 
 
-def subject_line(subject):
-    """A subject as --show lists it: cut at SUBJECT_CHARS characters, saying how many more there are."""
-    if len(subject) > SUBJECT_CHARS:
-        subject = "%s... (%d more characters)" % (subject[:SUBJECT_CHARS], len(subject) - SUBJECT_CHARS)
-    return printable(subject)
+def clip(line):
+    """A line of a subject, a message or a change, as --show prints it: cut at LINE_CHARS characters, saying how
+    many more there are."""
+    if len(line) > LINE_CHARS:
+        line = "%s... (%d more characters)" % (line[:LINE_CHARS], len(line) - LINE_CHARS)
+    return printable(line)
 
 
 def half_of(commit, newer):
@@ -1121,7 +1123,7 @@ def show_diffs(repo, show, given, listed, changed_as, fixes, newer, wide):
     print("%s: its changes in %d of its commits, each cut at %d lines" % (title, len(chosen), DIFF_LINES))
     for commit in chosen:
         info = describe(commit)
-        print("  %s %s %s  %s%s" % (info["sha"], info["date"], half_of(commit, newer), subject_line(info["subject"]),
+        print("  %s %s %s  %s%s" % (info["sha"], info["date"], half_of(commit, newer), clip(info["subject"]),
                                     fix_mark(fixes.get(commit[0]), wide.get(commit[0]))))
         print("\n".join("      " + line for line in diffs[(commit[0], changed_as[(commit[0], path)][0])]))
     print()
@@ -1497,7 +1499,7 @@ def main():
             for commit in listed:
                 info = describe(commit)
                 print("  %s %s %s  %s%s" % (info["sha"], info["date"], half_of(commit, newer),
-                                            subject_line(info["subject"]),
+                                            clip(info["subject"]),
                                             fix_mark(fixes.get(commit[0]), wide.get(commit[0]))))
                 if args.messages:
                     print(change_hint(commit, changed_as[(commit[0], path)], is_test))
