@@ -214,7 +214,7 @@ class Errors(unittest.TestCase):
 
     def test_the_fixes_a_heatmap_counts(self):
         facts = {"fixes": 3, "revert": 1, "type": 0, "words": 2, "typed": 0.0, "labels": False, "closing": 1,
-                 "withdrawn": 0, "thin": False}
+                 "withdrawn": 0, "thin": False, "language": False}
         row = {"path": "src/a.py", "commits": 4, "fixes": 3, "fixes_recent": 1}
         good = dict(HEATMAP, window={"commits": 9, "fixes": facts}, files=[row, {"path": "CHANGES.md", "commits": 2}])
         self.assertEqual(problems(page(heatmap=good)), ([], []))

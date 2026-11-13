@@ -227,7 +227,8 @@ class Shop(unittest.TestCase):
         with open(self.page, encoding="utf-8") as f:
             heat = json.loads(support.block(f.read(), "heatmap"))
         self.assertEqual(heat["window"]["fixes"], {"fixes": 5, "revert": 1, "type": 0, "words": 4, "typed": 0.0,
-                                                   "labels": False, "closing": 1, "withdrawn": 1, "thin": False})
+                                                   "labels": False, "closing": 1, "withdrawn": 1, "thin": False,
+                                                   "language": False})
         rows = dict((r["path"], r) for r in heat["files"])
         self.assertEqual((rows["app.py"]["fixes"], rows["app.py"]["fixes_recent"]), (2, 1))
         self.assertEqual((rows["util.py"]["fixes"], rows["util.py"]["fixes_recent"]), (3, 1))
@@ -735,7 +736,6 @@ class Words(unittest.TestCase):
             line = heatmap.fix_summary(commits, heatmap.fix_trace(commits, commits, typed >= 0.5), typed)[0][1]
             self.assertTrue(line.startswith(said), line)
 
-    @unittest.expectedFailure
     def test_subjects_in_a_language_the_trace_doesnt_read(self):
         heatmap = self.heatmap
         subjects = ["Исправлена ошибка при сохранении файла", "Добавлена поддержка новых форматов",

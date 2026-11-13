@@ -89,10 +89,12 @@ these that it reads as:
           closed (Fixed #12 --) and code say nothing
 
 The header says the share of subjects with a type, and so whether the count
-is close to complete (90% or more carry one) or a floor. On commits labelled
-by hand, about 9 in 10 of those it marks are fixes; it finds nearly all the
-fixes where subjects carry a type, and typically a third to a half where they
-don't (references/smells.md, Counting fixes, has the account).
+is close to complete (90% or more carry one) or a floor. Where most subjects
+are a word or two, or in a language it doesn't read (it reads English and
+Chinese; 修正, fix, reads so in Japanese too), it lists no files. On commits
+labelled by hand, about 9 in 10 of those it marks are fixes; it finds nearly
+all the fixes where subjects carry a type, and typically a third to a half
+where they don't (references/smells.md, Counting fixes, has the account).
 
 --show FILE prints a file's commits in the window instead, newest first, each
 with its hash, date, half (newer or older), subject (cut at 200 characters)
@@ -878,6 +880,25 @@ def fix_trace(commits, window, typed, is_test=None, outside=None):
     return dict((c[0], read(c)) for c in commits)
 
 
+# Chinese and Japanese, written without spaces between words: Han, and Japanese's kana.
+CJK = "\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff"
+
+
+def words(subject):
+    """How many words a subject has, in any script: each run of letters, and each character or two of Chinese
+    or Japanese."""
+    return len(re.findall(r"[%s]{1,2}|[^\W\d_%s]+" % (CJK, CJK), subject))
+
+
+def foreign(subject):
+    """Whether a subject is in a script the words aren't of: most of its letters neither Latin nor Han, as in
+    Russian, Korean, or Japanese with its kana. (A language written in Latin letters other than English isn't
+    told apart.)"""
+    letters = re.findall(r"[^\W\d_]", subject)
+    read = sum(1 for ch in letters if ch < "\u0250" or "\u3400" <= ch <= "\u4dbf" or "\u4e00" <= ch <= "\u9fff")
+    return read * 2 < len(letters)
+
+
 def fix_mark(found):
     """--show's mark of how a commit reads, after its subject: [fix: ...], [not a fix: ...], or nothing where
     nothing said either way."""
@@ -933,13 +954,19 @@ def fix_summary(commits, fixes, typed):
     # Commits that close an issue and say nothing else either way: not one read as no fix for a reason.
     closing = sum(1 for c in commits if fixes[c[0]][:2] == (0, "") and (CLOSER.search(c[2]) or CLOSER.search(c[5]))
                   and not (labelled and type_of(c[2])))
-    # Subjects of a word or two (Details, wip, update), with no type to read, can't say what a change was; where
-    # most of the commits have one, the count can't be read.
-    short = sum(1 for c in commits if not (labelled and type_of(c[2])) and
-                len(re.findall(r"[A-Za-z]+|[\u4e00-\u9fff]{1,2}", c[2])) < 3)
-    thin = short * 2 > len(commits)
+    # Subjects in a language the words aren't of, or of a word or two (Details, wip, update), with no type to
+    # read, can't say what a change was; where most of the commits have one, the count can't be read.
+    plain = [c[2] for c in commits if not (labelled and type_of(c[2]))]
+    unread = sum(1 for subject in plain if foreign(subject))
+    short = sum(1 for subject in plain if words(subject) < 3)
+    language = unread * 2 > len(commits)
+    thin = language or short * 2 > len(commits)
     share = "%d%% of the subjects carry a type" % int(round(typed * 100))
-    if thin:
+    if language:
+        second = "Most subjects here are in a language the trace doesn't read, which reads English and Chinese " \
+                 "(%d of the %d), so the count can't be read and the fixes by file aren't listed. %s." % (
+                     unread, len(commits), share)
+    elif thin:
         second = "Most subjects here are a word or two (%d of the %d), too little to tell a fix from anything " \
                  "else, so the count can't be read and the fixes by file aren't listed. %s." % (
                      short, len(commits), share)
@@ -957,7 +984,8 @@ def fix_summary(commits, fixes, typed):
         second += " %d more commit%s close%s an issue without saying what kind of change." % (
             closing, "" if closing == 1 else "s", "s" if closing == 1 else "")
     facts = {"fixes": counted, "revert": tiers[1], "type": tiers[2], "words": tiers[3],
-             "typed": round(typed, 2), "labels": labelled, "closing": closing, "withdrawn": withdrawn, "thin": thin}
+             "typed": round(typed, 2), "labels": labelled, "closing": closing, "withdrawn": withdrawn, "thin": thin,
+             "language": language}
     return [first, second], facts
 
 

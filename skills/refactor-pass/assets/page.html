@@ -492,7 +492,8 @@ function renderHeatmap(heat) {
   if (w.shallow) text += " The clone is shallow, so its history stops just before the oldest commit here.";
   // The fixes trace: what the commits' messages say they fixed, at least. A heatmap from before it has none.
   const fx = w.fixes;
-  if (fx && fx.thin) text += " Most of the commits' subjects are a word or two, too little to tell a fix from anything else, so no fixes are counted.";
+  if (fx && fx.thin) text += fx.language ? " Most of the commits' subjects are in a language the fixes trace doesn't read (it reads English and Chinese), so no fixes are counted."
+    : " Most of the commits' subjects are a word or two, too little to tell a fix from anything else, so no fixes are counted.";
   else if (fx) {
     const ways = [[fx.revert, "a revert", "reverts"], [fx.type, "by its type", "by their type"], [fx.words, "by its words", "by their words"]]
       .filter(x => x[0]).map(x => `${number(x[0])} ${x[0] === 1 ? x[1] : x[2]}`);

@@ -63,7 +63,7 @@ RESULT = {"id": str, "title": str, "eases": str, "cost": dict, "change": str, "a
 FIXES = {"file": str, "read": int, "newer": (int, type(None)), "marked": list, "found": list, "dropped": list}
 # The fixes trace's facts in the heatmap block's window, as heatmap.py writes them.
 FIX_FACTS = {"fixes": int, "revert": int, "type": int, "words": int, "typed": (int, float), "labels": bool,
-             "closing": int, "withdrawn": int, "thin": bool}
+             "closing": int, "withdrawn": int, "thin": bool, "language": bool}
 KIND_NAMES = {"R": "refactors", "F": "small fixes", "L": "later", "D": "your call"}
 WORDS = {str: "text", list: "a list", dict: "an object", int: "a whole number", bool: "true or false",
          (int, float): "a number", (int, type(None)): "a whole number or null"}
