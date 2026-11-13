@@ -479,7 +479,8 @@ def outputs(repo, env=None):
              support.run("heatmap.py", "-C", repo.path, "--show", "a.py", "--show", "b.txt", "--show", "e.py",
                          "--show", "f.py", "--show", "g.py", "--messages", env=env),
              support.run("heatmap.py", "-C", repo.path, "--show", "g.py", "--diffs", ",".join(shas[:2]), env=env),
-             support.run("heatmap.py", "-C", repo.path, "--show", "e.py", "--diffs", shas[4], env=env),
+             support.run("heatmap.py", "-C", repo.path, "--show", "e.py", "--show", "g.py", "--diffs",
+                         "%s,%s" % (shas[4], shas[0]), env=env),  # Two files' changes from one git call.
              support.run("heatmap.py", "-C", repo.path, "-n", "1", "--show", "g.py", env=env),  # The fix read too.
              support.run("heatmap.py", "-C", repo.path, "--show", "a.py", "--diffs", shas[-1], env=env)]  # The root.
     return [(r.code, r.out, r.err) for r in found]
