@@ -491,6 +491,16 @@ class Words(unittest.TestCase):
                            ("lib/build.py", None), ("src/server.c", None), ("ci/check.py", None)]:
             self.assertEqual(not_code(path, test), kind, path)
 
+    @unittest.expectedFailure
+    def test_a_documentation_name_with_a_code_extension_is_code(self):
+        not_code, doc, chore = self.heatmap.not_code, "documentation", "CI, build or dependency files"
+        for path, kind in [("src/history.ts", None), ("news.py", None), ("lib/authors.rb", None), ("changes.js", None),
+                           ("app/controllers/news_controller.rb", None), ("license_checker.go", None),
+                           ("build.rs", None), ("ci.py", None), ("pkg/setup.py", chore), ("HISTORY.md", doc),
+                           ("NEWS", doc), ("LICENSE-MIT", doc), ("COPYING.LESSER", doc), ("LICENSE.APACHE2", doc),
+                           ("AUTHORS.txt", doc), ("README.zh-CN.md", doc), ("Changes", doc)]:
+            self.assertEqual(not_code(path, lambda p: False), kind, path)
+
     def test_types(self):
         type_of = self.heatmap.type_of
         self.assertEqual(type_of("fix(router)!: x"), ("fix", "fix(router)!:"))
