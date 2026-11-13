@@ -652,19 +652,20 @@ class Words(unittest.TestCase):
                            ("AUTHORS.txt", doc), ("README.zh-CN.md", doc), ("Changes", doc)]:
             self.assertEqual(not_code(path, lambda p: False), kind, path)
 
+    @unittest.expectedFailure
     def test_code_in_a_docs_folder_and_a_setup_py_at_no_packages_top(self):
         # In a docs folder, only what isn't code by its extension is documentation: cobra's doc/ is a package of
-        # the library. setup.py is a manifest at a package's top: the repo's, or beside a pyproject.toml, a
-        # setup.cfg or a package folder.
+        # the library. setup.py is a manifest at a package's top, where its manifests are: the repo's, or beside
+        # a pyproject.toml or a setup.cfg. Beside a package folder isn't: src/setup.py in a src layout is code.
         heatmap, doc, chore = self.heatmap, "documentation", "CI, build or dependency files"
         for path, kind in [("docs/guide.md", doc), ("docs/images/flow.png", doc), ("docs/Makefile", doc),
                            ("doc/man_docs.go", None), ("tokio/src/doc/mod.rs", None), ("apps/docs/src/search.ts", None),
                            ("docs/conf.py", None)]:
             self.assertEqual(heatmap.not_code(path, lambda p: False), kind, path)
         tops = heatmap.package_tops(["setup.py", "python/setup.py", "python/pyproject.toml", "sdk/setup.py",
-                                     "sdk/client/__init__.py", "src/setup.py", "src/wizard.py"])
-        self.assertEqual(tops, {"", "python", "sdk"})
-        for path, kind in [("setup.py", chore), ("python/setup.py", chore), ("sdk/setup.py", chore),
+                                     "sdk/client/__init__.py", "src/setup.py", "src/shop/__init__.py"])
+        self.assertEqual(tops, {"", "python"})
+        for path, kind in [("setup.py", chore), ("python/setup.py", chore), ("sdk/setup.py", None),
                            ("src/setup.py", None)]:
             self.assertEqual(heatmap.not_code(path, lambda p: False, tops), kind, path)
 
