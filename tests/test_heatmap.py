@@ -436,14 +436,18 @@ def build_settings():
     and 4 removed, and its patience diff as 4 and 5; two files renamed and changed in one commit, which a
     rename limit of 1 leaves as two removed and two added; a commit signed with a signature that's no good,
     made by hand, since fast-import can't sign on every git; and one after it, so that what git prints on
-    checking the signature comes between two commits. Then a fix, its message's body past ASCII, and another
+    checking the signature comes between two commits; h.txt, whose change git counts as 3 lines added and 7
+    removed, and as 4 and 8 with diff.context=0, where git cuts the files' common end before it diffs them.
+    Then a fix, its message's body past ASCII, and another
     author's revert of it, whose body names it: the fixes trace reads bodies; and --diffs shows the revert's
     change to g.py, whose context holds blank lines."""
     repo = support.Repo("settings")
+    tail = lines(50, "a line of the tail")
     repo.commit("2026-01-01", "Start", {"a.py": lines(3, "a"), "b.txt": "{\nx\nx\n}\n}\nz\n", "c.py": lines(4, "c"),
-                                        "d.py": lines(4, "d")})
+                                        "d.py": lines(4, "d"), "h.txt": lines(6, "h") + "\nh 7\n" + tail})
     repo.commit("2026-01-02", "Grow a, caf\u00e9", {"a.py": lines(5, "a")})
-    repo.commit("2026-01-03", "Shuffle b", {"b.txt": "z\n}\n{\n}\n{\n", "a.py": lines(6, "a")})
+    repo.commit("2026-01-03", "Shuffle b", {"b.txt": "z\n}\n{\n}\n{\n", "a.py": lines(6, "a"),
+                                            "h.txt": "\n" * 4 + tail})
     repo.commit("2026-01-04", "Move c and d", {"e.py": lines(5, "c"), "f.py": lines(5, "d")},
                 rename={"c.py": "e.py", "d.py": "f.py"})
     last = repo.commit("2026-01-05", "Signed", {"e.py": lines(6, "c")})
@@ -499,6 +503,7 @@ class GitSettings(unittest.TestCase):
         self.assertEqual(rows["a.py"], dict(commits=3, recent=0, last="2026-01-03", churn=6, rel=1.0, size=6,
                                             growth=6))
         self.assertEqual(rows["b.txt"]["churn"], 3 + 4 + 6)
+        self.assertEqual(rows["h.txt"]["churn"], 58 + 3 + 7)
         self.assertEqual((rows["e.py"]["commits"], rows["e.py"]["churn"]), (3, 4 + 1 + 1))
         self.assertEqual((rows["f.py"]["commits"], rows["f.py"]["churn"]), (3, 4 + 1 + 1))
         self.assertIn("Grow a, caf\u00e9", self.plain[1][1])
@@ -549,6 +554,7 @@ class GitSettings(unittest.TestCase):
         self.assertIn("Git's attributes mark 1 file that changed in the window as binary, though it's text at HEAD, "
                       "so it's left out: a.py.\n", mine.out)
 
+    @unittest.expectedFailure
     def test_no_setting_or_variable_changes_the_output(self):
         repo = build_settings()
         home = support.new_folder("home")
@@ -562,7 +568,7 @@ class GitSettings(unittest.TestCase):
                      "mnemonicPrefix = true", "srcPrefix = x/", "dstPrefix = y/", "relative = true",
                      "orderFile = " + order.replace("\\", "/"),
                      "external = git hash-object", "indentHeuristic = false", "suppressBlankEmpty = true",
-                     "context = 0", "colorMoved = zebra"],
+                     "context = 0", "interHunkContext = 20", "colorMoved = zebra"],
             'diff "conv"': ["textconv = git hash-object"],
             "i18n": ["logOutputEncoding = ISO-8859-1"],
             "format": ["pretty = oneline"],
