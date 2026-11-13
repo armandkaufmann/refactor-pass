@@ -207,10 +207,10 @@ what you checked. A wrong item that sends the user into a refactor costs far
 more than the minute it takes to check it.
 
 **Count the fixes in the files you'll recommend**, at most five.
-`heatmap.py -C <repo> --show <file> --messages`, with step 1's window, lists
-each file's newest 12 commits, a sample, with their messages, a line of what
-each changed, whether it's in the window's newer half, and the script's
-reading. Judge every commit from its message; where that doesn't settle one,
+`heatmap.py -C <repo> --show <file> --messages`, with step 1's window, scope
+and options, lists each file's newest 12 commits, a sample, with their
+messages, a line of what each changed, whether it's in the window's newer
+half, and the script's reading. Judge every commit from its message; where that doesn't settle one,
 get its changes before counting on, all of a file's unsettled ones in one
 call: `--show <file> --diffs <hash>,<hash>`.
 

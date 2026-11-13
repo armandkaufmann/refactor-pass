@@ -188,7 +188,6 @@ class Skill(unittest.TestCase):
                     if anchor:
                         self.assertIn(anchor, anchors(linked))
 
-    @unittest.expectedFailure
     def test_step_4_shows_with_step_1s_window_scope_and_options(self):
         # --show's marks count a commit's files by the scope and --max-files: the same as step 1's, or they differ.
         text = " ".join(read(os.path.join(SKILL, "SKILL.md")).split())

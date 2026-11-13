@@ -1268,7 +1268,8 @@ def main():
                              "top, or the main checkout's from a linked worktree), making it from the skill's "
                              "assets/page.html if it doesn't exist; only the page's heatmap block changes")
     parser.add_argument("--show", action="append", default=[], metavar="FILE",
-                        help="print this file's commits in the window (its name today), instead of the heatmap")
+                        help="print this file's commits in the window (its name today), instead of the heatmap; "
+                             "with the heatmap's window, scope and options, which its marks count by")
     parser.add_argument("--messages", action="store_true",
                         help="with --show, the file's newest %d commits, each with what it changed and its "
                              "message" % SAMPLE)
@@ -1277,8 +1278,7 @@ def main():
                              "--diffs takes only those" % SAMPLE)
     parser.add_argument("--diffs", metavar="SHAS",
                         help="with one --show FILE, these of the commits it lists (comma-separated hashes), each "
-                             "with its changes to the file, under the name it had then, cut at %d lines, in one call"
-                             % DIFF_LINES)
+                             "with its changes to the file, cut at %d lines" % DIFF_LINES)
     parser.add_argument("--no-fixes", action="store_true",
                         help="leave out the fixes trace: the header's count, the table of fixes by file and "
                              "--show's marks")
