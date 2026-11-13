@@ -217,6 +217,24 @@ class OneCommit(unittest.TestCase):
         self.assertEqual(trace[both[0]], (1, "reverts 111111111, 222222222", 3))
         self.assertEqual(trace[mine[0]], (0, "its author withdraws 111111111, 333333333", None))
 
+    @unittest.expectedFailure
+    def test_a_fix_type_outranks_what_the_reverted_commit_says(self):
+        # Its author typed it a fix: so it reads, with git's line or without, though the commit it names is its
+        # author's own or isn't in the repo. Where types aren't read as labels, the withdrawal stands.
+        heatmap = self.heatmap
+
+        def commit(n, subject, body=""):
+            return (str(n) * 40, n, subject, [("a.py", None, 1, 0)], "Ann <a@b>", body)
+        land = commit(1, "feat: add caching")
+        back = commit(2, 'fix: revert "feat: add caching"', "This reverts commit %s.\n" % land[0])
+        bare = commit(3, 'fix: revert "feat: add caching"')
+        gone = commit(4, 'fix(cache): revert "feat: add logging"', "This reverts commit %s.\n" % ("9" * 40))
+        typed = heatmap.fix_trace([back, bare, gone], [gone, bare, back, land], True)
+        self.assertEqual([typed[c[0]] for c in (back, bare, gone)], [(2, "fix:", None), (2, "fix:", None),
+                                                                    (2, "fix(cache):", None)])
+        self.assertEqual(heatmap.fix_trace([back], [back, land], False)[back[0]],
+                         (0, "its author withdraws 111111111", None))
+
     def test_a_revert_of_a_commit_not_in_the_repo(self):
         # Whose change it undid can't be told, so it isn't counted, unless another commit it names is another's.
         heatmap = self.heatmap
