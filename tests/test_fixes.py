@@ -196,6 +196,16 @@ class Shop(unittest.TestCase):
         self.assertTrue(twice.out.startswith("app.py: its changes in 1 of its commits"), twice)
         self.assertEqual(twice.out.count("Fix the total's rounding"), 1)
 
+    @unittest.expectedFailure
+    def test_show_reads_no_files_sizes(self):
+        # --show lists a file's commits: it doesn't read every file's size, or pair them, and throw that away.
+        code = ("import os, sys\nsys.path.insert(0, os.environ['REFACTOR_PASS_SCRIPTS'])\nimport heatmap\n"
+                "def unread(*args):\n    raise RuntimeError('read the sizes')\nheatmap.line_counts = unread\n"
+                "sys.argv = ['heatmap.py'] + sys.argv[1:]\nheatmap.main()\n")
+        for args in (["--messages"], ["--diffs", self.repo.short(self.marks["crash"])]):
+            result = support.run_python(code, "-C", self.repo.path, "--show", "app.py", *args)
+            self.assertEqual((result.code, result.err), (0, ""), result)
+
     def test_diffs_give_each_commits_changes_to_the_file_only(self):
         rounding, crash = self.repo.short(self.marks["rounding"]), self.repo.short(self.marks["crash"])
         result = support.run("heatmap.py", "-C", self.repo.path, "--show", "app.py", "--diffs",
