@@ -333,7 +333,7 @@ class LastLineOfDefence(unittest.TestCase):
         finally:
             os.close(write)
         # Read what it writes to stderr and wait: communicate() would start a thread for it.
-        err = process.stderr.read().decode("utf-8", "replace")
+        err = support._text(process.stderr.read())  # As the suite reads output: Windows ends its lines \r\n.
         process.stderr.close()
         return err, process.wait(timeout=60)
 
