@@ -9,6 +9,7 @@ author date is weeks before its commit date, as after a rebase: the heatmap goes
 import json
 import os
 import re
+import shutil
 import unittest
 
 try:
@@ -495,9 +496,16 @@ class GitSettings(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.plain = outputs(build_settings())
+        cls.repo = build_settings()  # Read as it is; a test that changes its config takes a copy.
+        cls.plain = outputs(cls.repo)
         for code, out, err in cls.plain:
             assert code == 0 and not err, (out, err)
+
+    def copy(self):
+        """The repo, copied, for a test that changes its config."""
+        path = os.path.join(support.new_folder("settings-copy"), "settings")
+        shutil.copytree(self.repo.path, path, symlinks=True)
+        return type("Copied", (), {"path": path})()
 
     def test_plain(self):
         rows = support.heatmap_rows(self.plain[0][1])
@@ -517,19 +525,19 @@ class GitSettings(unittest.TestCase):
                       "words.", self.plain[0][1])
 
     def test_a_signature_check_in_the_repos_config(self):
-        repo = build_settings()
+        repo = self.copy()
         support.git(repo.path, "config", "log.showSignature", "true")
         support.git(repo.path, "config", "gpg.program", "git")  # Prints its usage, as gpg would its verdict.
         self.assertEqual(outputs(repo), self.plain)
 
     def test_the_root_commits_changes_whatever_log_showroot_says(self):
-        found = outputs(build_settings(), {"GIT_CONFIG_GLOBAL": user_config("[log]\n\tshowRoot = false\n")})
+        found = outputs(self.repo, {"GIT_CONFIG_GLOBAL": user_config("[log]\n\tshowRoot = false\n")})
         self.assertEqual(support.heatmap_rows(found[0][1])["a.py"], support.heatmap_rows(self.plain[0][1])["a.py"])
         self.assertEqual(found, self.plain)
 
     def test_a_big_file_threshold(self):
         # Above it git's diff reads a file as binary; at 1 byte, every file.
-        found = outputs(build_settings(), {"GIT_CONFIG_GLOBAL": user_config("[core]\n\tbigFileThreshold = 1\n")})
+        found = outputs(self.repo, {"GIT_CONFIG_GLOBAL": user_config("[core]\n\tbigFileThreshold = 1\n")})
         self.assertEqual(found, self.plain)
 
     def test_files_attributes_mark_binary_though_text_are_named(self):
@@ -557,7 +565,7 @@ class GitSettings(unittest.TestCase):
                       "so it's left out: a.py.\n", mine.out)
 
     def test_no_setting_or_variable_changes_the_output(self):
-        repo = build_settings()
+        repo = self.copy()
         home = support.new_folder("home")
         order = support.write_text(os.path.join(home, "order"), "f.py\ne.py\nb.txt\na.py\n")
         attributes = support.write_text(os.path.join(home, "attributes"), "*.py diff=conv\n*.txt diff=conv\n")
@@ -591,7 +599,7 @@ class GitSettings(unittest.TestCase):
                      "GIT_EXTERNAL_DIFF": "git hash-object", "GIT_CONFIG_COUNT": "1",
                      "GIT_CONFIG_KEY_0": "log.showRoot", "GIT_CONFIG_VALUE_0": "false"}
         self.assertEqual(outputs(repo, variables), self.plain)
-        plain = support.run("measure.py", "-C", build_settings().path)
+        plain = support.run("measure.py", "-C", self.repo.path)
         hostile = support.run("measure.py", "-C", repo.path, env=variables)
         self.assertEqual((hostile.code, hostile.out, hostile.err), (plain.code, plain.out, plain.err))
 
