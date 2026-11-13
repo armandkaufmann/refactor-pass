@@ -414,6 +414,73 @@ class InTime(unittest.TestCase):
 
 
 
+class Elsewhere(unittest.TestCase):
+    """A checkout behind its upstream is said to be; and where its history has gone quiet but a person's commit it
+    lacks, on any ref the clone holds, is under three months old, that's said instead. A bot's isn't work."""
+
+    @classmethod
+    def setUpClass(cls):
+        repo = cls.repo = support.Repo("elsewhere", branch="old")
+        start = repo.commit("2025-01-01", "Start", {"src/a.py": lines(3), "docs/x.md": lines(1)})
+        tip = repo.commit("2025-02-01", "Change a", {"src/a.py": lines(4)})
+        repo.commit("2026-11-10", "Work on main", {"docs/x.md": lines(2)}, branch="main", parent=tip)
+        repo.commit("2026-11-12", "Work on main again", {"docs/x.md": lines(3)}, branch="main")
+        repo.commit("2026-11-11", "Work on side", {"src/b.py": lines(1)}, branch="side", parent=start)
+        repo.commit("2026-11-12", "Bump x", {"package.json": "{}\n"}, branch="deps", parent=tip, author=DEPENDABOT)
+        drift = repo.commit("2025-03-01", "Change a on drift", {"src/a.py": lines(5)}, branch="drift", parent=start)
+        repo.commit("2026-11-05", "Change a again", {"src/a.py": lines(6)}, branch="drift-ahead", parent=drift)
+        repo.done()
+        for args in (["update-ref", "refs/remotes/origin/drift", "refs/heads/drift-ahead"],
+                     ["branch", "-D", "drift-ahead"], ["config", "branch.drift.remote", "origin"],
+                     ["config", "branch.drift.merge", "refs/heads/drift"],
+                     ["config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*"]):
+            support.git(repo.path, *args)
+
+    def said(self, head, *args):
+        support.git(self.repo.path, "symbolic-ref", "HEAD", "refs/heads/" + head)
+        out = support.run("heatmap.py", "-C", self.repo.path, *args).out.split("\n")
+        start = next(i for i, line in enumerate(out) if line.startswith("Today is "))
+        return out[start + 1:out.index(next(line for line in out if line.startswith("Newer half")))]
+
+    @unittest.expectedFailure
+    def test_a_checkout_behind_its_upstream(self):
+        self.assertEqual(self.said("drift"), ["This checkout is behind origin/drift by 1 commit, 8 days old: the "
+                                              "heatmap reads HEAD's history only."])
+
+    @unittest.expectedFailure
+    def test_work_that_goes_on_off_this_checkouts_history(self):
+        self.assertEqual(self.said("old"), ["This checkout's history has gone quiet, but main's newest commit, which "
+                                            "it lacks, is 1 day old: the heatmap reads HEAD's history only."])
+        # In the scope: main's work isn't in it, side's is.
+        self.assertEqual(self.said("old", "src"), [
+            "This checkout's history has gone quiet in the scope, but side's newest commit to change it, which it "
+            "lacks, is 2 days old: the heatmap reads HEAD's history only."])
+
+    @unittest.expectedFailure
+    def test_the_page_carries_it(self):
+        page = os.path.join(support.new_folder("elsewhere"), "p.html")
+        found = []
+        for head in ("drift", "old"):
+            self.said(head, "--page", page)
+            with open(page, encoding="utf-8") as f:
+                window = json.loads(support.block(f.read(), "heatmap"))["window"]
+            found.append((window["quiet"], window.get("behind"), window.get("elsewhere")))
+        day = support.local_day
+        behind = {"ref": "origin/drift", "commits": 1, "date": day(support.stamp("2026-11-05"))}
+        self.assertEqual(found, [(False, behind, None),
+                                 (False, None, {"ref": "main", "date": day(support.stamp("2026-11-12"))})])
+
+    def test_a_bots_work_isnt_work_going_on(self):
+        repo = support.Repo("bots-elsewhere")
+        repo.commit("2025-01-01", "Start", {"a.py": lines(3)})
+        repo.commit("2026-11-12", "Bump x", {"package.json": "{}\n"}, branch="deps", author=DEPENDABOT,
+                    parent=repo.tips["main"])
+        repo.done()
+        out = support.run("heatmap.py", "-C", repo.path).out
+        self.assertIn("\nNothing has landed for over three months: the work it counts has gone quiet.\n", out)
+        self.assertNotIn("This checkout", out)
+
+
 class NewestWork(unittest.TestCase):
     """The newest work the table leaves out: the files past its top that 2 or more of the window's newest
     commits changed, those of its last 60 days and no more than its newer half; documentation, tests, CI,
