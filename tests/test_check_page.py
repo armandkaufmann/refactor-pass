@@ -212,7 +212,6 @@ class Errors(unittest.TestCase):
         self.assertError(changed(lambda d: item(d, "R2").update(fixes=[entry(), entry(marked=["b2c3d4e"])])),
                          "R2's fixes have src/a.py twice: an entry per file.")
 
-    @unittest.expectedFailure
     def test_the_fixes_a_heatmap_counts(self):
         facts = {"fixes": 3, "revert": 1, "type": 0, "words": 2, "typed": 0.0, "labels": False, "closing": 1,
                  "withdrawn": 0, "thin": False, "language": False, "complete": False}

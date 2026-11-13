@@ -124,7 +124,7 @@ def load(heatmap, one, path, labelled):
     labelled short hash whether it changed a file of the project's own code."""
     window = heatmap.read_log(path, ["-n", str(one.window), "HEAD"])
     people = [c for c in window if not heatmap.HOUSEKEEPING.search(c[4])]
-    typed = heatmap.typed_share(people[:200]) >= 0.5
+    typed = heatmap.typed_share(people[:200]) >= heatmap.LABELLED
     by_short = dict((c[0][:9], c) for c in people)
     missing = [sha for sha in labelled if sha not in by_short]
     if missing:

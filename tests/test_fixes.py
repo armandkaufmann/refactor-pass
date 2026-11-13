@@ -249,7 +249,6 @@ class Shop(unittest.TestCase):
         self.assertIn("--diffs: %s isn't one of them; zz isn't one of them. Give hashes of the 7 commits --show "
                       "app.py --messages lists." % self.repo.short(self.marks["speed"]), wrong.err)
 
-    @unittest.expectedFailure
     def test_the_page_carries_the_fixes(self):
         with open(self.page, encoding="utf-8") as f:
             heat = json.loads(support.block(f.read(), "heatmap"))
@@ -748,7 +747,6 @@ class Words(unittest.TestCase):
                                  "--show leaves unmarked."])
         self.assertEqual((facts["fixes"], facts["thin"]), (0, False))
 
-    @unittest.expectedFailure
     def test_close_to_complete_only_where_nearly_all_subjects_carry_a_type(self):
         heatmap = support.load("heatmap")
         commits = [("%040d" % n, n, subject, [("a.py", None, 1, 0)], "Ann <a@b>", "")
@@ -795,7 +793,8 @@ class Words(unittest.TestCase):
                         [("a.py", None, 1, 0)], "Ann <a@b>", "") for n in range(200)]
             typed = heatmap.typed_share(commits)
             self.assertEqual(typed, share)
-            line = heatmap.fix_summary(commits, heatmap.fix_trace(commits, commits, typed >= 0.5), typed)[0][1]
+            trace = heatmap.fix_trace(commits, commits, typed >= heatmap.LABELLED)
+            line = heatmap.fix_summary(commits, trace, typed)[0][1]
             self.assertTrue(line.startswith(said), line)
 
     def test_subjects_in_a_language_the_trace_doesnt_read(self):

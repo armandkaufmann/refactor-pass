@@ -919,9 +919,10 @@ def fix_mark(found, files=None):
                            printable(what))
 
 
-# Where the count is close to complete: where nearly all subjects carry a type, as in every typed repo measured
-# (97% to 100%). Between a half and that, the subjects without one are read by their words, which find a third
-# to a half of the fixes.
+# Where types are read as labels: where at least half the subjects carry one. Where the count is close to
+# complete: where nearly all do, as in every typed repo measured (97% to 100%); between the two, the subjects
+# without one are read by their words, which find a third to a half of the fixes.
+LABELLED = 0.5
 NEARLY_ALL = 0.9
 
 
@@ -956,7 +957,8 @@ def fix_summary(commits, fixes, typed):
             "1 more revert" if withdrawn == 1 else "%d more reverts" % withdrawn, "its" if withdrawn == 1 else
             "their", "" if withdrawn == 1 else "s", "withdraws it and isn't counted" if withdrawn == 1 else
             "withdraw them and aren't counted")
-    labelled = typed >= 0.5
+    labelled = typed >= LABELLED
+    complete = labelled and typed >= NEARLY_ALL
     # Commits that close an issue and say nothing else either way: not one read as no fix for a reason.
     closing = sum(1 for c in commits if fixes[c[0]][:2] == (0, "") and (CLOSER.search(c[2]) or CLOSER.search(c[5]))
                   and not (labelled and type_of(c[2])))
@@ -976,7 +978,7 @@ def fix_summary(commits, fixes, typed):
         second = "Most subjects here are a word or two (%d of the %d), too little to tell a fix from anything " \
                  "else, so the count can't be read and the fixes by file aren't listed. %s." % (
                      short, len(commits), share)
-    elif labelled and typed >= NEARLY_ALL:
+    elif complete:
         second = "%s, read as a label, so the count is close to complete." % share
     elif labelled:
         second = "%s, read as a label; those without one are read by their words, so the count is a floor: such " \
@@ -991,7 +993,7 @@ def fix_summary(commits, fixes, typed):
             closing, "" if closing == 1 else "s", "s" if closing == 1 else "")
     facts = {"fixes": counted, "revert": tiers[1], "type": tiers[2], "words": tiers[3],
              "typed": round(typed, 2), "labels": labelled, "closing": closing, "withdrawn": withdrawn, "thin": thin,
-             "language": language}
+             "language": language, "complete": complete}
     return [first, second], facts
 
 
@@ -1388,7 +1390,7 @@ def main():
         return scoping.is_test(path, args.test, args.not_test)
 
     tops = package_tops(tracked)
-    fixes = {} if args.no_fixes else fix_trace(commits, everything, typed >= 0.5, is_test,
+    fixes = {} if args.no_fixes else fix_trace(commits, everything, typed >= LABELLED, is_test,
                                                  outside_window(repo, commits, everything), tops)
     fix_lines, fix_facts = fix_summary(commits, fixes, typed) if fixes else ([], None)
     # Newest first, so a rename is met before the older commits that used the
