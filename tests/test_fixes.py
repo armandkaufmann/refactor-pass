@@ -459,7 +459,6 @@ class Words(unittest.TestCase):
         for path in ("LICENSE-MIT", "COPYING.LESSER", "README_zh", "NEWS", "AUTHORS", "CHANGELOG", "changelog"):
             self.assertTrue(is_doc(path), path)
 
-    @unittest.expectedFailure
     def test_release_notes_and_the_like(self):
         for path in ("RELEASE-NOTES", "RELEASE_NOTES", "NOTICE", "THANKS", "CREDITS", "MAINTAINERS", "TODO"):
             self.assertTrue(self.heatmap.is_doc(path), path)
