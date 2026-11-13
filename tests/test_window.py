@@ -400,6 +400,13 @@ class InTime(unittest.TestCase):
         said = self.said(None)[0]
         self.assertIn(said[len("Today is "):len("Today is 2026-11-13")], (before, datetime.now().strftime("%Y-%m-%d")))
 
+    @unittest.expectedFailure
+    def test_a_now_that_isnt_a_time_this_system_can_show(self):
+        for value in ("99999999999999999999", "-5", "soon"):
+            result = support.run("heatmap.py", "-C", self.repo.path, env={"REFACTOR_PASS_NOW": value})
+            self.assertEqual((result.code, result.out, result.err), (1, "", "REFACTOR_PASS_NOW should be a Unix time, "
+                             "a whole number of seconds since 1970 this system can read as a date, not %r.\n" % value))
+
     def test_the_page_carries_it(self):
         page = os.path.join(support.new_folder("in-time"), "p.html")
         for args, scope_newest, quiet in (([], None, True), (["src"], "2026-01-10", True)):
