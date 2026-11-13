@@ -444,6 +444,15 @@ class Diffs(unittest.TestCase):
         binary = support.run("heatmap.py", "-C", repo.path, "--show", "img.png", "--diffs", shas[0])
         self.assertIn("      (Binary files a/img.png and b/img.png differ)\n", binary.out)
 
+    @unittest.expectedFailure
+    def test_a_name_git_would_read_as_pathspec_magic(self):
+        repo = support.Repo("colon")
+        repo.commit("2026-01-01", "Start", {":weird.py": lines(3, "w")})
+        drop = repo.commit("2026-01-02", "Drop a line", {":weird.py": lines(2, "w")})
+        repo.done()
+        result = support.run("heatmap.py", "-C", repo.path, "--show", ":weird.py", "--diffs", repo.short(drop))
+        self.assertIn("\n      -w 3\n", result.out)
+
     def test_the_lines_a_file_gives(self):
         # As file_diffs reads git show's output: one call for several commits, each commit's section of the file.
         heatmap = support.load("heatmap")
