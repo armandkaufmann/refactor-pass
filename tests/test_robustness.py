@@ -364,6 +364,17 @@ class LastLineOfDefence(unittest.TestCase):
         self.assertEqual(code, 3)
         self.assertRegex(err, BUG % "RuntimeError: boom")
 
+    @unittest.expectedFailure
+    def test_a_bug_is_one_line_though_the_output_fails_otherwise(self):
+        # An output on a full disk: the flush fails with ENOSPC, not as a reader gone, and the line still comes.
+        code = GONE_ON_WINDOWS.replace('errno.EINVAL, "Invalid argument"', 'errno.ENOSPC, "No space left"').split(
+            "sys.argv =")[0] + \
+            GUARDED.format(end="raise RuntimeError('boom')").split("import scoping", 1)[1]
+        result = support.run_python("import os, sys\nsys.path.insert(0, os.environ['REFACTOR_PASS_SCRIPTS'])\n"
+                                    "import scoping\n" + code)
+        self.assertEqual(result.code, 3, result)
+        self.assertRegex(result.err, BUG % "RuntimeError: boom")
+
     def test_a_broken_pipe_of_its_own_is_a_bug(self):
         # Not the output's: a reader of the output that's still there sees the bug.
         result = support.run_python(GUARDED.format(end="raise BrokenPipeError(errno.EPIPE, 'a pipe of its own')"))
