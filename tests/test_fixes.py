@@ -327,6 +327,27 @@ class Typed(unittest.TestCase):
             "90% of the subjects carry a type, read as a label, so the count is close to complete."])
         self.assertEqual(fix_rows(heatmap.out), {"app.py": (4, 3, 0, 3, 1)})
 
+    @unittest.expectedFailure
+    def test_messages_say_how_much_of_the_sample_is_in_the_newer_half(self):
+        # Where nearly all of it is, a count of its fixes there says nothing new: the line says it isn't said.
+        repo = support.Repo("halves")
+        for day, files in enumerate([("a.py", "b.py"), ("a.py",), ("b.py",), ("b.py",), ("a.py",), ("c.py",),
+                                     ("c.py", "d.py"), ("a.py", "c.py")], 1):
+            repo.commit("2026-01-%02d" % day, "Change %s on day %d" % (" and ".join(files), day),
+                        dict((f, lines(day, f[0])) for f in files))
+        repo.done()
+        said = dict((name, support.run("heatmap.py", "-C", repo.path, "--show", name, "--messages").out.split(
+            "\n")[1]) for name in ("a.py", "b.py", "c.py", "d.py"))
+        null = ", so how many of its fixes are there isn't said (newer: null)."
+        self.assertEqual(said, {"a.py": "In the newer half: 2 of these 4.", "b.py": "In the newer half: none of these "
+                                "3.", "c.py": "In the newer half: all 3" + null,
+                                "d.py": "In the newer half: this one" + null})
+        self.assertEqual(support.load("heatmap").newer_line(11, 12), "In the newer half: 11 of these 12, nearly all"
+                         + null)
+        self.assertEqual(support.load("heatmap").newer_line(10, 12), "In the newer half: 10 of these 12.")
+        plain = support.run("heatmap.py", "-C", repo.path, "--show", "a.py").out.split("\n")
+        self.assertRegex(plain[1], r"^  [0-9a-f]{9} ")  # Only the sample --messages lists has it.
+
     def test_types_read_as_words_where_few_subjects_carry_one(self):
         repo = build_typed(PLAIN + ["fix(cart): the total ignores discounts", "docs: fix the docstring of total",
                                     "[fix] crash on an empty cart"], "untyped")
