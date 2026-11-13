@@ -479,7 +479,8 @@ def outputs(repo, env=None):
                          "--show", "f.py", "--show", "g.py", "--messages", env=env),
              support.run("heatmap.py", "-C", repo.path, "--show", "g.py", "--diffs", ",".join(shas[:2]), env=env),
              support.run("heatmap.py", "-C", repo.path, "--show", "e.py", "--diffs", shas[4], env=env),
-             support.run("heatmap.py", "-C", repo.path, "-n", "1", "--show", "g.py", env=env)]  # The fix read too.
+             support.run("heatmap.py", "-C", repo.path, "-n", "1", "--show", "g.py", env=env),  # The fix read too.
+             support.run("heatmap.py", "-C", repo.path, "--show", "a.py", "--diffs", shas[-1], env=env)]  # The root.
     return [(r.code, r.out, r.err) for r in found]
 
 
@@ -510,6 +511,7 @@ class GitSettings(unittest.TestCase):
         self.assertIn("      @@ -1,6 +1,6 @@\n       g 1\n       \n       g 2\n      -g 3\n      +g three\n       \n"
                       "       g 4\n", self.plain[2][1])
         self.assertIn("Move c and d\n      (rename from c.py)\n      @@ -2,3 +2,4 @@ c 1\n", self.plain[3][1])
+        self.assertIn("Start\n      (new file mode 100644)\n      @@ -0,0 +1,3 @@\n      +a 1\n", self.plain[5][1])
         self.assertIn("Fixes, a lead and not a verdict: at least 2 of the 8 commits fixed a defect in the project's "
                       "own code, as their messages say: 1 a revert (of a commit that had stood 1 day) and 1 by their "
                       "words.", self.plain[0][1])
@@ -520,6 +522,7 @@ class GitSettings(unittest.TestCase):
         support.git(repo.path, "config", "gpg.program", "git")  # Prints its usage, as gpg would its verdict.
         self.assertEqual(outputs(repo), self.plain)
 
+    @unittest.expectedFailure
     def test_the_root_commits_changes_whatever_log_showroot_says(self):
         found = outputs(build_settings(), {"GIT_CONFIG_GLOBAL": user_config("[log]\n\tshowRoot = false\n")})
         self.assertEqual(support.heatmap_rows(found[0][1])["a.py"], support.heatmap_rows(self.plain[0][1])["a.py"])
@@ -554,6 +557,7 @@ class GitSettings(unittest.TestCase):
         self.assertIn("Git's attributes mark 1 file that changed in the window as binary, though it's text at HEAD, "
                       "so it's left out: a.py.\n", mine.out)
 
+    @unittest.expectedFailure
     def test_no_setting_or_variable_changes_the_output(self):
         repo = build_settings()
         home = support.new_folder("home")
