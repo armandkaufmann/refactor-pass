@@ -1378,9 +1378,6 @@ def main():
     fixes = {} if args.no_fixes else fix_trace(commits, everything, typed >= 0.5, is_test,
                                                  outside_window(repo, commits, everything))
     fix_lines, fix_facts = fix_summary(commits, fixes, typed) if fixes else ([], None)
-    # Just before the window: --since's revision, or the oldest commit's parent (none at the root).
-    base = since_rev or git(repo, "rev-list", "--parents", "-n", "1", everything[-1][0]).split()[1:2]
-    base = base if isinstance(base, str) else (base[0] if base else None)
     # Newest first, so a rename is met before the older commits that used the
     # old name: from then on the old name means the file's name today. And the
     # oldest name met for a file is its name just before the window.
@@ -1436,6 +1433,49 @@ def main():
             sets.append(touched)
             set_dates.append(describe(commit)["date"])
 
+    # --show, before the work the heatmap alone needs: every file's size, and the pairs.
+    oldest, latest = describe(commits[-1]), describe(commits[0])
+    newer_from = describe(commits[(len(commits) + 1) // 2 - 1])["date"]
+    if args.show:
+        # A file git tracks, or one changed in the window, as a file deleted in it; or a name a file had before
+        # it was renamed in the window, read as its name today. Any other is a mistake, as a scope's would be.
+        shows, known = [], set(tracked) | set(logs)
+        for given in args.show:
+            path = scoping.show_path(args.repo, repo, given, tracked)
+            if path not in known and today(path) in known:
+                shows.append((today(path), "%s, %s before it was renamed in the window" % (today(path), path)))
+            elif path in known:
+                shows.append((path, path))
+            else:
+                sys.exit(scoping.unknown_file(path, known, repo, "changed in the window"))
+        # With --messages, a file's newest commits, a sample: the ones --diffs takes.
+        limit = args.newest or (SAMPLE if args.messages or args.diffs is not None else None)
+        if args.diffs is not None:
+            show_diffs(repo, shows[0], [v.strip() for v in args.diffs.split(",") if v.strip()],
+                       logs.get(shows[0][0], [])[:limit], changed_as, fixes, newer)
+            return
+        for path, title in shows:
+            mine = logs.get(path, [])
+            listed = mine[:limit]
+            print("%s: %s from %s (%s) to %s (%s); newer: in the window's newer half, from %s.%s" % (
+                title, "the newest %d of its %d commits, of the %d" % (len(listed), len(mine), len(commits))
+                if len(listed) < len(mine) else "%d of the %d commits" % (len(mine), len(commits)),
+                oldest["sha"], oldest["date"], latest["sha"], latest["date"], newer_from,
+                " %d more: --newest %d lists them all." % (len(mine) - len(listed), len(mine))
+                if len(listed) < len(mine) else ""))
+            for commit in listed:
+                info = describe(commit)
+                print("  %s %s %s  %s%s" % (info["sha"], info["date"], half_of(commit, newer),
+                                            subject_line(info["subject"]), fix_mark(fixes.get(commit[0]))))
+                if args.messages:
+                    print(change_hint(commit, changed_as[(commit[0], path)], is_test))
+                    if message_lines(commit[5]):
+                        print(message_lines(commit[5]))
+            print()
+        return
+    # Just before the window: --since's revision, or the oldest commit's parent (none at the root).
+    base = since_rev or git(repo, "rev-list", "--parents", "-n", "1", everything[-1][0]).split()[1:2]
+    base = base if isinstance(base, str) else (base[0] if base else None)
     read = line_counts(repo, [("HEAD", p) for p in sorted(files)] + ([(base, None)] if base else []) +
                        [(base, earliest.get(p, p)) for p in sorted(files) if base])
     sizes = dict((p, read[("HEAD", p)]) for p in files if ("HEAD", p) in read)
@@ -1573,52 +1613,13 @@ def main():
             for test, found in tied.items() if len(found) > 1]
     tied.sort(key=lambda t: (-len(t["files"]), -sum(f["shared"] for f in t["files"]), t["test"]))
 
-    window = {"commits": len(commits), "newest": describe(commits[0]), "oldest": describe(commits[-1]),
-              "newer_half_from": describe(commits[(len(commits) + 1) // 2 - 1])["date"],
+    window = {"commits": len(commits), "newest": latest, "oldest": oldest, "newer_half_from": newer_from,
               "excluded": len(excluded), "excluded_asked": len(asked), "excluded_ignore_revs": len(listed),
               "excluded_checklists": len(recorded), "excluded_bots": len(bots), "bots": bot_names,
               "too_big_for_pairs": too_big,
               "since": args.since, "tests_aside": None if args.keep_tests else len(tests), "shallow": bool(cut)}
     if fix_facts:
         window["fixes"] = fix_facts
-    if args.show:
-        # A file git tracks, or one changed in the window, as a file deleted in it; or a name a file had before
-        # it was renamed in the window, read as its name today. Any other is a mistake, as a scope's would be.
-        shows, known = [], set(tracked) | set(logs)
-        for given in args.show:
-            path = scoping.show_path(args.repo, repo, given, tracked)
-            if path not in known and today(path) in known:
-                shows.append((today(path), "%s, %s before it was renamed in the window" % (today(path), path)))
-            elif path in known:
-                shows.append((path, path))
-            else:
-                sys.exit(scoping.unknown_file(path, known, repo, "changed in the window"))
-        # With --messages, a file's newest commits, a sample: the ones --diffs takes.
-        limit = args.newest or (SAMPLE if args.messages or args.diffs is not None else None)
-        if args.diffs is not None:
-            show_diffs(repo, shows[0], [v.strip() for v in args.diffs.split(",") if v.strip()],
-                       logs.get(shows[0][0], [])[:limit], changed_as, fixes, newer)
-            return
-        for path, title in shows:
-            mine = logs.get(path, [])
-            listed = mine[:limit]
-            print("%s: %s from %s (%s) to %s (%s); newer: in the window's newer half, from %s.%s" % (
-                title, "the newest %d of its %d commits, of the %d" % (len(listed), len(mine), len(commits))
-                if len(listed) < len(mine) else "%d of the %d commits" % (len(mine), len(commits)),
-                window["oldest"]["sha"], window["oldest"]["date"], window["newest"]["sha"], window["newest"]["date"],
-                window["newer_half_from"], " %d more: --newest %d lists them all." % (len(mine) - len(listed),
-                                                                                      len(mine))
-                if len(listed) < len(mine) else ""))
-            for commit in listed:
-                info = describe(commit)
-                print("  %s %s %s  %s%s" % (info["sha"], info["date"], half_of(commit, newer),
-                                            subject_line(info["subject"]), fix_mark(fixes.get(commit[0]))))
-                if args.messages:
-                    print(change_hint(commit, changed_as[(commit[0], path)], is_test))
-                    if message_lines(commit[5]):
-                        print(message_lines(commit[5]))
-            print()
-        return
     scope = args.scope or ["(everything)"]
     if page:
         options = {"top": args.top, "pairs": args.pairs, "max_files": args.max_files, "min_shared": args.min_shared,
