@@ -6,6 +6,7 @@ huge lines, deep nesting, thousands of unclosed lists. tools/stress.py runs a lo
 full size and every file of a folder, outside the default run.
 """
 
+import errno
 import os
 import random
 import re
@@ -249,6 +250,20 @@ runpy.run_path(sys.argv[0], run_name="__main__")
 """
 
 
+# A script's main under the guard: it prints a line, which waits in the output's buffer, and then ends as given.
+GUARDED = """
+import errno, os, sys
+sys.path.insert(0, os.environ["REFACTOR_PASS_SCRIPTS"])
+import scoping
+def main():
+    print("a line")
+    {end}
+scoping.guard(main)
+"""
+BUG = (r"^-c: stopped on a bug in the script itself, not a problem with the repo or the command: %s "
+       r"\(<string>, line 7, in main\)\.\n$")
+
+
 # A pipe whose reader has gone, as Windows tells it before Python 3.14: a write fails with EINVAL, not EPIPE, and
 # one too big for the 8 KiB buffer, its lines ending in \r\n, is lost with it, so a flush after it succeeds
 # (3.14's 128 KiB buffer keeps a help whole, so its flush fails as a reader gone). Once the script points its
@@ -304,13 +319,16 @@ class LastLineOfDefence(unittest.TestCase):
                                  % (re.escape(script), re.escape(script)))
 
     def gone(self, script, *args):
-        """What a script writes to stderr, and its exit code, when the reader of its output is gone before it
-        starts: its output is a pipe whose reading end is already closed, so no write can get in first."""
+        """What a script (or, for -c, Python code) writes to stderr, and its exit code, when the reader of its
+        output is gone before it starts: its output is a pipe whose reading end is already closed, so no write
+        can get in first."""
         read, write = os.pipe()
         os.close(read)
         try:
-            process = subprocess.Popen([sys.executable, os.path.join(support.SCRIPTS, script)] + list(args),
-                                       stdout=write, stderr=subprocess.PIPE, env=support.environment())
+            process = subprocess.Popen([sys.executable, script if script == "-c" else
+                                        os.path.join(support.SCRIPTS, script)] + list(args), stdout=write,
+                                       stderr=subprocess.PIPE, env=support.environment(
+                                           REFACTOR_PASS_SCRIPTS=support.SCRIPTS))
         finally:
             os.close(write)
         # Read what it writes to stderr and wait: communicate() would start a thread for it.
@@ -335,6 +353,25 @@ class LastLineOfDefence(unittest.TestCase):
             with self.subTest(args=args[:2]):
                 result = support.run_python(GONE_ON_WINDOWS, *args)
                 self.assertEqual((result.err, result.code), ("", 1))
+
+    @unittest.expectedFailure
+    def test_an_error_is_reported_though_the_reader_is_gone(self):
+        # sys.exit with a message: the message, even where flushing what was printed before it fails.
+        self.assertEqual(self.gone("-c", GUARDED.format(end="sys.exit('heatmap.py: couldn\\'t write the page.')")),
+                         ("heatmap.py: couldn't write the page.\n", 1))
+
+    @unittest.expectedFailure
+    def test_a_bug_is_one_line_though_the_reader_is_gone(self):
+        err, code = self.gone("-c", GUARDED.format(end="raise RuntimeError('boom')"))
+        self.assertEqual(code, 3)
+        self.assertRegex(err, BUG % "RuntimeError: boom")
+
+    @unittest.expectedFailure
+    def test_a_broken_pipe_of_its_own_is_a_bug(self):
+        # Not the output's: a reader of the output that's still there sees the bug.
+        result = support.run_python(GUARDED.format(end="raise BrokenPipeError(errno.EPIPE, 'a pipe of its own')"))
+        self.assertEqual((result.code, result.out), (3, "a line\n"))
+        self.assertRegex(result.err, BUG % r"BrokenPipeError: \[Errno %d\] a pipe of its own" % errno.EPIPE)
 
     def test_skill_md_says_what_to_do(self):
         with open(os.path.join(os.path.dirname(support.SCRIPTS), "SKILL.md"), encoding="utf-8") as f:
