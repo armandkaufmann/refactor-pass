@@ -653,8 +653,8 @@ document.addEventListener("DOMContentLoaded", () => {
         "size": "M", "risk": "Medium",
         "verify": "`make test`; the checkout snapshots",
         "fixes": [{"file": "src/checkout.py", "read": 12, "newer": 2,
-                   "marked": ["a1b2c3d"], "found": ["b2c3d4e", "c3d4e5f"], "dropped": ["d4e5f6a"],
-                   "note": "d4e5f6a renamed a call in passing. src/payment.py ran 1 of 12."}],
+                   "marked": ["a1b2c3d4e"], "found": ["b2c3d4e5f", "c3d4e5f6a"], "dropped": ["d4e5f6a7b"],
+                   "note": "d4e5f6a7b renamed a call in passing. src/payment.py ran 1 of 12."}],
         "commits": [], "outcome": ""}
        {"id": "Fn", "status": "todo", "title": "…",
         "note": "…",
@@ -672,7 +672,7 @@ document.addEventListener("DOMContentLoaded", () => {
      After an earlier pass, "earlier" says what came of its refactors:
        {"checklist": ".refactor-pass/2026-11-03.html", "results": [
         {"id": "Rn", "title": "…", "eases": "…", "cost": {"today": "…", "after": "…"},
-         "change": "a1b2c3d 2026-11-08 Add store credit", "actual": "2 files: …", "note": "…"}]}
+         "change": "a1b2c3d4e 2026-11-08 Add store credit", "actual": "2 files: …", "note": "…"}]}
      Statuses: todo, doing, waiting (on the user), done, skipped. Size: S, M
      or L; risk: Low, Medium or High. Dates as 2026-11-03, the local date, as
      the heatmap's are. In text, `code` shows as code. -->
