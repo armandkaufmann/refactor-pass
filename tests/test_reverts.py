@@ -151,6 +151,29 @@ class Reverts(unittest.TestCase):
                                     "commit, withdraws it and isn't counted.")
 
 
+class Outside(unittest.TestCase):
+
+    @unittest.expectedFailure
+    def test_a_reverted_commit_outside_the_window_is_read_without_its_changes(self):
+        # Its author, time, subject and body are what the trace reads of it: not its numstat, nor renames.
+        heatmap = support.load("heatmap")
+        repo = support.Repo("outside")
+        old = repo.commit("2026-01-01", "Speed up a", {"a.py": lines(3, "a")}, author=support.BOB)
+        repo.done()
+        repo.commit("2026-01-02", 'Revert "Speed up a"\n\nThis reverts commit %s.\n' % repo.sha(old),
+                    {"a.py": lines(2, "a")})
+        repo.done()
+        window = heatmap.read_log(repo.path, ["-n", "1", "HEAD"])
+        asked, git = [], heatmap.git
+        heatmap.git = lambda path, *args: asked.append(args) or git(path, *args)
+        try:
+            found = heatmap.outside_window(repo.path, window, window)
+        finally:
+            heatmap.git = git
+        self.assertEqual([c[0] for c in found.values()], [repo.sha(old)])
+        self.assertNotIn("--numstat", asked[0])
+
+
 class OneCommit(unittest.TestCase):
 
     def setUp(self):
