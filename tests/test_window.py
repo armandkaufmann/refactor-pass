@@ -373,19 +373,16 @@ class InTime(unittest.TestCase):
         self.assertEqual(len(start), 1, result.out)
         return found[start[0]:start[0] + 2]
 
-    @unittest.expectedFailure
     def test_the_newest_commits_age_and_the_windows_span(self):
         today = "Today is %s: the newest commit is " % support.local_day(support.stamp("2026-03-03"))
         self.assertEqual(self.said("2026-03-03")[0], today + "2 days old, and the window spans 59 days.")
 
-    @unittest.expectedFailure
     def test_nothing_landed_for_over_three_months(self):
         self.assertEqual(self.said("2026-11-13"), [
             "Today is %s: the newest commit is 8 months old, and the window spans 59 days." % support.local_day(
                 support.NOW), "Nothing has landed for over three months: the work it counts has gone quiet."])
         self.assertFalse(self.said("2026-05-29")[1].startswith("Nothing"))  # 89 days.
 
-    @unittest.expectedFailure
     def test_a_quiet_scope(self):
         # Where the newest commit didn't change the scope, the newest that did is said too, and judged.
         said = self.said("2026-03-03", "src")
@@ -398,13 +395,11 @@ class InTime(unittest.TestCase):
         self.assertEqual(self.said("2026-03-03", "docs")[0], "Today is %s: the newest commit is 2 days old, and "
                          "the window spans 59 days." % support.local_day(support.stamp("2026-03-03")))
 
-    @unittest.expectedFailure
     def test_the_clocks_day_where_none_is_given(self):
         before = datetime.now().strftime("%Y-%m-%d")
         said = self.said(None)[0]
         self.assertIn(said[len("Today is "):len("Today is 2026-11-13")], (before, datetime.now().strftime("%Y-%m-%d")))
 
-    @unittest.expectedFailure
     def test_the_page_carries_it(self):
         page = os.path.join(support.new_folder("in-time"), "p.html")
         for args, scope_newest, quiet in (([], None, True), (["src"], "2026-01-10", True)):

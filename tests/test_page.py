@@ -116,7 +116,6 @@ class AgainstTheHeatmap(unittest.TestCase):
             cls.heat = json.loads(support.block(f.read(), "heatmap"))
         cls.script = script(template())
 
-    @unittest.expectedFailure
     def test_the_heatmap_has_what_the_page_reads(self):
         heat = self.heat
         self.assertTrue(heat["groups"] and heat["pairs"] and heat["tests"] and heat["files"])

@@ -240,7 +240,6 @@ class Errors(unittest.TestCase):
             with self.subTest(error=words):
                 self.assertError(page(heatmap=dict(good, files=[change])), "row for src/a.py: " + words)
 
-    @unittest.expectedFailure
     def test_where_a_heatmap_sits_in_time(self):
         # The day it was made, whether nothing had landed for over three months, and the newest commit to change
         # the scope where that isn't the window's newest; a heatmap from before has none of them.

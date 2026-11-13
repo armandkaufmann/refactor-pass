@@ -242,9 +242,17 @@ def check_item(item, page, seen, errors, warnings, spread):
 
 
 def check_heatmap(heatmap, errors):
-    """The fixes counted in a heatmap block, where it counts them: its window's facts, and each file's count,
-    the commits that say they fixed a defect and changed it, and how many of those were in the newer half."""
+    """A heatmap block's facts on where its window sits in time, where it has them; and the fixes it counts,
+    where it counts them: its window's facts, and each file's count, the commits that say they fixed a defect
+    and changed it, and how many of those were in the newer half."""
     window = heatmap.get("window") if isinstance(heatmap.get("window"), dict) else {}
+    # Where it sits in time, which a heatmap from before had nothing of.
+    if "today" in window:
+        date("The heatmap's window.today", window["today"], errors)
+    if "quiet" in window and not isinstance(window["quiet"], bool):
+        errors.append("The heatmap's window.quiet should be true or false.")
+    if "scope_newest" in window and not isinstance(window["scope_newest"], (dict, type(None))):
+        errors.append("The heatmap's window.scope_newest should be an object or null.")
     if "fixes" in window and fields("The heatmap's window.fixes", window["fixes"], FIX_FACTS, errors):
         facts = window["fixes"]
         counts = [facts.get(k) for k in ("revert", "type", "words")]

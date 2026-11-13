@@ -166,6 +166,7 @@ import json
 import os
 import re
 import sys
+import time
 from collections import Counter, defaultdict
 from datetime import datetime
 from itertools import combinations
@@ -804,6 +805,44 @@ def same_person(one, other):
     name, other_name = name.strip().lower(), other_name.strip().lower()
     email, other_email = email.rstrip(">").strip().lower(), other_email.rstrip(">").strip().lower()
     return bool(name) and name == other_name or bool(email) and email == other_email
+
+
+# Over a quarter with nothing landed: work planned by the quarter lands something in one, and a holiday or a
+# release freeze is shorter, so no one is changing that code now, and a refactor's payoff waits for whoever next
+# does.
+QUIET_DAYS = 90
+
+
+def now():
+    """The time the window is set against: REFACTOR_PASS_NOW, a Unix time, where it's set, as the tests set it;
+    else the clock's."""
+    given = os.environ.get("REFACTOR_PASS_NOW")
+    if not given:
+        return time.time()
+    try:
+        return int(given)
+    except ValueError:
+        sys.exit("REFACTOR_PASS_NOW should be a Unix time, a whole number of seconds, not %r." % given)
+
+
+def in_time(today, commits, scoped):
+    """The header's lines on where the window sits in time, and whether its work has gone quiet: today, the
+    newest commit's age and the window's span; with scoped, the newest commit to change the scope, where it
+    isn't the newest commit, which the quiet is judged by. The window's commits are newest first."""
+    newest, span = commits[0], max(c[1] for c in commits) - min(c[1] for c in commits)
+
+    def age(commit):  # One dated after now, by a clock that's wrong, isn't any age.
+        return "%s old" % how_long(today - commit[1]) if today >= commit[1] else "dated after now"
+    judged = scoped or newest
+    lines = ["Today is %s: the newest commit is %s%s%s the window spans %s." % (
+        datetime.fromtimestamp(today).strftime("%Y-%m-%d"), age(newest),
+        ", and the newest to change the scope %s" % age(scoped) if scoped else "", ";" if scoped else ", and",
+        how_long(span) if span >= 60 else "under a minute")]
+    quiet = today - judged[1] > QUIET_DAYS * 86400
+    if quiet:
+        lines.append("Nothing has landed%s for over three months: the work it counts%s has gone quiet." % (
+            " in the scope" if scoped else "", " there" if scoped else ""))
+    return lines, quiet
 
 
 def how_long(seconds):
@@ -1557,6 +1596,11 @@ def main():
     # --show, before the work the heatmap alone needs: every file's size, and the pairs.
     oldest, latest = describe(commits[-1]), describe(commits[0])
     newer_from = describe(commits[(len(commits) + 1) // 2 - 1])["date"]
+    # Where the window sits in time. Its newest commit is the repo's; with a scope, the newest to change it
+    # too, where that's another, which judges whether the work has gone quiet: the scope's.
+    clock = now()
+    scoped = next((commits[i] for i, touched in enumerate(sets) if touched), None) if args.scope else None
+    time_lines, quiet = in_time(clock, commits, scoped if scoped is not commits[0] else None)
     if args.show:
         # A file git tracks, or one changed in the window, as a file deleted in it; or a name a file had before
         # it was renamed in the window, read as its name today. Any other is a mistake, as a scope's would be.
@@ -1730,7 +1774,9 @@ def main():
               "excluded": len(excluded), "excluded_asked": len(asked), "excluded_ignore_revs": len(listed),
               "excluded_checklists": len(recorded), "excluded_bots": len(bots), "bots": bot_names,
               "too_big_for_pairs": too_big,
-              "since": args.since, "tests_aside": None if args.keep_tests else len(tests), "shallow": bool(cut)}
+              "since": args.since, "tests_aside": None if args.keep_tests else len(tests), "shallow": bool(cut),
+              "today": datetime.fromtimestamp(clock).strftime("%Y-%m-%d"), "quiet": quiet,
+              "scope_newest": describe(scoped) if scoped is not None and scoped is not commits[0] else None}
     if fix_facts:
         window["fixes"] = fix_facts
     scope = args.scope or ["(everything)"]
@@ -1769,6 +1815,8 @@ def main():
         window["oldest"]["date"], "; left out: " + reasons if reasons else ""))
     if since_read:
         print("--since %s reads as %s, local time." % (args.since, since_read))
+    for line in time_lines:
+        print(line)
     print("Newer half from %s. Ordered by commits times size." % window["newer_half_from"])
     if base:
         print("Growth is against %s (%s), just before the window." % (
