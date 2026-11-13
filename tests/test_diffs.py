@@ -47,7 +47,6 @@ class Diffs(unittest.TestCase):
         binary = support.run("heatmap.py", "-C", repo.path, "--show", "img.png", "--diffs", shas[0])
         self.assertIn("      (Binary files a/img.png and b/img.png differ)\n", binary.out)
 
-    @unittest.expectedFailure
     def test_a_file_of_one_commit_or_none(self):
         # One commit listed: its hash, said once. None: nothing to give.
         repo = support.Repo("one-commit")

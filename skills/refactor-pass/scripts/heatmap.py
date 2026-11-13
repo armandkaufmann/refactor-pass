@@ -1150,16 +1150,25 @@ def show_diffs(repo, show, given, listed, changed_as, fixes, newer, wide):
     """--show FILE --diffs SHAS: those of the commits --show FILE --messages lists, each with its changes to the
     file. A hash that names none of them, or more than one, is an error, which says which."""
     path, title = show
-    chosen, problems = [], []
+    if not listed:
+        sys.exit("--diffs: %s has no commit in the window, so there's no change to show." % path)
+    chosen, problems, wrong = [], [], []
     for value in given:
         matches = [c for c in listed if re.match(r"[0-9a-fA-F]{4,}\Z", value) and c[0].startswith(value.lower())]
         if len(matches) == 1:
             chosen += [matches[0]] if matches[0] not in chosen else []  # Given twice, shown once.
         else:
             problems.append("%s %s" % (value, "is more than one of them" if matches else "isn't one of them"))
+            wrong.append(value)
+    lists = "--show %s --messages lists" % path
+    if (problems or not chosen) and len(listed) == 1:  # Its one commit, said: no hash names more than one.
+        one = listed[0][0][:9]
+        sys.exit("--diffs: %s %s the one commit %s, %s." % (and_list(wrong), "isn't" if len(wrong) == 1 else "aren't",
+                                                           lists, one) if wrong else
+                 "--diffs: no commit given. The one commit %s is %s." % (lists, one))
     if problems or not chosen:
-        sys.exit("--diffs: %s. Give hashes of the %d commits --show %s --messages lists%s." % (
-            "; ".join(problems) or "no commit given", len(listed), path,
+        sys.exit("--diffs: %s. Give hashes of the %d commits %s%s." % (
+            "; ".join(problems) or "no commit given", len(listed), lists,
             ", or widen it with --newest" if len(listed) == SAMPLE else ""))
     diffs = file_diffs(repo, [(c[0], changed_as[(c[0], path)][0], changed_as[(c[0], path)][1]) for c in chosen],
                        DIFF_LINES)
