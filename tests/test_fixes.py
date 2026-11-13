@@ -289,11 +289,11 @@ class Typed(unittest.TestCase):
         marks = marks_of(result.out)
         self.assertEqual(dict((t[0], marks[t[0]]) for t in TYPED), dict((t[0], t[1]) for t in TYPED))
         heatmap = support.run("heatmap.py", "-C", repo.path)
-        # 10 of the 11 subjects carry a type: all but the one that reads by its words.
+        # 10 of the 11 subjects carry a type, 90% rounded down: all but the one that reads by its words.
         self.assertEqual(fixes_lines(heatmap.out), [
             "Fixes, a lead and not a verdict: at least 4 of the 11 commits fixed a defect in the project's own "
             "code, as their messages say: 3 by their type and 1 by their words.",
-            "91% of the subjects carry a type, read as a label, so the count is close to complete."])
+            "90% of the subjects carry a type, read as a label, so the count is close to complete."])
         self.assertEqual(fix_rows(heatmap.out), {"app.py": (4, 3, 0, 3, 1)})
 
     def test_types_read_as_words_where_few_subjects_carry_one(self):
@@ -315,9 +315,9 @@ class Typed(unittest.TestCase):
         self.assertEqual(marks["fix(cart): the total ignores discounts"], "fix, words: fix")
         self.assertEqual(marks["docs: fix the docstring of total"], "not a fix: says docs")
         self.assertEqual(marks["[fix] crash on an empty cart"], "fix, words: fix, crash")
-        # 4 of the 15 subjects carry a type, with "feat: start".
+        # 4 of the 15 subjects carry a type, with "feat: start": 26%, rounded down.
         self.assertTrue(fixes_lines(support.run("heatmap.py", "-C", repo.path).out)[1].startswith(
-            "27% of the subjects carry a type, too few to read as labels, so the count is a floor"))
+            "26% of the subjects carry a type, too few to read as labels, so the count is a floor"))
 
     def test_tags_that_arent_types_read_by_their_words(self):
         # Component and ticket tags are areas, not types: none of these subjects carries one but "feat: start".
@@ -686,7 +686,6 @@ class Words(unittest.TestCase):
         facts = heatmap.fix_summary(commits, heatmap.fix_trace(commits, commits, False), 0.0)[1]
         self.assertEqual((facts["fixes"], facts["closing"]), (1, 2))
 
-    @unittest.expectedFailure
     def test_the_share_with_a_type_is_one_number(self):
         # Printed as the decision is made from it: 99 of 200 is 49%, too few; 179 of 200 is 89%, not nearly all.
         heatmap = self.heatmap

@@ -921,7 +921,7 @@ def fix_summary(commits, fixes, typed):
         second = "Most subjects here are a word or two (%d of the %d), too little to tell a fix from anything " \
                  "else, so the count can't be read and the fixes by file aren't listed. %s." % (
                      short, len(commits), share)
-    elif labelled and round(typed, 2) >= NEARLY_ALL:
+    elif labelled and typed >= NEARLY_ALL:
         second = "%s, read as a label, so the count is close to complete." % share
     elif labelled:
         second = "%s, read as a label; those without one are read by their words, so the count is a floor: such " \
@@ -1071,8 +1071,9 @@ def show_diffs(repo, show, given, listed, changed_as, fixes, newer):
 
 def typed_share(commits):
     """The share of the commits whose subjects carry a type: Conventional Commits', one in brackets or a
-    gitmoji."""
-    return sum(1 for c in commits if type_of(c[2])) / float(len(commits)) if commits else 0.0
+    gitmoji; in whole percent, rounded down, as it's printed, so what's said and what's decided from it agree
+    (99 of 200 is 49%, too few to read as labels)."""
+    return sum(1 for c in commits if type_of(c[2])) * 100 // len(commits) / 100.0 if commits else 0.0
 
 
 def printable(text):
