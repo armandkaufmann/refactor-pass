@@ -496,6 +496,16 @@ class Diffs(unittest.TestCase):
                           % ("y" * 162), out)
         self.assertIn("Start %s... (206 more characters)\n" % ("x" * 194), out)  # As --messages lists it.
 
+    @unittest.expectedFailure
+    def test_a_files_crlf_line_ends_arent_shown(self):
+        # Four characters of noise a line, \x0d, for nothing a reader needs.
+        repo = support.Repo("crlf")
+        repo.commit("2026-01-01", "Start", {"a.txt": b"a\r\nb\r\nc\r\n"})
+        change = repo.commit("2026-01-02", "Change b", {"a.txt": b"a\r\nB\r\nc\r\n"})
+        repo.done()
+        result = support.run("heatmap.py", "-C", repo.path, "--show", "a.txt", "--diffs", repo.short(change))
+        self.assertIn("Change b\n      @@ -1,3 +1,3 @@\n       a\n      -b\n      +B\n       c\n", result.out)
+
     def test_the_lines_a_file_gives(self):
         # As file_diffs reads git show's output: one call for several commits, each commit's section of the file.
         heatmap = support.load("heatmap")
