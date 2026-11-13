@@ -6,6 +6,7 @@ huge lines, deep nesting, thousands of unclosed lists. tools/stress.py runs a lo
 full size and every file of a folder, outside the default run.
 """
 
+import errno
 import os
 import random
 import re
@@ -249,6 +250,57 @@ runpy.run_path(sys.argv[0], run_name="__main__")
 """
 
 
+# A script's main under the guard: it prints a line, which waits in the output's buffer, and then ends as given.
+GUARDED = """
+import errno, os, sys
+sys.path.insert(0, os.environ["REFACTOR_PASS_SCRIPTS"])
+import scoping
+def main():
+    print("a line")
+    {end}
+scoping.guard(main)
+"""
+# A script run as from the command line.
+SCRIPT = """
+import os, runpy, sys
+sys.argv = [os.path.join(os.environ["REFACTOR_PASS_SCRIPTS"], sys.argv[1])] + sys.argv[2:]
+runpy.run_path(sys.argv[0], run_name="__main__")
+"""
+BUG = (r"^-c: stopped on a bug in the script itself, not a problem with the repo or the command: %s "
+       r"\(\S+, line \d+, in \w+\)\.\n$")
+
+
+# A pipe whose reader has gone, as Windows tells it before Python 3.14: a write fails with EINVAL, not EPIPE, and
+# one too big for the 8 KiB buffer, its lines ending in \r\n, is lost with it, so a flush after it succeeds.
+# From Python 3.12 argparse ignores a failed write of the help, so on 3.13 the script ends as if all were well,
+# as it did on Linux too; 3.14's 128 KiB buffer keeps a help whole, so a flush of it fails. Once the script
+# points its output at the null device, as it does when it sees the reader gone, writes go through.
+GONE_ON_WINDOWS = """
+import errno, io, os, runpy, sys
+class Gone(io.RawIOBase):
+    reader_gone = True
+    def __init__(self):
+        super().__init__()
+        self.fd = os.dup(1)
+    def writable(self):
+        return True
+    def fileno(self):
+        return self.fd
+    def write(self, data):
+        if Gone.reader_gone:
+            raise OSError(errno.EINVAL, "Invalid argument")
+        return len(data)
+dup2 = os.dup2
+def to_devnull(fd, fd2, *args):
+    Gone.reader_gone = False
+    return dup2(fd, fd2, *args)
+os.dup2 = to_devnull
+sys.stdout = io.TextIOWrapper(io.BufferedWriter(Gone(), buffer_size=8192), encoding="utf-8", newline="\\r\\n")
+sys.argv = [os.path.join(os.environ["REFACTOR_PASS_SCRIPTS"], sys.argv[1])] + sys.argv[2:]
+runpy.run_path(sys.argv[0], run_name="__main__")
+"""
+
+
 class LastLineOfDefence(unittest.TestCase):
     """An exception a script doesn't foresee ends it with one plain line that says it's a bug in the script,
     and where, not a traceback; and a reader that stops reading, as head does, isn't one."""
@@ -257,6 +309,7 @@ class LastLineOfDefence(unittest.TestCase):
     def setUpClass(cls):
         repo = support.Repo("defence")
         repo.commit("2026-01-01", "Start", {"a.py": "def f():\n    return 1\n"})
+        repo.commit("2026-01-02", "Return two", {"a.py": "def f():\n    return 2\n"})
         repo.done()
         cls.repo = repo.path
 
@@ -273,18 +326,104 @@ class LastLineOfDefence(unittest.TestCase):
                                              r"repo or the command: RuntimeError: boom \(%s, line \d+, in \w+\)\.\n$"
                                  % (re.escape(script), re.escape(script)))
 
+    def gone(self, script, *args):
+        """What a script (or, for -c, Python code) writes to stderr, and its exit code, when the reader of its
+        output is gone before it starts: its output is a pipe whose reading end is already closed, so no write
+        can get in first."""
+        read, write = os.pipe()
+        os.close(read)
+        try:
+            process = subprocess.Popen([sys.executable, script if script == "-c" else
+                                        os.path.join(support.SCRIPTS, script)] + list(args), stdout=write,
+                                       stderr=subprocess.PIPE, env=support.environment(
+                                           REFACTOR_PASS_SCRIPTS=support.SCRIPTS))
+        finally:
+            os.close(write)
+        # Read what it writes to stderr and wait: communicate() would start a thread for it.
+        err = support._text(process.stderr.read())  # As the suite reads output: Windows ends its lines \r\n.
+        process.stderr.close()
+        return err, process.wait(timeout=60)
+
     def test_a_reader_that_stops_reading(self):
         for script in ("heatmap.py", "measure.py"):
             with self.subTest(script=script):
-                process = subprocess.Popen([sys.executable, os.path.join(support.SCRIPTS, script), "-C", self.repo],
-                                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=support.environment())
-                process.stdout.close()
-                # Read what it writes to stderr and wait: communicate() would start a thread reading stdout,
-                # closed, which complains on Windows.
-                err = process.stderr.read().decode("utf-8", "replace")
-                process.stderr.close()
-                process.wait(timeout=60)
-                self.assertEqual(err, "")
+                self.assertEqual(self.gone(script, "-C", self.repo)[0], "")
+
+    def test_a_reader_gone_before_the_help(self):
+        for script in ("heatmap.py", "measure.py", "check_page.py"):
+            with self.subTest(script=script):
+                self.assertEqual(self.gone(script, "--help"), ("", 1))
+
+    def test_a_reader_gone_as_windows_says_it(self):
+        for args in (["heatmap.py", "--help"], ["measure.py", "--help"], ["check_page.py", "--help"],
+                     ["heatmap.py", "-C", self.repo]):
+            with self.subTest(args=args[:2]):
+                result = support.run_python(GONE_ON_WINDOWS, *args)
+                self.assertEqual((result.err, result.code), ("", 1))
+
+    def test_an_error_is_reported_though_the_reader_is_gone(self):
+        # sys.exit with a message: the message, even where flushing what was printed before it fails.
+        self.assertEqual(self.gone("-c", GUARDED.format(end="sys.exit('heatmap.py: couldn\\'t write the page.')")),
+                         ("heatmap.py: couldn't write the page.\n", 1))
+
+    def test_a_bug_is_one_line_though_the_reader_is_gone(self):
+        err, code = self.gone("-c", GUARDED.format(end="raise RuntimeError('boom')"))
+        self.assertEqual(code, 3)
+        self.assertRegex(err, BUG % "RuntimeError: boom")
+
+    def test_a_bug_is_one_line_though_the_output_fails_otherwise(self):
+        # An output on a full disk: the flush fails with ENOSPC, not as a reader gone, and the line still comes.
+        code = GONE_ON_WINDOWS.replace('errno.EINVAL, "Invalid argument"', 'errno.ENOSPC, "No space left"').split(
+            "sys.argv =")[0] + \
+            GUARDED.format(end="raise RuntimeError('boom')").split("import scoping", 1)[1]
+        result = support.run_python("import os, sys\nsys.path.insert(0, os.environ['REFACTOR_PASS_SCRIPTS'])\n"
+                                    "import scoping\n" + code)
+        self.assertEqual(result.code, 3, result)
+        self.assertRegex(result.err, BUG % "RuntimeError: boom")
+
+    def test_a_broken_pipe_of_its_own_is_a_bug(self):
+        # Not the output's: a reader of the output that's still there sees the bug.
+        result = support.run_python(GUARDED.format(end="raise BrokenPipeError(errno.EPIPE, 'a pipe of its own')"))
+        self.assertEqual((result.code, result.out), (3, "a line\n"))
+        self.assertRegex(result.err, BUG % r"BrokenPipeError: \[Errno %d\] a pipe of its own" % errno.EPIPE)
+
+    def closed(self, fd, code, *args):
+        """Python code run with its output (fd 1) or its errors (fd 2) closed as it starts, as by >&- or 2>&-,
+        which leaves Python's stream for it None: what it writes to the other, and its exit code. Windows can't
+        start a process so, so there the code closes it and sets the stream None first."""
+        options = {}
+        if os.name == "nt":
+            code = "import os, sys\nos.close(%d)\nsys.%s = None\n%s" % (fd, ("stdout", "stderr")[fd - 1], code)
+        else:
+            options["preexec_fn"] = lambda: os.close(fd)
+        result = subprocess.run([sys.executable, "-c", code] + list(args), capture_output=True, timeout=60,
+                                cwd=support.temp_root(), env=support.environment(REFACTOR_PASS_SCRIPTS=support.SCRIPTS),
+                                **options)
+        return support._text(result.stderr if fd == 1 else result.stdout), result.returncode
+
+    def test_output_closed(self):
+        # No output to write to: no traceback, and what the script says on stderr, and how it ends, as with one.
+        self.assertEqual(self.closed(1, SCRIPT, "heatmap.py", "-C", self.repo), ("", 0))
+        missing = os.path.join(support.new_folder("closed"), "missing.html")
+        result = support.run("check_page.py", missing)
+        self.assertEqual((result.code, result.out), (1, ""))
+        self.assertEqual(self.closed(1, SCRIPT, "check_page.py", missing), (result.err, 1))
+        self.assertEqual(self.closed(1, GUARDED.format(end="sys.exit('heatmap.py: no page.')")),
+                         ("heatmap.py: no page.\n", 1))
+        err, code = self.closed(1, GUARDED.format(end="raise RuntimeError('boom')"))
+        self.assertEqual(code, 3)
+        self.assertRegex(err, BUG % "RuntimeError: boom")
+
+    def test_errors_closed(self):
+        # Nowhere to say what went wrong: the output is what it is with somewhere, with none of the errors in it.
+        args = ["-C", self.repo, "-n", "1", "--exclude-commits", "HEAD~1"]  # Outside the window: it warns.
+        result = support.run("heatmap.py", *args)
+        self.assertEqual(result.code, 0, result)
+        self.assertIn("isn't in the window", result.err)
+        self.assertEqual(self.closed(2, SCRIPT, "heatmap.py", *args), (result.out, 0))
+        missing = os.path.join(support.new_folder("closed"), "missing.html")
+        self.assertEqual(self.closed(2, SCRIPT, "check_page.py", missing), ("", 1))
+        self.assertEqual(self.closed(2, GUARDED.format(end="raise RuntimeError('boom')")), ("a line\n", 3))
 
     def test_skill_md_says_what_to_do(self):
         with open(os.path.join(os.path.dirname(support.SCRIPTS), "SKILL.md"), encoding="utf-8") as f:

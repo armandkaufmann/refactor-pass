@@ -9,6 +9,7 @@ author date is weeks before its commit date, as after a rebase: the heatmap goes
 import json
 import os
 import re
+import shutil
 import unittest
 
 try:
@@ -166,13 +167,16 @@ class Columns(unittest.TestCase):
                              "src/renamed.py")
         self.assertEqual(result.code, 0, result)
         short = self.repo.short
-        self.assertIn("src/big.py: 5 of the 8 commits from %s (2026-01-03) to %s (2026-01-10)\n"
-                      "  %s 2026-01-10 Grow both\n  %s 2026-01-08 Change new\n  %s 2026-01-06 Grow renamed\n"
-                      "  %s 2026-01-04 Add new\n  %s 2026-01-03 Grow big, shrink shrink\n" % (
+        # The window's newer half is its 4 newest commits, from the 7th.
+        self.assertIn("src/big.py: 5 of the 8 commits from %s (2026-01-03) to %s (2026-01-10); newer: in the "
+                      "window's newer half, from 2026-01-07.\n"
+                      "  %s 2026-01-10 newer  Grow both\n  %s 2026-01-08 newer  Change new\n"
+                      "  %s 2026-01-06 older  Grow renamed\n  %s 2026-01-04 older  Add new\n"
+                      "  %s 2026-01-03 older  Grow big, shrink shrink\n" % (
                           short(self.marks[3]), short(self.marks[10]), short(self.marks[10]), short(self.marks[8]),
                           short(self.marks[6]), short(self.marks[4]), short(self.marks[3])), result.out)
         self.assertIn("src/renamed.py: 2 of the 8 commits", result.out)
-        self.assertIn("  %s 2026-01-05 Rename\n" % short(self.marks[5]), result.out)
+        self.assertIn("  %s 2026-01-05 older  Rename\n" % short(self.marks[5]), result.out)
         self.assertNotIn("commits recent", result.out)
 
     def test_show_a_file_no_commit_or_tree_knows_is_an_error(self):
@@ -197,7 +201,7 @@ class Columns(unittest.TestCase):
                              "src/cold.py")
         self.assertEqual(result.code, 0, result)
         self.assertIn("src/gone.py: 1 of the 8 commits", result.out)
-        self.assertIn("  %s 2026-01-07 Remove gone, grow new\n" % self.repo.short(self.marks[7]), result.out)
+        self.assertIn("  %s 2026-01-07 newer  Remove gone, grow new\n" % self.repo.short(self.marks[7]), result.out)
         self.assertIn("src/cold.py: 0 of the 8 commits", result.out)
 
     def test_top(self):
@@ -433,12 +437,18 @@ def build_settings():
     and 4 removed, and its patience diff as 4 and 5; two files renamed and changed in one commit, which a
     rename limit of 1 leaves as two removed and two added; a commit signed with a signature that's no good,
     made by hand, since fast-import can't sign on every git; and one after it, so that what git prints on
-    checking the signature comes between two commits."""
+    checking the signature comes between two commits; h.txt, whose change git counts as 3 lines added and 7
+    removed, and as 4 and 8 with diff.context=0, where git cuts the files' common end before it diffs them.
+    Then a fix, its message's body past ASCII, and another
+    author's revert of it, whose body names it: the fixes trace reads bodies; and --diffs shows the revert's
+    change to g.py, whose context holds blank lines."""
     repo = support.Repo("settings")
+    tail = lines(50, "a line of the tail")
     repo.commit("2026-01-01", "Start", {"a.py": lines(3, "a"), "b.txt": "{\nx\nx\n}\n}\nz\n", "c.py": lines(4, "c"),
-                                        "d.py": lines(4, "d")})
+                                        "d.py": lines(4, "d"), "h.txt": lines(6, "h") + "\nh 7\n" + tail})
     repo.commit("2026-01-02", "Grow a, caf\u00e9", {"a.py": lines(5, "a")})
-    repo.commit("2026-01-03", "Shuffle b", {"b.txt": "z\n}\n{\n}\n{\n", "a.py": lines(6, "a")})
+    repo.commit("2026-01-03", "Shuffle b", {"b.txt": "z\n}\n{\n}\n{\n", "a.py": lines(6, "a"),
+                                            "h.txt": "\n" * 4 + tail})
     repo.commit("2026-01-04", "Move c and d", {"e.py": lines(5, "c"), "f.py": lines(5, "d")},
                 rename={"c.py": "e.py", "d.py": "f.py"})
     last = repo.commit("2026-01-05", "Signed", {"e.py": lines(6, "c")})
@@ -450,17 +460,29 @@ def build_settings():
     sha = support.git(repo.path, "hash-object", "-t", "commit", "-w", "--stdin", input=signed.encode()).strip()
     support.git(repo.path, "update-ref", "refs/heads/main", sha)
     repo.commit("2026-01-06", "After", {"f.py": lines(6, "d")}, parent=sha)
+    fix = repo.commit("2026-01-07", "Fix the crash in g\n\nThe caf\u00e9's g crashed.\n",
+                      {"g.py": "g 1\n\ng 2\ng 3\n\ng 4\n"})
+    repo.done()
+    repo.commit("2026-01-08", 'Revert "Fix the crash in g"\n\nThis reverts commit %s.\n' % repo.sha(fix),
+                {"g.py": "g 1\n\ng 2\ng three\n\ng 4\n"}, author=support.BOB)
     repo.done()
     return repo
 
 
 def outputs(repo, env=None):
-    """The heatmap, and --show for each of its files, as run with env added to the environment: each as its
-    exit code, its output and its errors."""
+    """The heatmap, --show for each of its files, --diffs, and a window of the revert alone, whose reverted commit
+    is read from the repo, as run with env added to the environment: each as its exit code, its output and its
+    errors."""
     env = env or {}
+    shas = support.git(repo.path, "rev-list", "HEAD").split()  # Newest first: the revert, the fix, ...
     found = [support.run("heatmap.py", "-C", repo.path, env=env),
              support.run("heatmap.py", "-C", repo.path, "--show", "a.py", "--show", "b.txt", "--show", "e.py",
-                         "--show", "f.py", env=env)]
+                         "--show", "f.py", "--show", "g.py", "--messages", env=env),
+             support.run("heatmap.py", "-C", repo.path, "--show", "g.py", "--diffs", ",".join(shas[:2]), env=env),
+             support.run("heatmap.py", "-C", repo.path, "--show", "e.py", "--show", "g.py", "--diffs",
+                         "%s,%s" % (shas[4], shas[0]), env=env),  # Two files' changes from one git call.
+             support.run("heatmap.py", "-C", repo.path, "-n", "1", "--show", "g.py", env=env),  # The fix read too.
+             support.run("heatmap.py", "-C", repo.path, "--show", "a.py", "--diffs", shas[-1], env=env)]  # The root.
     return [(r.code, r.out, r.err) for r in found]
 
 
@@ -475,33 +497,48 @@ class GitSettings(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.plain = outputs(build_settings())
+        cls.repo = build_settings()  # Read as it is; a test that changes its config takes a copy.
+        cls.plain = outputs(cls.repo)
         for code, out, err in cls.plain:
             assert code == 0 and not err, (out, err)
+
+    def copy(self):
+        """The repo, copied, for a test that changes its config."""
+        path = os.path.join(support.new_folder("settings-copy"), "settings")
+        shutil.copytree(self.repo.path, path, symlinks=True)
+        return type("Copied", (), {"path": path})()
 
     def test_plain(self):
         rows = support.heatmap_rows(self.plain[0][1])
         self.assertEqual(rows["a.py"], dict(commits=3, recent=0, last="2026-01-03", churn=6, rel=1.0, size=6,
                                             growth=6))
         self.assertEqual(rows["b.txt"]["churn"], 3 + 4 + 6)
+        self.assertEqual(rows["h.txt"]["churn"], 58 + 3 + 7)
         self.assertEqual((rows["e.py"]["commits"], rows["e.py"]["churn"]), (3, 4 + 1 + 1))
         self.assertEqual((rows["f.py"]["commits"], rows["f.py"]["churn"]), (3, 4 + 1 + 1))
         self.assertIn("Grow a, caf\u00e9", self.plain[1][1])
+        self.assertIn("      @@ -1,6 +1,6 @@\n       g 1\n       \n       g 2\n      -g 3\n      +g three\n       \n"
+                      "       g 4\n", self.plain[2][1])
+        self.assertIn("Move c and d\n      (rename from c.py)\n      @@ -2,3 +2,4 @@ c 1\n", self.plain[3][1])
+        self.assertIn("Start\n      (new file mode 100644)\n      @@ -0,0 +1,3 @@\n      +a 1\n", self.plain[5][1])
+        self.assertIn("Fixes, a lead and not a verdict: at least 2 of the 8 commits fixed a defect in the project's "
+                      "own code, as their messages say: 1 a revert (of a commit that had stood 1 day) and 1 by their "
+                      "words.", self.plain[0][1])
 
     def test_a_signature_check_in_the_repos_config(self):
-        repo = build_settings()
+        repo = self.copy()
         support.git(repo.path, "config", "log.showSignature", "true")
         support.git(repo.path, "config", "gpg.program", "git")  # Prints its usage, as gpg would its verdict.
         self.assertEqual(outputs(repo), self.plain)
 
     def test_the_root_commits_changes_whatever_log_showroot_says(self):
-        found = outputs(build_settings(), {"GIT_CONFIG_GLOBAL": user_config("[log]\n\tshowRoot = false\n")})
+        found = outputs(self.repo, {"GIT_CONFIG_GLOBAL": user_config("[log]\n\tshowRoot = false\n")})
         self.assertEqual(support.heatmap_rows(found[0][1])["a.py"], support.heatmap_rows(self.plain[0][1])["a.py"])
         self.assertEqual(found, self.plain)
 
     def test_a_big_file_threshold(self):
         # Above it git's diff reads a file as binary; at 1 byte, every file.
-        found = outputs(build_settings(), {"GIT_CONFIG_GLOBAL": user_config("[core]\n\tbigFileThreshold = 1\n")})
+        found = outputs(self.repo, {"GIT_CONFIG_GLOBAL": user_config("[core]\n\tbigFileThreshold = 1\n")})
         self.assertEqual(found, self.plain)
 
     def test_files_attributes_mark_binary_though_text_are_named(self):
@@ -529,7 +566,7 @@ class GitSettings(unittest.TestCase):
                       "so it's left out: a.py.\n", mine.out)
 
     def test_no_setting_or_variable_changes_the_output(self):
-        repo = build_settings()
+        repo = self.copy()
         home = support.new_folder("home")
         order = support.write_text(os.path.join(home, "order"), "f.py\ne.py\nb.txt\na.py\n")
         attributes = support.write_text(os.path.join(home, "attributes"), "*.py diff=conv\n*.txt diff=conv\n")
@@ -538,9 +575,10 @@ class GitSettings(unittest.TestCase):
                     "date = relative", "follow = true"],
             "gpg": ["program = git"],
             "diff": ["algorithm = patience", "renameLimit = 1", "renames = copies", "noprefix = true",
-                     "mnemonicPrefix = true", "relative = true", "orderFile = " + order.replace("\\", "/"),
+                     "mnemonicPrefix = true", "srcPrefix = x/", "dstPrefix = y/", "relative = true",
+                     "orderFile = " + order.replace("\\", "/"),
                      "external = git hash-object", "indentHeuristic = false", "suppressBlankEmpty = true",
-                     "context = 0", "colorMoved = zebra"],
+                     "context = 0", "interHunkContext = 20", "colorMoved = zebra"],
             'diff "conv"': ["textconv = git hash-object"],
             "i18n": ["logOutputEncoding = ISO-8859-1"],
             "format": ["pretty = oneline"],
@@ -562,7 +600,7 @@ class GitSettings(unittest.TestCase):
                      "GIT_EXTERNAL_DIFF": "git hash-object", "GIT_CONFIG_COUNT": "1",
                      "GIT_CONFIG_KEY_0": "log.showRoot", "GIT_CONFIG_VALUE_0": "false"}
         self.assertEqual(outputs(repo, variables), self.plain)
-        plain = support.run("measure.py", "-C", build_settings().path)
+        plain = support.run("measure.py", "-C", self.repo.path)
         hostile = support.run("measure.py", "-C", repo.path, env=variables)
         self.assertEqual((hostile.code, hostile.out, hostile.err), (plain.code, plain.out, plain.err))
 
@@ -576,7 +614,8 @@ class GitSettings(unittest.TestCase):
         result = support.run("heatmap.py", "-C", repo.path, "--show", "a.py")
         self.assertEqual(result.code, 0, result)
         # A control character is written as its escape, so a subject can't drive the terminal.
-        shown = [line.split(" ", 4)[-1] for line in result.out.split("\n")[1:] if line.strip()]
+        shown = [re.sub(r"^  \S+ \S+ (?:newer|older)  ", "", line) for line in result.out.split("\n")[1:]
+                 if line.strip()]
         self.assertEqual(shown, ["red \\x1b[31malert\\x7f", "odd\\x1esubject\\x1fhere", "Tidy up", "Start"])
 
 

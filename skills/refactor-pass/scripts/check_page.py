@@ -10,7 +10,14 @@ so a status update stays a one-line edit:
   {"id": "R4", "status": "todo", ...   becomes   {"id": "R4", "status": "doing", ...
 
 It checks too that dates are written 2026-11-10, and that a refactor's size
-is S, M or L and its risk Low, Medium or High, as the page shows them.
+is S, M or L and its risk Low, Medium or High, as the page shows them. An
+item that cites fixes has them per file: how many of its newest commits
+were read (the sample), how many of its fixes are in the newer half (or
+null), the fixes counted that the heatmap marked, those it didn't, and those
+it marked that were left out, each a hash once, no more than were read, and
+a note that says why where any were left out. The
+heatmap block is heatmap.py's to write; where it counts fixes (a heatmap
+from before it did has none), those counts are checked too.
 
 It prints a line per kind of item, then any problems: errors (the page or a
 later pass would go wrong) and warnings (something the skill asks for is
@@ -51,8 +58,17 @@ OTHER = {"id": str, "status": str, "title": str, "note": str, "commits": list, "
 COST = {"today": str, "after": str}
 EARLIER = {"checklist": str, "results": list}
 RESULT = {"id": str, "title": str, "eases": str, "cost": dict, "change": str, "actual": str, "note": str}
+# An item's fixes, per file: how many of its newest commits were read (the sample), how many of its fixes are in
+# the window's newer half (null where nearly all the sample is), the fixes counted that the heatmap marked, those
+# it didn't (found by reading), and those it marked that weren't fixes of the file; and, optional, a note: why
+# those were dropped, how the item's other files ran.
+FIXES = {"file": str, "read": int, "newer": (int, type(None)), "marked": list, "found": list, "dropped": list}
+# The fixes trace's facts in the heatmap block's window, as heatmap.py writes them.
+FIX_FACTS = {"fixes": int, "revert": int, "type": int, "words": int, "typed": (int, float), "labels": bool,
+             "thin": bool, "language": bool, "complete": bool}
 KIND_NAMES = {"R": "refactors", "F": "small fixes", "L": "later", "D": "your call"}
-WORDS = {str: "text", list: "a list", dict: "an object"}
+WORDS = {str: "text", list: "a list", dict: "an object", int: "a whole number", bool: "true or false",
+         (int, float): "a number", (int, type(None)): "a whole number or null"}
 
 
 def parse(text, name, errors):
@@ -95,7 +111,7 @@ def fields(where, value, shape, errors, optional=()):
     for key, kind in shape.items():
         if key not in value:
             errors.append("%s is missing %r." % (where, key))
-        elif not isinstance(value[key], kind):
+        elif not isinstance(value[key], kind) or (isinstance(value[key], bool) and kind is not bool):
             errors.append("%s: %r should be %s." % (where, key, WORDS.get(kind, "an object or null")))
     return True
 
@@ -133,6 +149,53 @@ def one_of(where, value, allowed, errors):
         errors.append("%s should be %s or %s, not %r." % (where, ", ".join(allowed[:-1]), allowed[-1], value))
 
 
+def is_hash(value):
+    """Whether value is a commit's hash as an item records it: 7 to 40 of its hex digits, in lower case."""
+    return isinstance(value, str) and bool(re.fullmatch(r"[0-9a-f]{7,40}", value))
+
+
+def check_fixes(ident, entries, errors, warnings):
+    """An item's fixes: a list with an entry per file, each of the right fields, each commit once, at whatever
+    length, and no more commits listed than were read; and a note that says why, where it drops one."""
+    if not isinstance(entries, list):
+        errors.append("%s's fixes should be a list, an entry per file." % ident)
+        return
+    files = [e.get("file") for e in entries if isinstance(e, dict) and isinstance(e.get("file"), str)]
+    for name in sorted(set(f for f in files if f.strip() and files.count(f) > 1)):
+        errors.append("%s's fixes have %s twice: an entry per file." % (ident, name))
+    for i, entry in enumerate(entries):
+        where = "%s.fixes[%d]" % (ident, i)
+        if not fields(where, entry, FIXES, errors, optional=("note",)):
+            continue
+        if "note" in entry and not isinstance(entry["note"], str):
+            errors.append("%s: 'note' should be text." % where)
+        dropped = [c for c in entry["dropped"] if isinstance(c, str)] if isinstance(entry.get("dropped"), list) else []
+        if dropped and not filled(entry.get("note")):
+            warnings.append("%s drops %s with no note: say why in it." % (where, ", ".join(dropped)))
+        if isinstance(entry.get("file"), str) and not entry["file"].strip():
+            errors.append("%s: 'file' should name the file." % where)
+        cited = [c for key in ("marked", "found", "dropped") if isinstance(entry.get(key), list) for c in entry[key]]
+        bad = [c for c in cited if not is_hash(c)]
+        if bad:
+            errors.append("%s: commits are hashes of 7 to 40 hex digits; not %s."
+                          % (where, ", ".join(repr(c) for c in bad)))
+        hashes = [c for c in cited if is_hash(c)]
+        twice = sorted(set("%s twice" % c if c == d else "one commit twice, as %s and %s" % tuple(sorted((c, d)))
+                           for j, c in enumerate(hashes) for d in hashes[:j] if c.startswith(d) or d.startswith(c)))
+        if twice:
+            errors.append("%s lists %s: a commit read is one of marked, found or dropped, or none."
+                          % (where, "; ".join(twice)))
+        read, newer = entry.get("read"), entry.get("newer")
+        if isinstance(read, int) and not isinstance(read, bool) and read < len(cited):
+            errors.append("%s lists %d commits but read %d: read counts every commit read, newest first."
+                          % (where, len(cited), read))
+        counted = len(entry["marked"] if isinstance(entry.get("marked"), list) else []) + \
+            len(entry["found"] if isinstance(entry.get("found"), list) else [])
+        if isinstance(newer, int) and not isinstance(newer, bool) and not 0 <= newer <= counted:
+            errors.append("%s says %d of its fixes are in the newer half, of the %d it counts."
+                          % (where, newer, counted))
+
+
 def check_item(item, page, seen, errors, warnings, spread):
     ident = item["id"]
     if not re.fullmatch(r"[RFLD][1-9][0-9]*", ident):
@@ -141,9 +204,13 @@ def check_item(item, page, seen, errors, warnings, spread):
     if ident in seen:
         errors.append("%s is used twice; an ID always means one item." % ident)
     seen[ident] = seen.get(ident, 0) + 1
-    fields(ident, item, REFACTOR if ident[0] == "R" else OTHER, errors, optional=("from",))
+    fields(ident, item, REFACTOR if ident[0] == "R" else OTHER, errors, optional=("from", "fixes"))
     if "from" in item:
         date("%s's from" % ident, item["from"], errors)
+    if "fixes" in item:
+        check_fixes(ident, item["fixes"], errors, warnings)
+    if item.get("fixes") == []:  # The page shows nothing for it.
+        warnings.append("%s's fixes cite nothing: leave the field out where an item cites no fixes." % ident)
     if ident[0] == "R":
         one_of("%s's size" % ident, item.get("size"), SIZES, errors)
         one_of("%s's risk" % ident, item.get("risk"), RISKS, errors)
@@ -157,7 +224,7 @@ def check_item(item, page, seen, errors, warnings, spread):
     for key in ("smells", "plan", "files"):
         texts("%s's %s" % (ident, key), item.get(key), errors)
     commits = item.get("commits") if isinstance(item.get("commits"), list) else []
-    bad = [c for c in commits if not (isinstance(c, str) and re.fullmatch(r"[0-9a-f]{7,40}", c))]
+    bad = [c for c in commits if not is_hash(c)]
     if bad:
         errors.append("%s: commits are hashes of 7 to 40 hex digits, one per commit; not %s."
                       % (ident, ", ".join(repr(c) for c in bad)))
@@ -174,10 +241,37 @@ def check_item(item, page, seen, errors, warnings, spread):
         warnings.append("%s is %s with no outcome: say what happened, with the checks' numbers." % (ident, status))
 
 
+def check_heatmap(heatmap, errors):
+    """The fixes counted in a heatmap block, where it counts them: its window's facts, and each file's count,
+    the commits that say they fixed a defect and changed it, and how many of those were in the newer half."""
+    window = heatmap.get("window") if isinstance(heatmap.get("window"), dict) else {}
+    if "fixes" in window and fields("The heatmap's window.fixes", window["fixes"], FIX_FACTS, errors):
+        facts = window["fixes"]
+        counts = [facts.get(k) for k in ("revert", "type", "words")]
+        if all(isinstance(c, int) for c in counts + [facts.get("fixes")]) and sum(counts) != facts["fixes"]:
+            errors.append("The heatmap's window.fixes counts %d fixes, but %d by reverts, types and words: run "
+                          "heatmap.py --page again rather than editing its block." % (facts["fixes"], sum(counts)))
+    for row in heatmap.get("files") if isinstance(heatmap.get("files"), list) else []:
+        if not isinstance(row, dict) or "fixes" not in row and "fixes_recent" not in row:
+            continue
+        where = "The heatmap's row for %s" % row.get("path")
+        fixes, recent = row.get("fixes"), row.get("fixes_recent")
+        commits = row.get("commits", fixes)
+        if not all(isinstance(n, int) and not isinstance(n, bool) and n >= 0 for n in (fixes, recent)):
+            errors.append("%s: its fixes and fixes_recent should be whole numbers, 0 or more." % where)
+        elif not isinstance(commits, int) or isinstance(commits, bool):
+            errors.append("%s: its commits should be a whole number." % where)
+        elif recent > fixes or fixes > commits:
+            errors.append("%s: its %d fixes, %d in the newer half, don't fit its %s commits."
+                          % (where, fixes, recent, row.get("commits")))
+
+
 def check(text):
     """The errors, the warnings, and the items."""
     errors, warnings = [], []
     heatmap = parse(text, "heatmap", errors)
+    if isinstance(heatmap, dict):
+        check_heatmap(heatmap, errors)
     data = parse(text, "pass", errors)
     if heatmap is None and not errors:
         warnings.append("No heatmap yet: heatmap.py --page puts it in.")

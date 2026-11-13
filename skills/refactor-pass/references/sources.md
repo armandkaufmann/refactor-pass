@@ -62,6 +62,22 @@ skill's catalogue of smells, and in its scripts.
 - Palomba et al., "Mining Version Histories for Detecting Code Smells"
   (HIST; TSE 2015).
 
+## Fixes and reverts
+
+- Mockus & Votta, "Identifying Reasons for Software Changes using Historic
+  Databases" (ICSM 2000): https://mockus.us/papers/class
+- Berger, Hollenbeck, Maj, Vitek & Vitek, "On the Impact of Programming
+  Languages on Code Quality: A Reproduction Study":
+  https://arxiv.org/abs/1901.10220
+- Herzig, Just & Zeller, "It's not a Bug, it's a Feature" (ICSE 2013):
+  https://www.st.cs.uni-saarland.de/publications/details/herzig-icse-2013
+- Shimagaki, Kamei, McIntosh, Pursehouse & Ubayashi, "Why are Commits Being
+  Reverted?" (ICSME 2016):
+  https://rebels.cs.uwaterloo.ca/confpaper/2016/10/04/why-are-commits-being-reverted.html
+- Lewis, Lin, Sadowski, Zhu, Ou & Whitehead, "Does Bug Prediction Support
+  Human Developers? Findings from a Google Case Study" (ICSE 2013):
+  https://research.google/pubs/does-bug-prediction-support-human-developers-findings-from-a-google-case-study/
+
 ## AI-written code
 
 - Huang et al., "More Code, Less Reuse" (2026): https://arxiv.org/abs/2601.21276

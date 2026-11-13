@@ -30,6 +30,7 @@ names of refactorings are those of Fowler's second edition (2018), as in
 
 - [What the evidence says](#what-the-evidence-says)
 - [Measuring](#measuring)
+- [Counting fixes](#counting-fixes)
 - Bloaters: [Long Function](#long-function), [Large Class](#large-class),
   [Long Parameter List](#long-parameter-list), [Data Clumps](#data-clumps),
   [Primitive Obsession](#primitive-obsession)
@@ -93,6 +94,24 @@ priority below.
   never did. So take small steps with the tests passing after each, don't
   start a hierarchy refactoring without tests, and check for smells again
   afterwards.
+- **A file that keeps needing fixes breaks when it's touched, but messages
+  undercount the fixes.** That's what the heatmap's fixes count, and it
+  counts them from commit messages, as Mockus and Votta did: "If fix, bug,
+  error, fixup, fail are present, the change is classified as corrective".
+  Words miss fixes and mislabel changes. Their rule and the developers who
+  wrote the changes agreed only so often: "More than 61% of the time, both
+  the developer and the program ... put changes in the same class". A
+  study reproducing one that sorted commits this way found a "false
+  positive rate of 36%", and "The false negative rate was 11%" (Berger et
+  al.), and even issue trackers' own labels are often wrong: Herzig et
+  al. found "33.8% of all bug reports to be misclassified". Reverts are
+  rare: "1%-5% of the commits in the studied systems are reverted"
+  (Shimagaki et al.). So read
+  the count as a floor, and read the commits it leaves unmarked before
+  citing it. And a count alone changes nothing: when Google deployed a bug
+  predictor to its developers, there was "no identifiable change in
+  developer behavior" (Lewis et al.). A fix count is evidence that backs an
+  item with a reason, never an item by itself.
 
 ## Measuring
 
@@ -185,6 +204,82 @@ The rest takes plain commands:
 
 These are cheap and rough, which is fine: they point you at code to read,
 and you read it before saying anything.
+
+## Counting fixes
+
+How to judge a commit's change to a file when counting the file's fixes
+(SKILL.md step 4):
+
+- **A fix corrects a defect in the project's own code** as it stood: wrong
+  behaviour, a crash, a security hole, a regression, a compile or type
+  error.
+- **A guard** is a fix when it stops a failure that could happen as the
+  code stood: a crash or a wrong result in the project's code. One against
+  a failure only a caller misusing the API reaches counts only where the
+  API took that input before and then failed later or gave a wrong result,
+  not where its documentation ruled the input out. One that moves a failure
+  earlier (an error at the call where a crash came later) counts on the
+  same terms, when the later failure was a crash or a wrong result in the
+  project's code. A guard for a case nothing reaches isn't a fix.
+- **Something missing** that callers or an interface already relied on is a
+  fix, even where curing it adds something new (an option, a control); a
+  capability nothing lacked is a feature.
+- **An opt-in option** that cures an overload or a slow path, the default
+  unchanged, isn't a fix unless the old behaviour was a failure: a hang, a
+  crash, data lost.
+- **Building and packaging**: code whose job is to build or package the
+  project, such as a script in its source that generates code, is its code,
+  and a fix to it counts. A change only to its manifests, lock files, CI or
+  build configuration doesn't.
+- **A report** the commit answers ("Fixes #12", "Reported-by:", a ticket)
+  is evidence of a defect, but an issue can also ask for a feature: read
+  what it says was wrong.
+- **A revert** of another author's commit is a fix: the change broke
+  something. One of its author's own commits is a withdrawal, and one of a
+  commit the repo hasn't (as a shallow clone's) can't say whose change it
+  undid: the script counts neither, unless the revert's type says fix
+  (`fix: revert "..."`) where types are read as labels.
+- **One fix, two files**: a commit counts for each file whose change is part
+  of the fix, and not for one it touches only in passing (a renamed call,
+  an import).
+- **A cut diff**: `--diffs` shows at most 60 lines of a commit's change to
+  the file, and its last line names the `git show <hash> -- <file>` that
+  shows the rest. A count rarely needs it.
+
+**How far the script's marks go**, as measured on commits labelled by
+reading their message and diff: 1,023 commits of ten public repos, labelled
+by one reader, and 252 of nine others, labelled by two readers who agreed on
+248. Of the commits it reads as fixes, about 9 in 10 are fixes of the
+project's code (95% of the 490 the rules were written from, 96% of 180 kept
+aside, 91% of those that touch the code in the nine others). How many of the
+fixes it finds depends on how a repo writes its messages: nearly all where
+subjects carry a type (88% to 100% in four such repos); typically a third to
+a half where they don't (33% to 64% in six of seven such repos, 80% in one
+whose subjects nearly always say fix); 35% over the nine others, one of them
+typed; and none of 14 in one whose subjects name the area and the new
+behaviour, and whose bodies say what was wrong. Of 90 commits of three repos
+that put tags in brackets, labelled after the tags were read, 16 of its 20
+calls were right and it found 38% of the fixes: 43% and 22% in two whose tags
+name an area or a ticket and are passed over, and all 5 in one whose tags
+are types, where 4 of its 9 calls were a lint, a CI change or changes for a
+new version of a dependency, labelled [Fix]. On the commits it leaves
+unmarked, one that changed a test too was a fix about twice as often as one
+that didn't (45% against 24% in the labelled commits), and one of over 200
+lines rarely (1 of 20).
+
+Reading closes most of the gap: in one measurement, an agent given those 252
+commits and the definition found 72% of the fixes from their subjects (43 of
+its 44 calls right) and 83% from their whole messages (all 50 calls right),
+and wanted the diff for 21 commits; reading as step 4 does, with the diffs
+where the messages fell short, it found 56 of the 60 (56 of its 57 calls
+right), overruling four of the script's marks, and with each file's own
+changes from `--diffs`, 55 of the 60 (55 of 56 right), reading less than
+half as much. The labels it was scored against came from the same kind of
+model reading the diffs, which flatters agreement: one measurement, not an
+accuracy. On five of a busy project's files, judging up to 12 commits of
+each (55 in all, 15 of them with their diffs) took about 60,000 tokens and
+two minutes; a file's listing is a few thousand bytes (8,678 for redis's
+`src/server.c`, whose 99 commits in an 800-commit window take 65,878).
 
 ## Bloaters
 

@@ -124,6 +124,12 @@ what it said, and go on without it, from `git log` and the code.
 - **Why it changes.** Read the top few files' commit messages (`--show`)
   and group them by feature. Many unrelated reasons to change one file is
   Divergent Change, and it shows here more directly than in any count.
+- **Fixes** count the commits whose messages say they fixed a defect in the
+  project's own code: at least that many in the window, close to complete
+  where nearly all subjects carry a type. A file's number is of the commits
+  that say so and changed it, which a fix elsewhere can touch in passing: a
+  lead to which files to read, not a count of their fixes, which step 4
+  makes for the files you'll recommend.
 
 ## 2. What: the smells
 
@@ -200,6 +206,47 @@ re-run the counts, and drop or correct what doesn't hold. Say in the report
 what you checked. A wrong item that sends the user into a refactor costs far
 more than the minute it takes to check it.
 
+**Count the fixes in the files you'll recommend**, at most five.
+`heatmap.py -C <repo> --show <file> --messages`, with step 1's window, scope
+and options, and a `--show` for each file, all in one call, lists each
+file's newest 12 commits, a sample, with their messages, a line of what each
+changed, whether it's in the window's newer half, and the script's reading.
+Judge every commit from its message; where that doesn't settle one, get its
+changes before counting on, all the files' unsettled ones in one call: the
+same `--show`s with `--diffs <hash>,<hash>`.
+
+- **A fix corrects a defect in the project's own code**: wrong behaviour, a
+  crash, a security hole, a regression, a compile or type error. Many don't
+  say "fix": one that answers a report ("Fixes #12", "Reported-by:") is
+  likely one, though an issue can ask for a feature. Many that say "fix"
+  aren't: a "fix" of a typo, the docs, a test, the CI, or the build's
+  manifests and dependencies. A fix may add something (an option, a check)
+  to cure a defect; a new capability nothing lacked isn't one. Guards and
+  the other edges: [Counting fixes](references/smells.md#counting-fixes).
+- **Count a commit for each file whose change is part of its fix.** One fix
+  can count for two files; one that touches a file in passing (a renamed
+  call, an import) doesn't count for it, even where the script marked it.
+- **The line of what changed is a hint, not a verdict**: a commit that
+  changed a test too is a fix about twice as often as one that didn't; one
+  of hundreds of lines, or titled Bump, Update or Release, rarely is; a line
+  or two here among many files is likely in passing: no diff needed.
+
+Within the sample the count is a count, not a floor: evidence that the file
+breaks when it's touched, to weigh with its churn, size and smells, never an
+item on its own. An item that cites it records each file in `fixes`: the
+sample's size (`read`), how many fixes are in the newer half (`newer`; null,
+and not said, where the line under the listing's header says so), and, as
+lists of short hashes, the fixes you count that the script marked
+(`marked`) or didn't (`found`), and those it marked that you don't
+(`dropped`); and a short `note` for what those don't say: why each one was
+dropped, and, where the files differ much, how the others ran ("the other
+four ran 2 to 4 of 12"). A commit the script marks outside the sample isn't
+read, and goes in no list. The page words the record ("7 of its newest 12
+commits fixed a defect in it, 5 of them in the newer half"), so the item's
+other fields don't repeat it; your report to the user says that sentence
+("of its 11 commits in the window" where it has fewer). Where the header
+says the messages can't be read, say nothing of fixes.
+
 Then apply the restraint. A reviewer asked to find problems will always find
 something, and fixing every finding leaves extra layers and tests for cases
 that can't happen. Leave out what's cold, what the "Not a smell when" lines
@@ -222,6 +269,8 @@ the checklist (step 6); F, L and D items say theirs in a `note`.
   - the plan, as the playbook's steps (`plan`);
   - the files, size (S, M or L) and risk (Low, Medium or High) (`files`,
     `size`, `risk`);
+  - the fixes it cites, if any, from step 4 (`fixes`), an entry per file
+    with its `file`;
   - how to check that behaviour didn't change (`verify`).
 - **F1…** Small fixes found along the way, each its own commit.
 - **L1…** Later: smelly but cold, or worth doing when the code nearby is next
@@ -298,8 +347,8 @@ Then reply with:
 - two or three sentences on the overall state, good parts included;
 - the top three to five hot spots as a small table (file, lines as the
   heatmap's `size` gives them, commits);
-- the R items as a numbered list: title, smells, size, risk, and the next
-  change's cost today and after;
+- the R items as a numbered list: title, smells, the fixes it cites (step
+  4's sentence), size, risk, and the next change's cost today and after;
 - the F and D items in brief;
 - what you left alone and why, in a line or two;
 - the suggested order, and where the checklist is;

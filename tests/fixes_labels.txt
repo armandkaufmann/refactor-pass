@@ -1,0 +1,1171 @@
+# Commits labelled fix (f) or not (n) by reading their message and diff, for tests/tools/measure_fixes.py, which
+# says what each set is and where each repo is pinned. Each line: the commit's hash (9 characters), its label,
+# the tier the heatmap read it as when it was recorded (1 a revert, 2 its type, 3 its words, 0 not a fix), and
+# a few words of why the label. In the word set, the words start with the word or exclusion it was drawn for.
+
+@ flask dev
+bfc8f9838 n 0 docs and a deprecation note for a
+d04a0c15a n 0 typo in a docs example
+f2ef7a553 n 0 adapts to werkzeug 3.2 (adaptive)
+d086db856 f 3 Flask.default_config was
+329c32b91 n 3 adapts to werkzeug's dev version
+41cb747cd n 0 changelog link
+7689f9840 n 0 drops Python 3.10
+d73fa1cdc n 0 docstring markup
+d318b6834 n 0 docstring wording
+2a8a38b05 n 0 feature: QUERY in MethodView
+89992954e n 0 feature: app.query decorator
+3596b1ab6 n 0 changelog entry
+7203feabf f 3 IPv6 server name parsing was
+de8429ffd f 3 session_transaction broke with
+81798b406 n 0 typos in docs, changelog and a
+8b4fd5d18 n 0 tests use newer werkzeug
+30d1c5d6f n 0 CI: test on Python 3.15
+ff6fa22f4 n 0 dependency and workflow updates
+5ce121dd8 n 0 tests stop using pytest's private
+8285adf5a n 0 dev dependency updates
+36e4a824f n 0 internal typing of a click param
+954f5684e n 0 dev dependency updates
+1d4974726 n 0 docs link
+7374c85dd n 0 docs tutorial layout
+9368fb3f3 f 0 autoescape missed upper-case
+06ea505ce f 0 copy_current_request_context
+689362089 n 0 docs typo
+a31e6b734 n 0 removes tests werkzeug now covers
+b21425d6d n 0 CI: smaller environments
+83dbcb222 n 0 dev dependency updates
+91c6b3fec n 0 removes a test
+a197702e2 n 0 dev dependency updates
+560c119e3 n 0 CI: workflow scanning and
+a29f88ce6 n 0 documents that headers must be
+fbb6f0bc4 f 3 teardown stopped at the first
+7b0088693 f 3 saved a session that might not be
+a411a2434 f 0 restores opening the session on
+22d924701 n 0 release
+c17f37939 f 0 security advisory: key-only
+27be93384 n 0 starts a version
+d98eb69a3 f 0 undoes a wrong change to a CLI
+e82db2ca3 f 3 provide_automatic_options=True
+663198d7b n 0 dev dependency updates
+976459f7c f 0 the lock file pointed at a local
+5e621a280 n 0 tests adapted to werkzeug 3.2
+3d03098a9 f 0 the tutorial's code silently
+ac5664d22 n 0 docs
+0292047b2 n 0 lint configuration
+c77a52034 n 0 deprecation
+9b74a90dd n 0 spelling in docs
+fe3b215d3 f 0 build failed with flit_core older
+3709c4a9a n 0 lint hook and noqa comments
+709f83f6a n 0 adds a spelling check
+30da640ff n 0 docs: 415 versus 400
+eca5fd1df n 0 behaviour change: redirect
+64dd0809c n 0 dev dependency updates
+97bddc1f6 n 0 dev dependency updates
+ad68a1264 n 0 CI: drops a test environment
+607d1948b n 0 CI: splits environments
+917000097 n 0 CI: tests Python 3.14
+da6d075df n 0 dev dependency updates
+88a65bb37 n 0 docs typos and markup
+6a6496900 n 0 refactor: context passed through
+c2705ffd9 n 0 refactor: app and request context
+dbd4c2882 f 0 select_jinja_autoescape's
+2c1b30d05 n 0 release
+4dd52ca9c n 0 CI: release workflow
+55c625565 n 0 dev dependency updates
+edebd3704 n 0 docs and typing cleanup
+daf1510a4 n 0 feature: decorators without
+
+@ flask revert
+24df8fc89 n 0 docs re-land
+4d69165ab n 0 docs
+cf3089a8f f 0 app factory discovery was
+78b56dbf2 f 0 backs out packaging metadata
+64ac1b0d3 n 0 backs out closing tags in an
+310fbfcf6 n 0 copyright headers
+f80376027 n 0 test refactor
+eb9618347 f 0 tests broke on Python 2
+c935eacea f 1 backs out BaseException handling
+e6f9d2b41 n 0 docs
+c4ec6954e f 0 passthrough_errors was on unless
+5f009374f n 0 example rework
+d8c39f4b3 n 0 backs out a docs example edit
+5c1272173 n 0 backs out a docstring
+4305ebdf6 f 0 json used the request outside a
+024fbe5a6 n 0 backs out a test target
+128bc76af n 0 backs out a docstring example edit
+1577e1386 f 0 backs out a test change
+d4fec1454 n 0 re-lands a feature
+2aa26fff0 n 0 an accidental revert of a
+b89af6634 n 0 backs out a README change
+1e39871d6 f 0 find_module lost its path
+
+@ flask word
+8bddd3bf4 n 0 fail: CI: lets nightly fail
+34bbd3100 f 3 fail: send_file options broke a
+d3ca55177 f 0 fail: example teardown handlers
+1a7f579ec n 0 fail: docstring wording
+67581795c n 0 fail: docstring wording
+6a37c1716 n 0 incorrect: docs grammar
+4c27f7a8c n 0 incorrect: removes a flawed API
+b80eaf2c9 n 0 incorrect: docs grammar
+5d31ce103 n 0 incorrect: docs
+a417e41d2 n 0 regression: docs and tests
+ddb5f9dc4 f 3 broken: a broken test
+9c1cf1bc0 n 0 broken: docs link
+52f38bbf8 n 0 broken: docs sentence
+7a5e8ef38 n 0 broken: docs link
+777cc17de f 0 broken: a broken test
+de3b6ab5e n 0 broken: docs sentence
+883cb7ced f 0 leak: the leak test was
+3d36d6efb f 3 leak: leak detection leaked
+f051939d8 f 0 leak: the testsuite leaked a
+2262ce491 n 0 leak: skips a test on other
+57920a580 f 3 prevent: flashes modified the
+0887245bf f 3 prevent: blueprint prefixes made
+b8e826c16 f 3 problem: routes output misaligned
+2ba37d2b8 n 3 problem: docstring markup
+9f6bc93e4 f 3 problem: XSS through unescaped
+857063321 n 0 mistake: docs spelling
+e429e47a9 n 0 mistake: docs
+69e419e02 n 0 mistake: docs example
+e45e17c49 n 0 mistake: docs grammar
+45b2e7702 n 0 missing: docs
+6b5ba1452 n 0 missing: docs
+216472b43 n 0 missing: docs
+49b77fbc7 n 0 missing: docstring markup
+37217e85b f 3 issue: the migration script's
+e6ac78955 n 0 issue: issue template
+b49de851d n 0 issue: docs link
+7d7795800 n 0 issue: changelog format
+13754b6d1 f 3 error: an error opening the
+aa1d34dc5 n 0 error: docstring grammar
+9a70e62b8 f 3 error: important import errors
+858cc9cac n 0 wrong: docs example
+0690ce18c n 0 correct: spelling
+392989aaa n 0 correct: package description text
+e3c014f9a n 0 correct: docs example
+e328eba97 f 3 correct: prefix detection was wrong
+eae48d97b f 3 exception: exception handling picked
+451c1f87f n 0 exception: docs
+1cd9e9181 n 0 exception: error message
+33e7f2b99 f 0 exception: after_request wasn't
+39e66ca6d n 0 exception: adds tests
+f1537a9d7 f 0 exception: proxy exceptions reached
+a224fecfd n 0 not typo: docs typos
+3c821a0fa n 0 not typo: typos and an unused import
+7481844c9 n 0 not typo: comment typo
+9f4c569c8 n 0 not formatting: docstring formatting
+2401d8600 n 0 not formatting: rst formatting
+8a1f3626c n 0 not formatting: changelog formatting
+826514b8e n 0 not lint: linter findings in tests
+261e4a6cf n 0 not lint: linter findings
+9532cba45 n 0 not lint: type checker finding
+176fdfa00 n 0 not lint: type checker overloads
+0748e2daa n 0 not docs: changelog typo
+5ede53066 n 0 not docs: docs
+353d89156 n 0 not docs: docstring typo
+f904ef27d n 0 not docs: docs typo
+d60e13436 n 0 not docs: docstring typo
+4a9e34a57 n 3 not tests: script refactor
+29ba05f5b n 0 not tests: docs grammar
+8149509f3 f 0 not ci: Travis version
+65b22926f n 0 not ci: test environments and a
+b34c7174e n 0 not ci: test environments
+633449a36 f 0 not error message: after_this_request
+d0821edca n 0 not upgrade: docs link
+d5cfcfeba n 3 not link: docstring links
+77c2c3b18 n 0 not link: docs link
+1a40d9b97 n 0 not link: docs grammar
+6eeaa2e50 n 0 not link: docs link
+b81f72070 n 0 not warning: docs warnings
+e2f4b5339 n 0 not warning: warning message wording
+97c54fd48 n 0 not release: release date
+0afeb1d11 n 0 not release: release date
+5886925ff n 0 not release: release branch
+
+@ gin dev
+0f09c3a9b n 0 docs
+ea9fab99e f 2 the router panicked when routes
+e8f24969d n 0 feature: QUERY in Any
+43fe48e8a n 0 docs and a comment
+1bd0ecf2d f 2 Copy read Keys outside the mutex
+3b08cd723 f 2 slice overflow panic in getValue
+d8f2d588d f 2 Run's servers had no
+8ad9f9cbe n 0 docs example
+b1f77cf53 n 0 feature: QUERY method
+05b14df99 n 0 dependency bump
+e318c6add n 0 comments
+3329b63aa f 0 the codecov config was invalid
+5c6a15f8f f 2 rendering HTML with no renderer
+bc141b4db n 0 dependency bumps for x/crypto
+b52df1fe7 n 0 docs
+2a1a14ff3 n 0 feature: QUERY shortcut
+dcaa4296d n 0 a comment
+8dd20118b n 0 dependency bumps for advisories
+34dac209f n 0 a comment
+03f3e420a n 0 dependency bump
+d9307dbcb f 2 SaveUploadedFile chmod'ed
+da1e10861 f 0 a test failed on WSL by writing
+074b669a9 n 0 adds tests
+4a3eb31fb f 2 Recovery dropped the recovered
+293ad7ede f 2 Copy lost Errors and Accepted
+2e4d4f389 n 0 dependency bump
+d75fcd4c9 f 2 Hijack and CloseNotify panicked
+8d0468f72 n 0 dependency bump
+88c426353 n 0 comment alignment
+96ece6a14 n 0 feature: Scheme()
+c79f5d466 n 0 refactor
+d3ffc9985 n 0 adds regression tests
+ecd26c883 n 0 docs
+a749e4d33 n 0 docs
+65d1c470e n 0 docs
+6d880724c n 0 refactor in tests
+48667a2dd n 0 dependency and CI bumps
+d4672219f n 0 docs
+cb2b764cc f 0 the Makefile left ginS out of the
+a39670fb7 n 0 licence period
+052d1a79a n 0 feature: PDF renderer
+ff00c01e6 n 0 docs
+73726dc60 n 0 changelog
+e292e5caa n 0 release notes
+ae3f52497 n 0 CI: Go versions
+472d086af f 2 findCaseInsensitivePathRec
+fb2583442 n 0 a constant and coverage tests
+6f1d5fe3c n 0 adds tests
+5c00df8af f 2 Data.Render didn't set
+db309081b n 0 feature: skip query strings in
+ba093d194 n 0 dependency upgrade to
+00900fb3e n 0 CI
+216a4a7c2 n 0 adds tests
+488f8c3ff n 0 refactor: named constants
+8e07d37c6 n 2 typos, docs and dead code
+d7776de7d n 0 feature: BSON
+e3118cc37 n 0 refactor: range over int
+cad29c5e3 n 0 performance
+53410d2e0 n 0 feature: GetError
+192ac89ee n 0 feature: TextUnmarshaler binding
+b2b489dbf f 0 ClientIP was empty behind a unix
+3ab698dc5 n 0 refactor
+991417858 f 2 ClientIP read only the first of
+915e4c90d n 0 refactor
+26c3a6286 f 0 Flush panicked when the writer
+d1a15347b n 0 refactor: moves helpers
+64a6ed9a4 n 0 performance
+19b877fa5 n 0 test coverage
+2a794cd0b f 2 the minimum Go version warning
+b917b14ff f 2 binding failed on empty values
+
+@ gin revert
+8fb313666 f 1 backs out a time binding change
+d4e413648 f 1 backs out a query binding change
+c58e0d59c n 0 docs
+4d7c4ec36 n 0 release
+ee4de846a n 0 drops Go 1.12
+a28cc088b n 0 backs out CI jobs
+1bebd9af9 f 1 backs out a listen address change
+5f56109bc f 3 JSON rendering added a trailing
+094f9a910 n 0 release
+29a145c85 f 1 backs out context inheritance
+8cb390f8f n 0 feature: YAML binding
+91a4459dd n 0 CI
+c617b6241 n 0 CI
+995fa8e9c n 0 new API to bind a body more than
+3b8150c83 n 1 backs out license headers
+35f5df63e n 0 feature: custom delimiters (the
+03a76c00e n 0 vendored dependencies
+049da60f5 n 0 release (the body's reverts are
+fabe3df78 f 0 re-lands logger colours off for
+041ca04a4 f 1 backs out the logger change that
+63b5d1c4c f 0 backs out the App Engine patch
+19f271c86 f 1 backs out the logger change that
+
+@ gin word
+97ae4a6b6 f 3 incorrect: LoadHTML misbehaved in
+580e7da6e n 0 incorrect: comments and docs
+0b043d088 f 3 regression: router looked up the
+ab50cf979 n 0 mistake: comment spelling
+6296175f7 n 0 vulnerability: dependency bump
+d4caeee7c n 0 vulnerability: dependency bump
+2b6cf3889 f 3 crash: routes not starting with
+65a65c2ed n 0 panic: feature: time in the
+22f118f3b n 0 panic: feature: a panic on misuse
+dcad0df8f f 3 panic: binding panicked
+815e1ce28 f 3 panic: GetQuery panicked without
+dba178181 n 0 correct: readme
+ae349b401 n 0 not typo: test name typo
+1a2bc0e7c n 0 not typo: renames setted to set
+f72fcdf5b n 0 not formatting: feature: error log fields
+41f2669eb f 3 not tests: the logger showed the
+4998bc2b2 f 3 not ci: the middleware pipeline
+acbb3d4f4 n 0 not link: docs link
+b056a34bd n 0 not warning: linter warnings
+
+@ pinia dev
+4817135a2 n 0 docs translation
+05ece25e5 n 0 docs links
+c198730be n 0 docs links
+99ac6d1c6 n 0 docs configuration
+e6ea7ba23 n 0 docs
+8e8dab19e f 2 $subscribe's types accepted a
+19821839c f 2 HMR deleted a key that changed
+cd4bbbda3 n 0 docs site build settings
+f6cd52d35 f 2 hydrating a setup store didn't
+01121f840 n 0 docs
+e38ea9e4b f 2 store actions' types tripped
+b297cd1a1 n 0 docs
+5e71a880f n 0 tooling upgrade
+270a21785 n 0 release
+bf7ea4684 n 0 feature: a warning
+fddd7c553 n 0 removes an unused type test
+52fc965fe n 0 feature: getStores
+f48737e9a n 0 docs links
+668e88131 n 0 refactor for Nuxt 4.6
+a1581860e f 2 createTestingPinia didn't notify
+98587ca46 f 2 the Nuxt module resolved default
+f4e0cb7a8 n 0 docs link
+a4eb2c581 f 2 $patch with object syntax didn't
+eef53d770 n 0 removes a dev dependency
+9ed5acf75 n 0 re-enables tests
+31c24e9ed n 0 playground build configuration
+c3de81eca n 0 formatter upgrade and its
+db7dc181d n 0 dependency upgrade
+287947bee n 0 dependency upgrade
+3d9a1853f n 0 dependency upgrade
+e1c227e71 n 0 tooling upgrade
+e5f044a72 n 0 tooling upgrade
+9dacb9db3 n 0 tooling upgrade
+cf4e70e49 n 0 dependency upgrade
+76037e3e0 n 0 tooling upgrade
+9b57da1d0 n 0 tooling upgrade
+f399f2d57 n 0 dependency upgrade
+74b14b60c n 0 dependency upgrade
+063ce278d n 0 dependency upgrade
+6a359e935 f 2 HMR lost the runtime state of
+5d6ac5b86 n 0 CI: pnpm version from
+35c334ba4 n 0 release
+6d5da4954 n 0 tooling version
+f09d89422 n 0 test script
+371448716 f 2 dist referenced
+b10e7037b n 0 CI branches
+94ec8b1c1 n 0 CI branches
+9db71974a n 0 docs site files
+a94de2757 n 0 declares Nuxt 5 compatibility
+b19f9ba8b n 0 feature: playground on @vue/repl
+5bdf26c70 f 2 hydration unioned reactive Sets
+ee1a590d8 n 0 release
+62a624e60 f 0 the release script failed when
+b0249de0b f 2 a plugin named plugin.vue broke
+49c0b7a8e n 0 a comment
+e4f6d663d n 0 playground typing
+ae4e3b2ba n 0 release
+0203b2d02 f 0 the size check pointed at .mjs
+39aae41b9 n 0 refactor: build configuration
+75009b03e n 0 release
+2ed563c01 n 0 readme
+fb2176668 f 0 the package lost its types export
+d797385b1 n 0 CI: pins pnpm (labelled fix)
+bd3d9b3d9 n 0 CI: pnpm install
+acad9f2b0 n 0 CI: pins pnpm
+1374c9dd7 n 0 release
+ced963bba n 0 release process
+0e7a8ded0 n 0 refactor: renames a plugin file
+640b16b9e f 2 devtools couldn't edit writable
+d715bda41 n 0 feature: exports piniaSymbol
+
+@ pinia revert
+dd146d995 n 0 backs out a docs dependency bump
+938d38919 n 0 backs out dependency bumps
+48a2ca380 f 0 re-lands a storeToRefs return
+f550c6080 f 1 backs out a type change that
+300016120 f 2 backs out a type declaration
+2337130b0 n 0 backs out a dependency bump
+c174fe1df f 2 Vue 2 warned about toRefs (#648)
+38095c773 n 0 backs out a docs tool bump
+
+@ pinia word
+78fcf7642 n 0 missing: dependency declaration
+
+@ django dev
+a0f2e29e0 n 0 deprecation (ticket closed as
+2d89a6351 n 0 feature: exception groups on
+5d6d1f051 f 0 models.E050 missed generic
+9600da0b9 n 0 test dependency bump
+95636a4d7 n 0 contributing docs
+9425a85c9 n 0 a comment
+3f079b9d8 f 0 firstof accepted no arguments
+2d50268e6 f 0 loaddata broke on fixture paths
+6a8248f13 n 0 docs correction
+a1f2b45ce n 0 feature: input_type on Textarea
+d9d05f104 f 3 makemessages suggested wrongly
+f93a84a80 n 0 adds a test
+6675dac0f n 0 docs correction
+8e3dec67c f 3 QuerySet.values() crashed with a
+368bef0b2 n 0 adds tests
+c392a758e n 0 feature: django command
+b3997c604 f 0 gis tests loaded all four
+89e3b1bfc f 3 GeoJSON lookups paid json.loads
+9208dcfec n 0 security docs
+ca3f31b25 n 0 docs
+a7629749f n 0 docs
+82dcd4693 n 0 contributing docs
+3b29f6e8d n 0 gitignore
+1860f0a3f f 0 psycopg 3's UTF8Dumper didn't
+2382f40ae n 0 security docs
+5bd95c57a n 0 security archive docs
+9c0674b64 n 0 release notes stub
+3a2ec4378 f 3 CVE: SRS setters could reach
+f5b039a61 f 3 CVE: password hashes shown to
+c0b7e5e4e f 3 CVE: empty and missing headers
+ecb2b77b4 f 3 CVE: GeoJSON's crs member could
+af4319f72 f 3 CVE: log injection through
+5d95d9236 f 3 CVE: unbounded memory for
+b501b8493 n 0 docs
+6b212c29e f 0 FETCH_PEERS overwrote deferred
+308b6d6ac f 3 cookies with __Http- prefixes
+a05e16a72 n 0 release notes correction
+f4c65fd6a n 0 docs theme
+a6a5d1e67 n 0 docs
+3bdcd29a6 f 0 make.bat check reported success
+19f0ac809 n 0 CI: docs checks on Windows
+e7119cdb6 f 0 the epub exclusion never matched
+1f97f36d7 n 0 docs tooling: one list of sources
+817df1c4d f 3 legend_tag() mutated attrs (a
+c61620099 n 0 docs
+2d9d61967 n 0 behaviour change in a test utility
+8aab4fa1a n 0 adds tests
+8be9c1227 f 0 an Oracle test skip never matched
+e74c8a808 n 0 transitional option
+0804aed32 n 0 feature: multiline template tags
+a6304ac10 n 0 docs tooling: EPUBCheck
+1c6c7f909 n 0 docs CSS
+8274ae1c2 n 0 docs: epub contents
+e9cf067c6 n 0 docs diagram
+2ebb1aaf1 n 0 release notes
+63d898bde n 0 skips tests Oracle 21c can't run
+360ccd4bd f 0 select_for_update() after a
+77eea99b4 f 3 a negated XOR used an INNER JOIN
+e9414948e n 0 docs
+5c13b5a19 n 0 feature: QUERY method
+45fe4636d f 3 comment and verbatim tags without
+a2a0b4f27 f 0 generic relation querysets bound
+36920bb47 f 0 the GeoDjango workflow ran Python
+0e128d524 n 0 docs accessibility
+1b40abab0 n 0 dependency bump
+512b92a49 n 0 deprecation
+816ea69cb n 0 refactor
+32a46625c f 3 Punjabi's local name was wrong
+a26ceb090 n 3 test adapted to MySQL 9.5
+8e4e95da9 f 0 scheduled Windows tests skipped
+
+@ django revert
+7ff7fcc05 f 3 CVE in header parameter parsing
+fb32a564c f 0 backs out a system check that was
+e7f464ecd f 0 restores test models along with
+b3af3404b n 0 removes docs
+6bbe2656e f 0 backs out tolerating ordering in
+ad073338d f 0 a bad conflict resolution had
+
+@ django word
+082b3df40 f 3 incorrect: list_display showed wrong
+019e44f67 f 3 incorrect: CVE: wrong permissions on
+9b4433948 f 0 regression: a CSP test lost the error
+bd1cd8f0f n 0 regression: adds a test
+581f2969e n 0 broken: docs link
+7cb2221e9 n 0 leak: module namespace tidying
+2de474dff n 0 leak: module namespace tidying
+50eef9559 f 3 hang: tuple lookups hung on F()
+0751d5fed f 3 prevent: iterators consumed in
+6de4b35a7 f 3 prevent: UUIDTextMixin mutated the
+6e365f8d0 f 3 prevent: CVE: cached responses
+70d36515b f 3 prevent: CVE: signed cookie salt
+536457504 f 3 prevent: control characters
+cd385e6b8 f 3 crash: CreateModel with
+7f48e266a f 3 crash: JSONField __isnull
+a5c49174b f 3 crash: migrate --run-syncdb
+66c40aafa f 3 crash: JSONField key lookups
+00dca6f09 f 3 crash: distinct() crashed on
+a3f0642f6 f 0 missing: a test broke on Oracle
+fdfbb711e n 3 error: error message detail
+13107fa2b n 0 correct: docs
+47511a210 f 3 not link: CVE: unsafe URLs rendered
+b5388a3a8 f 0 not warning: deprecation warnings
+7903ee10b n 0 not release: release note
+8726605e2 n 0 not release: release notes typo
+0b40210e4 n 0 not release: release note
+
+@ lua dev
+8cb93bada f 0 lua.c didn't compile with
+15b2a7810 f 3 coroutine.close while closing
+b35736b9d f 3 (-0.0 - 0) gave +0.0
+6db80b55c n 3 manual wording
+e8533201c f 3 a numeric for loop with a NaN
+80f3ecc44 f 3 integer underflow in
+745b96db5 f 3 lundump's string size limit was
+0b29f4084 f 3 undefined behaviour: left shift
+973777c74 n 0 details: alignment and wording
+ceb32fb5b n 0 silences a compiler warning
+4c32b2dfd f 0 os.time ignored mktime returning
+35a87f8c5 n 0 casts for platform warnings
+c0adc5f8a f 0 luaC_condGC called pre and pos
+7579fc9d7 f 0 repeat-until's extra close was
+d5bbe9558 n 0 details: stricter API checks
+9130ceb19 f 0 casts to union GCUnion* could be
+84938a7d2 n 0 build default on macOS
+6ca33260d n 0 removes a compiler option
+b996f8fd1 f 3 the write barrier after
+bc4bbcef6 f 3 newbox could leave an incomplete
+40b76de2d n 0 removes an unused function
+0465c23b3 f 0 luaP_isIT left out OP_VARARGPREP
+53b41d0cd n 0 silences a compiler warning
+36c1f6d94 f 3 OP_VARARGPREP's opmode said it
+0da6d320f n 0 details
+ae23e7260 n 0 new macro
+4c5d5063a n 0 simplifies load's reader after a
+3228a97c6 f 3 lua_load didn't preserve the
+0c16a42d6 n 0 details: a compile option
+d0bd25d2e n 0 better error messages
+29cf28408 n 0 explicit loading modes
+c037162a1 n 0 portability: GCC version test
+efddc2309 f 3 gmatch's function could be left
+f1bb2773b f 3 loading a binary chunk didn't run
+51269bd78 n 0 macro parameters
+377cbea61 f 0 table.unpack didn't check its
+36d5d2b28 f 0 details: OP_VARARGPREP's opmode
+9e501d985 n 0 docs
+10eb89d11 f 3 utf-8 decoding shifted 35 bits on
+7c40c5edb n 0 details: spacing and docs
+b60e2bcd7 f 0 an assignment of overlapping
+c6b484823 n 0 feature: readline library from
+efbc29754 n 0 version and year
+cfcaa9493 n 0 manual
+3360710bd n 0 refactor: option -E
+e992c6a95 n 0 build options
+f5d1e8639 n 0 feature: compile option
+2a7cf4f31 f 3 finalizers could fail to run on
+5cfc725a8 n 0 string.rep special case
+45c7ae5b1 f 3 string.packsize could overflow on
+962f444a7 n 0 details
+c4e2c9197 n 0 comments
+632a71b24 f 3 collectgarbage "step" could
+578ae5745 n 0 details: typo, formatting
+a5522f06d f 0 finalizers ran without enough
+3d03ae5bd n 0 behaviour change: warnings on by
+82d721a85 n 0 manual formatting
+104b0fc70 n 0 details
+8164d0933 f 3 a wrong assert in luaK_indexed
+985ef3224 f 0 luaB_close let running coroutines
+a07f6a824 n 0 optimization
+f33cc4dde n 0 redesign of varargs
+d94f7ba30 n 0 details: comments
+4cf498210 n 0 feature: __pairs closing value
+5b7d99876 f 0 external strings were ignored as
+81f4def54 f 3 semantic errors reported the next
+e44f3a2ff n 0 feature: global initialization
+f791bb690 n 0 details
+d342328e5 n 0 syntax change
+0149b781d f 0 luaK_storevar missed the VVARGIND
+
+@ lua word
+3a29087cb f 0 fail: lua_setlocal popped a
+eb8ac6e2a f 0 fail: luaL_testudata left
+9d28b4015 f 3 fail: rehash broke when
+4804bbd9b n 3 broken: header order for a broken
+58c3aa8b5 n 3 segfault: records bugs in the bugs
+53db60796 f 3 problem: print broke on embedded
+8e5290d81 f 3 problem: constant folding divided
+b48c6e768 n 3 problem: simplification
+b1203e036 f 3 problem: posrelat broke on -(-2^31)
+6a8400ba4 n 0 mistake: makefile warnings
+a424a112b f 3 mistake: debugging code left in
+7c4cc505d f 3 crash: string.rep could exhaust
+fe8c36528 n 0 panic: feature: a default panic
+6624ccff2 n 0 panic: test code
+842a83f09 f 3 panic: the panic function could
+83d2dbb15 n 0 panic: simplification
+bb1146dc3 f 0 missing: coroutine.create without
+2d7a81a20 f 0 missing: a declaration lacked
+cfd7bc478 n 3 error: records a patch in the
+3105febf9 n 0 error: refactor: error message
+aabe3ddbf f 3 error: errors in resume weren't
+96ba5d0bc n 0 error: error messages with file
+218f35846 f 3 wrong: wrong messages for some
+2898e2fd1 f 3 wrong: a wrong assertion
+a4e644add f 3 wrong: debug info for OP_TEST
+ca7e5b5cb f 3 wrong: wrong error message with
+6c0a9a272 n 3 wrong: records bugs in the bugs
+d93df22bf f 3 wrong: an assertion was wrongly
+0f028b900 f 3 correct: tests assumed isdst was
+7ae180f8e f 3 correct: test checks on old
+04b143ddf f 3 overflow: deep nesting overflowed
+a585eae6e f 3 overflow: negation overflow in
+994a37c8e n 3 overflow: records a bug in the bugs
+b0f3df16a f 3 overflow: math.random's addition
+abb85fc05 f 3 overflow: checkstack could overflow
+38da8c0d7 n 3 overflow: test facilities
+1a741157c f 3 overflow: undefined behaviour in a
+3a508b8bd n 0 avoid: refactor
+3c55790eb f 0 avoid: setkey clashed with
+bc1b0733b n 0 avoid: refactor
+e7a9c45a4 n 0 avoid: portability tidying
+297512b34 f 0 avoid: lua_pushliteral on a
+f6ed285cf n 0 avoid: refactor
+8634b2a01 n 0 avoid: performance
+350991491 f 0 not formatting: buffer overflow
+50cddefee n 0 not lint: indentation
+725c15a4c f 3 not ci: shrinking the stack kept
+5aeb57f11 n 0 not error message: error message wording
+a12268809 n 0 not error message: error message
+1bdde38bd n 0 not error message: error message format
+80b475353 n 0 not error message: error message
+c2bb9abce n 0 not error message: error message quotes
+7bd1e5375 n 0 not warning: a compiler warning and
+a901c505a n 0 not warning: a compiler warning
+
+@ ripgrep dev
+178cc027e f 0 custom entry filters were skipped
+91f5d22ef n 0 release
+55f2f69ab n 0 release
+65e072fab f 0 linked worktree excludes were
+d19650f4f n 0 performance
+9d07a9226 n 0 performance
+6892bc2b7 n 0 performance
+1752fb78f n 0 performance
+2d4fa8514 n 0 performance
+b5611fc9f n 0 refactor
+c5e744cb4 n 0 performance
+fada8f938 n 0 benchmarks
+7155f6408 f 0 dotfiles ending in a dot were
+4c2362d35 n 0 docs
+756a945f6 n 0 build metadata warnings
+cff2849fd n 0 withdraws an unfinished
+7cc9c2f33 n 0 CI adapted to Ubuntu 26.04
+3fce3b5bb n 0 release
+5055264ae n 0 release
+020687a77 n 0 performance
+7525479a9 n 0 tests adapted to Cargo's new
+5ed408e17 n 0 release
+435f59fc4 f 0 the walker loaded ignore files in
+dffd776a7 n 0 CI: release attestation
+f9c05a949 n 0 docs
+837286681 n 0 feature scaffolding
+d99ac3440 n 0 feature scaffolding
+d57de83a9 n 0 editor config
+2ed0c006f n 0 feature
+59e318f5a n 0 release
+a9dc2228f n 0 build config
+be739c791 n 0 feature
+d958105d4 n 0 feature
+227381db0 n 0 release
+b621e65b4 n 0 feature
+c55818fd3 n 0 refactor
+6e527e920 n 0 new routine
+626b8951a n 0 refactor
+c035d23c2 n 0 MSRV bump
+fc3dd04b7 n 0 docs: dead link (#3471)
+0d7054d8e f 3 deadlock when a visitor panics
+5e16a5c9e n 0 changelog
+f91cde058 n 0 packaging
+e89fff89a n 0 release
+d79826192 n 0 dependency bump
+576005b32 n 0 release
+432976d69 n 0 release
+41e0ae702 n 0 release
+40ffc6e0b n 0 release
+28c687d63 n 0 release
+f03c67e94 n 0 changelog
+e988d4b61 n 0 dependency update
+d5b85d440 n 0 dependency bump
+324f7efe5 n 0 release
+241b87b33 n 0 support for newer git variables
+b6849daee n 0 feature
+8bca2ebfe n 0 docs typo
+61a9fd822 n 0 docs typo
+e7b0f89e8 n 0 lint
+767086db4 n 0 performance hint
+9548e86b1 n 0 new file type
+3b62573e9 n 0 dependency bound
+bc3ad92b3 n 0 new file type
+93acfe2d4 n 0 new type alias
+77d27e82f n 0 new file type
+f55548ba9 f 3 matches_all gave false positives
+2c23e39e0 n 0 changelog
+68b3c9e0d n 0 performance on Windows
+653d7f5bd n 0 regression tests for bugs fixed
+068a63ea2 n 0 performance
+
+@ ripgrep revert
+d47663b1b f 3 --line-buffered regressed
+803c44784 n 0 dependency bump replaces a
+626ed00c1 n 0 dependency bump replaces a
+5714dbde0 f 0 symlink loop check opened too
+13235b596 n 0 argument name case in help
+d1a6ab922 n 0 backs out a dependency bump
+fd9870d66 f 0 backs out a packaging change that
+
+@ ripgrep word
+004bb3569 f 3 regression: performance regression in
+8dc513b5d n 0 regression: skips a test on APFS
+f27aa3ff6 n 0 regression: adds a test
+c4732ca01 n 0 mistake: readme spelling
+9981e7883 n 0 not typo: readme wording
+cfe357188 n 0 not formatting: code formatting
+a5855a5d7 n 0 not lint: clippy lints
+3ad0e8347 n 0 not docs: doc comment
+f7eaf67fc f 0 not ci: the AppVeyor deployment
+2bda77c41 f 3 not deps: dependencies pointed at
+
+@ hutool dev
+8cde6dd2b n 0 release
+7992965a0 n 0 removes a test
+b2a9932e3 n 0 dependency bump
+90657e5fd f 3 the build broke on a missing
+4264da24b n 0 test assertion order (subject
+e6a7a1793 f 3 toInstant's wrongly typed
+9f218238f n 0 changelog entry only
+f4a80d0af n 0 changelog entry only
+2352695db n 0 changelog entry only
+3a70d1d34 n 0 adds a test
+ca3a85566 f 3 replaceFirst replaced at the
+e74b55d3d n 0 adds a test
+61991c285 f 3 CRC16DNP gave different results
+ae0c34441 f 3 CRC16USB gave different results
+4aa1f595a f 3 CRC16Maxim gave different results
+73cb7d5f7 f 3 CRC16X25 gave different results
+084bb5240 f 3 CRC16CCITTFalse wasn't truncated
+458dc26a1 f 3 CRC16XModem wasn't truncated to
+809b11488 n 0 adds a test
+5083dee9c n 0 adds a test
+5e154f757 f 3 Map to LocalDateTime read seconds
+ba02dae1b f 3 Convert.toInstant converted to
+7933f9d71 n 0 adds a test
+bfd8e1085 f 0 FileMagicNumber's MP3 and DOC
+0b96b88e5 n 0 adds tests
+d541c9b56 f 3 Caesar.encode threw on negative
+b689988da f 3 ReentrantCache's double check
+787eb0b46 f 3 ReentrantCache's double check
+a6c803fd4 n 0 test assertion order (subject
+131cdc5c9 n 0 changelog entry and test cleanup
+92ebe957d f 3 consecutive carriage returns in
+108da48cf n 0 contributing guide
+9a34eb079 n 0 dependency bump
+70c45e6e8 n 0 changelog entry only
+35cc158eb n 0 javadoc typo
+2692d01c9 f 3 CSV line numbers went wrong after
+a2b9c8695 f 0 backs out the redirect header
+0bf28d042 n 0 changelog entry for a feature
+3e7941cc3 n 0 dependency exclusion for a CVE in
+31f9727d6 n 3 parameter name and javadoc
+c2d9a98f8 n 0 removes a test added by mistake
+937aa7d0d n 0 removes a file added by mistake
+de45bc254 n 0 removes a file added by mistake
+792fb332c n 0 feature: Base85
+4d14995e0 f 3 security: sensitive headers
+d527ce91c n 0 feature: Hex codec
+8b3b970c8 f 3 AnnotationUtil's cache key
+f7f6ded91 n 0 comment correction
+9d205f9d4 f 3 Ftp.download left a 0-byte file
+d76a60e86 f 3 Ftp.download left a 0-byte file
+68be108cf n 0 changelog entry only
+39668a8bf n 0 changelog entry only
+ff79593c3 n 0 dependency bump
+4275e0a25 n 0 changelog entry only
+73a7d3032 n 0 changelog entry only
+4228ea449 n 0 changelog entry only
+312c44100 n 0 changelog entry only
+fd569e2d0 n 0 feature: overload
+e9971a97d n 0 changelog entry only
+db32eaa2f f 3 NumberUtil.range looped forever
+0cda68b82 f 3 threads were named Huool-socket-
+f37fdf401 f 3 JSONArray.toJSONObject ran past
+ab26585ce f 0 getShortClassName threw on blank
+02b2a0149 f 0 a test for lastIndexOfSub tested
+7dbd94347 f 0 Doubao tokenization dropped
+f37644942 f 0 media URLs with query strings got
+57f75cb29 f 0 the Gemini upload URL was
+8f6a94f8c n 0 changelog entries only
+801040142 n 0 moves a method (subject names
+76c9f48e8 f 3 randomEle threw on null input in
+
+@ hutool revert
+5dfbdbbd6 f 0 backs out a fix judged wrong
+3fc7937f9 f 0 backs out an optimization that
+dc038f235 n 0 withdraws a feature
+7467a2cb5 n 0 backs out a rename
+8b3f6ba93 n 0 contributor backs out their own
+6b459c94a f 0 backs out a punycode change
+2a3686631 n 0 withdraws a feature
+8d2e4c3b4 n 0 withdraws a feature
+ec6eb82a6 n 0 withdraws a feature
+f34a3e9c8 n 0 withdraws a feature
+c9ad39ab3 n 0 withdraws a feature
+d324f785d n 0 withdraws a feature
+1e7af4d7f n 0 backs out a refactor
+da086a1be n 0 withdraws a feature
+
+@ hutool word
+73cf56f3a f 0 vulnerability: deserialize allowed any
+39869d3c6 f 3 crash: CollUtil crashed on null
+ce1488309 f 3 issue: StrMatcher misparsed
+8844bcd5c f 3 issue: the Jsch session pool
+e1d2926dc f 3 issue: Chrome on iPhone wasn't
+840866072 f 3 issue: isHexNumber threw on
+f637ebfd5 n 0 wrong: spelling in a demo
+94727b84c f 0 exception: an empty Vigenere key
+32c9c2836 n 0 exception: changelog only
+eeeaf7664 f 3 修复: QQ browser wasn't
+99ec3bbeb f 3 修复: possible null pointer in
+1aeb56564 f 3 修复: ReflectUtil missed
+03a92830a f 3 修复: Graphics2D resources
+338f2d2aa n 0 修复: changelog only
+d4b5ab525 n 0 修复: changelog only
+6689c2d86 n 0 修正: a javadoc said the wrong
+ccc910919 f 3 修正: cidr range check was wrong
+d244650eb f 3 修正: called the wrong function
+ce169230b n 0 修正: changelog
+7c3ea87b0 n 0 修正: comments and an
+fc4a71200 f 3 修正: SshjSftp failed on the
+4cf41c444 f 3 解决: interrupt status was lost
+3fb46830b f 3 解决: isSub failed on relative
+96e09601e n 3 解决: feature: xml to bean
+29278a10d n 0 解决: adds a test resource
+e3c9b4d04 f 3 解决: Oracle failed on
+af9880c5d f 3 解决: copyProperties ignored
+fc6081832 f 3 错误: CSV escaped quotes wrongly
+d11693fb2 f 3 错误: Sftp reconnect logic was
+f5c53a8f6 f 0 错误: a test compared a stream
+30e469509 f 3 错误: trailing newlines broke
+a49523ffa n 3 错误: a misspelled method name
+c7ede61ba n 0 错误: readme grammar
+c027ffe92 f 3 异常: getGenderByIdCard threw
+aadd768c9 f 3 异常: DateUtil.date threw on
+40a6ffbea n 0 异常: feature: exception
+1fcee0826 n 0 异常: changelog only
+65fe2e752 n 0 异常: changelog only
+0c5444e44 f 0 异常: Ftp.download failed
+c33550f70 f 3 漏洞: createTempFile was
+6a2b585de f 3 漏洞: CVE: stack overflow
+554b82874 n 0 漏洞: a warning comment and a
+2a786afd3 f 3 漏洞: CVE: XXE in readBySax
+02e85a80e f 3 漏洞: removes a method open to
+0eee7eadc f 3 漏洞: CVE in expression engines
+923aa1cf2 f 3 问题: URL decoding failed on
+4c0d594e9 f 3 问题: Partition divided by zero
+9262ace7d f 3 问题: setDateFormat broke
+afbe2ce99 f 3 问题: DateUtil.age was wrong
+32f2d0bd5 f 3 问题: splitByRegex ran out of
+5b64ecff4 n 0 问题: changelog only
+cb093e067 f 3 越界: BeanToMapCopier ran past
+c6ce5fe21 f 3 越界: FileMagicNumber ran past
+043722e1d f 3 越界: StrBuilder.charAt's
+44a2afd58 f 3 越界: VersionUtil.matchEl ran
+2cadd5960 f 3 越界: getZodiac accepted months
+713832e5f f 3 越界: Ipv4Util.getEndIpLong
+43c0cf0a0 f 3 空指针: Tailer threw on an empty
+8c81e43a0 f 3 空指针: possible null pointer in
+ef0fc738f f 3 空指针: UrlBuilder.addPath threw
+819bf98d5 f 3 空指针: MutableObj.equals threw
+f2686560f f 3 空指针: IoUtil.writeObjects threw
+32363c919 f 3 死循环: recursive Sftp delete
+8e3ac79ec f 3 死循环: ArrayUtil.lastIndexOfSub
+02a38a4f5 f 3 死循环: zipping into the same
+ef299062f f 3 死循环: part of the
+aa6b1332d f 3 死循环: recursive Sftp delete
+d12fcab0e f 3 死循环: ArrayUtil.lastIndexOfSub
+1a4d71823 n 0 not tests: ignores a test
+081a51ff8 n 3 not tests: comments and a test
+74593a883 n 0 not deps: dependency bump
+b2804a15c f 0 not 注释: a concurrency test didn't
+0c9046d40 n 0 not 注释: comment
+6fe9f31ea n 0 not 注释: comment
+83f87bf9d f 0 not 注释: JDBC driver detection had
+9bc7ed459 n 0 not 注释: comments
+1269f0fae n 0 not 文档: doc comment
+6a0ff8b4c n 0 not 文档: doc comment
+eae76eb27 n 0 not 测试: refactor, comments and
+e2d71ee56 f 0 not 测试: test assertions were wrong
+c02f3fbb8 n 0 not 测试: a word in a test
+b86147c4a f 3 not 测试: MapUtil.map threw on null
+
+@ requests aside
+5460f467b n 0 CI action bump
+d38495c90 n 0 docs link
+74c56d5ff n 0 CI lint config
+6f66281a1 f 0 isinstance checks missed
+6f205ff42 f 3 _encode_files missed __getattr__
+661970d17 n 0 linter rules
+1190afd14 n 0 adds a type annotation
+e50e59452 n 0 internal typing
+c4367f231 n 0 policy docs
+cd90742ed n 0 docstring
+6e83187b8 n 0 release
+84d10f0be f 0 Request.headers' type broke
+b7b549b54 n 0 release
+e511bc727 f 3 headers input types were wrongly
+5691f5961 f 0 json input types were too narrow
+2144213c3 f 0 Response.reason was typed optional
+6404f345e f 3 prepare_body missed __getattr__
+0b401c76b n 0 release
+86b378d3f f 0 Session.get's typed parameters
+a4f9a5999 f 0 no_proxy matched hosts it
+3816cfa1a f 0 SupportsItems rejected Mappings
+b684dcb9b f 3 Session's hooks type was wrong
+dc9dbdfb3 n 0 Python 3.15 support
+25340ebad f 0 tests failed with proxy variables
+fd628095d f 0 path_url lost leading slashes
+e8d2c015e n 0 docs example
+eb173bc81 n 0 CI
+d60f4773b n 0 docs links
+f64a0d782 n 0 docs link
+f7822f7c4 n 0 release
+561e4b688 n 0 feature: inline types
+8f6cda996 n 0 adds tests
+27e098196 n 0 typos
+6ec76b4a3 n 0 linter config
+9450dd51f n 0 dependabot config
+93bf5331a n 0 docs
+b294b08fe f 0 the urllib3 version check broke
+5f3ff9b9e n 0 typo
+514c1623f n 0 readme
+d2f6bdecc n 0 docstring
+a044b020d f 0 digest auth failed on FIPS builds
+16df2a091 n 0 dependency pin
+fe2063be0 n 0 docs CSS
+4b0b1a3e9 n 0 tooling
+185f587a7 n 0 docs
+ef439eb77 f 3 a response was in its own
+cbce03132 n 0 CI
+111d2b777 n 0 release
+f0198e6df f 3 malformed Content-Type values
+bc7dd0fc4 f 3 header validity regexes accepted
+4443b1a84 f 0 test dependencies were published
+389eea58d f 0 a test left files in the
+7407309c8 n 0 packaging tidy
+bc04dfd6d n 0 release
+66d21cb07 f 0 CVE: extract_zipped_paths wrote
+8b9bc8fc0 n 0 readme
+e331a288f n 0 removes an unused call
+753fd08c5 n 0 docs grammar
+774a0b837 n 0 docs
+0e4ae38f0 n 0 docs
+
+@ nest aside
+afa6e3d38 n 0 readme
+3a1c9ac57 n 0 release
+fecdd4f9e f 2 fastify: object-mode file streams
+5f08564c8 f 2 fastify: file streams of
+9934bcffc f 2 fastify: a failed stream on a raw
+9aa196d14 f 2 scoped global filters ran as
+d2319b8c4 f 2 express: rejected uploads of
+8d74ddcd3 f 2 server-side SyntaxErrors leaked
+81f9d0c1f f 2 node: file streams of pipelined
+a0a64f504 f 2 node: object-mode file streams
+832c4eeb7 f 2 node: a throwing stream error
+5b58a6e89 f 2 NaN limits turned the pipe and
+f956177a0 f 2 NaN limits turned the ws and
+972a59283 f 2 grpc stream call failures reached
+407518855 n 2 diagnostics: warns about a filter
+7d705cc83 f 2 gateways served clients before
+7a81aed50 f 2 guards that couldn't run were
+608fcec0a f 2 a promise from the CSRF exclude
+2dffe900d f 2 class-bound enhancers with static
+1704079dd f 2 resolvers in two modules ran the
+f433a1f75 n 2 diagnostics: warns when a
+c88524238 f 2 filter catch types were read from
+7c5792d96 f 2 parameter metadata read from the
+ce061111c f 2 microservices failed a message
+7359d3b06 f 2 gateways without a port opened a
+32875410d f 2 a later gateway's connection
+d6c3e2fa8 f 2 gateways on "/" and on no
+5ddb0943f f 2 error replies echoed binary
+ce948b18d f 2 a message counted as handled
+bd01f0f21 f 2 websockets failed a message
+ed988e606 f 2 a scoped gateway's disconnect
+8619bc84d f 2 errors of a connection hook's
+c99f3318c f 2 a gateway with an unset port lost
+6ff160ca7 f 2 gateways of one namespace didn't
+fd0155fba f 2 gateways on one port dropped
+a97e5bf6e f 2 later gateways didn't wait for
+d2cc65fda f 2 a throwing upgrade check let the
+f6490a7d6 f 2 a paused client that left was
+aae7cb067 f 2 a shared client resumed while a
+109e52cd9 f 2 DoS: no default limit on message
+c98b5f782 f 2 DoS: no cap on waiting messages
+55509f683 f 2 each handler kept its last
+2038bff42 f 2 grpc answered errors with their
+015456cc2 f 2 DoS: localeCompare on pattern keys
+222e8efff f 2 scoped filters skipped for
+078945a87 f 2 unobserved promises of joined
+515f99cfb f 2 a failing rpc filter left the
+ed8ca5cde f 2 DoS: pattern limits applied after
+42c619cd6 f 2 DoS: no bound on pending tcp
+7b4fa3292 f 2 streams of tcp messages without
+4196d3655 f 2 an empty tcp host listened on
+b93dc04b2 f 2 memory: fragmented tcp packet
+ce285e6ad f 2 maxBufferSize applied to several
+8209d1c8b f 2 NaN turned the tcp and kafka
+55da0b0d3 f 2 DoS: the default tcp buffer was
+8f9764a36 f 2 nats replies came back as messages
+074dcf7c6 f 2 redis wildcard replies on
+76064f355 f 2 mqtt topic names with wildcards
+1634286a2 f 2 mqtt wildcard filters matched the
+cc2157b82 f 2 redis requests before the
+
+@ redis aside
+df10f3239 f 0 DEBUG QUICKLIST left nodes
+b83c9c1ee f 0 addresses announced on the
+bee4ee2cd f 0 a flaky maxclients test under TLS
+5dd0f4e47 f 3 undefined shifts decoding msgpack
+133d7df04 f 3 AOF preload crashed in long
+0cfe83720 n 0 feature: ZMOVE
+cfda2dbeb f 0 fastjson read past a trailing
+01ed15184 f 3 module getkeys callbacks crashed
+52d11e711 n 0 CI adapted to an unavailable
+8fccf8591 f 3 set member expiry wrong during
+27f962f0d n 0 performance
+d866f80d2 n 0 CI adapted to a newer lcov
+73c496c11 f 3 IDMP appends lost on AOF replay
+5364030b8 n 0 performance
+76b611c92 n 0 performance
+1252bb51b f 0 parallel LTO linking failed
+f09cabd56 f 0 ZRANGESTORE trusted a listpack
+889672c76 f 3 XCLAIM claiming nothing didn't
+dda59d1f8 f 0 TLS session resumption crossed
+cb4b70e7c f 3 modules reading a zset emptied by
+124bc7ef4 f 3 lua pattern matching recursed too
+63cf48ce4 f 0 a test failed on Tcl 8.5
+86561a0f4 f 0 slot migration lost keys when the
+d973851a7 f 3 MSETEX propagated repeated EX/PX
+b2f70ec7b f 0 a test failed on Tcl 8.5
+9da5a27ed n 0 refactor for other cluster
+5b69ba2ce f 0 listpack to btree conversion
+4bb71df00 f 0 SORT changed the sorted set's
+abda10c01 n 0 performance
+283a563f9 n 0 performance
+dda610ab2 f 0 the replica soft limit ignored
+71633fe17 f 0 client memory left out watched
+a5c94689f n 0 CI runners
+28c3a1820 f 3 AOF rewrite duplicated commands
+a05f30c97 n 0 adds tests
+46cf4a8f5 n 0 feature: CPU time in SLOWLOG
+8a68e4453 f 0 a test failed on a random -0
+16e63d64b f 0 ZADD left a huge sparse member
+87133479d n 0 feature: module API
+8e2ba8c4e f 0 redis-cli trusted extreme arities
+d88fea2fb f 0 duplicate metadata classes
+dc1e7e2e6 f 3 use-after-free in ZRANGESTORE
+76990001c n 0 redis-cli output for empty
+68d9a2df0 f 3 stale dict entry links reused
+a4172f543 f 3 DELEX ignored
+f729b7c9a f 0 keyspace event flags n, o, c lost
+927cc6d77 f 0 bundled jemalloc took over libc's
+669b2b9ba n 0 dependency update by a release bot
+6a5fee675 f 0 flaky XREADGROUP CLAIM tests
+418883960 n 0 CONFIG REWRITE behaviour change
+d843e6150 n 0 test adapted to rounding on a new
+a76a3689a n 0 feature: set member expiration
+da925a2ca f 0 listpack backlen width broke data
+9a5c6e978 f 3 out-of-bounds read parsing
+c2aa3993f f 3 slot memory accounting wrong
+157e3f3bb n 0 feature: BITRANGEINTARRAY
+c01d00bed n 0 log message wording
+31edfd806 f 0 flaky defrag test
+8b5384ae9 n 0 performance
+33c2a2a14 n 3 test adapted to a tmpfs /tmp
+
+@ react tagged
+df6aa4ec7 f 0 Flight lazy element throws after close
+a4168abb8 n 0 lockfile dependency bumps
+542580590 n 0 dependency bumps
+746bd0512 n 0 dev dependency bump
+ae719c2a7 n 0 drops an unused script
+3b75c86b7 n 0 dependency bump
+92557318f n 0 dependency bump
+bc7590eab n 0 dependency bump
+cb7c59ecd f 0 standalone app never opened an editor
+b05c0b75f n 0 feature: Suspense tab entry
+d71b53724 f 3 infinite render loop
+ce01166db n 0 CI on node 24
+e7c3d9d4c f 0 console format consumed wrong args
+47bc5c705 n 0 test only
+64df855d3 f 0 resumed prerender hid content
+16a1d5d78 f 3 compiler panic on non-ASCII
+fd51cb10d f 0 signed zero lost, wrong result
+a6b912fbe f 0 ref validation missed effects
+ab0d927f5 f 0 useId values not unique
+ba39b32a4 f 0 abort discarded rendered shell
+99c106c43 f 3 reverts a change that failed
+efa318955 f 3 false positive ref error
+e8738f0c6 n 0 repo URL migration
+b618bbb44 n 0 flag cleanup
+791476cb6 n 0 flag in test build
+72fdf5cf0 n 0 flag cleanup
+d75b0697a n 0 flag cleanup
+278794d7d f 3 infinite render loop
+8b0da1c6e f 3 wrong code for computed keys
+71f725593 n 0 feature behind a flag
+
+
+@ calcite tagged
+838ec33a0 f 0 decorrelator gives wrong result
+a11dab1c9 f 3 validator crash
+243d5e678 n 0 test disabled
+6e84512ac f 0 must-filter enforcement bypassed
+f8963be2d n 0 site
+6f1cc7a71 f 0 negative sizes
+88041d0c0 f 0 loses StructKind
+07bd13a71 f 0 prepared statement fails
+c989bfb0a f 0 class-name filter not applied
+2311114e3 f 0 char truncated
+1be8d0b37 f 3 DISTINCT ON crash
+dd119578d f 3 wrong results for joins
+cf01ee820 f 3 binds the wrong input
+9e8177360 n 0 site
+fd96e467c f 0 no rows on empty input
+73b05e37c f 3 compiler crash
+a60ad2019 f 0 drops MATCH_CONDITION
+fb7b7fa74 f 0 class init deadlock
+8c3770b22 f 0 casts accepted illegal input
+d54d50ceb n 0 optimization: trims sub-query
+b6f362cab n 0 site lockfile
+334fc71ad f 0 accepted a non-comparable key
+6602a58e7 f 0 wrong cast, lost nullability
+b57785456 f 0 outer join made inner
+6484bed45 n 0 feature: empty row type
+80d2f9c0c f 0 IndexOutOfBoundsException
+6400e14a2 f 0 dialect pushed invalid SQL
+0f8414c0b f 0 type not nullable
+8dcfd1280 n 0 build toolchain
+7478530c5 f 0 ORDER BY failed
+
+
+@ mmengine tagged
+f8a8b1b3b n 0 package rename, lint config
+560280ee1 f 2 get_installed_path broken
+c74ff1817 n 0 lint
+bc3954448 n 0 review refactor
+30efd0cf2 f 3 inverted disable check
+b501f30d1 n 0 test only
+42aa0ebb7 n 0 adapts to new torch
+19f248965 n 0 test only
+151a87ab0 n 2 adapts to new torch
+2a868aaa6 n 0 dependency change
+390ba2fbb n 0 version bump
+698782f92 n 0 CI
+a4475f5ee n 0 CI
+2e0ab7a92 n 2 adapts to new torch
+cc3b74b5e n 2 lint
+85c83ba61 n 0 adapts to new torch_mlu
+acbc5e46d f 2 frozen params kept in groups
+e258c8482 n 0 validates at the end too
+2fe0ecec3 n 0 feature
+4df682ba2 n 0 typos
+b5f2d5860 n 0 docs
+396cac19c n 0 docstring typo
+b51bf6096 f 2 resume repeated trained data
+369f15e27 n 0 docs
+671f3bcdf n 2 adapts to new ColossalAI
+85c0976bc n 0 version bump
+bdd653a8c n 0 CI
+a5db5bedb n 0 CI and a test
+26f22ed28 f 2 resume failed with frozen params
+27ab6a69f n 0 feature

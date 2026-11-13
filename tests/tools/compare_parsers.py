@@ -156,25 +156,32 @@ def head(repo):
     return result.stdout.decode().strip() if result.returncode == 0 else None
 
 
-def clone(one, repos_dirs, cache, fetch):
-    """The folder holding the set's files at its pinned commit, and how it was found; or None and why not."""
+def deep_enough(path, depth):
+    """Whether a clone holds depth commits of history, or all there is: not a shallow one cut shorter."""
+    shallow = run(["git", "-C", path, "rev-parse", "--is-shallow-repository"]).stdout.decode().strip() == "true"
+    return not shallow or int(run(["git", "-C", path, "rev-list", "--count", "HEAD"]).stdout or 0) >= depth
+
+
+def clone(one, repos_dirs, cache, fetch, depth=1, need=None):
+    """The folder holding the set's files at its pinned commit, with depth commits of history where it's fetched,
+    and need (depth unless given) where it's found, and how it was found; or None and why not. one has a name, a
+    url and a sha, and may have a folder."""
+    need = need or depth
     for folder in repos_dirs:
-        for name in dict.fromkeys([one.folder, one.name]):
+        for name in dict.fromkeys([getattr(one, "folder", one.name), one.name]):
             path = os.path.join(folder, name)
-            if os.path.isdir(path):
-                at = head(path)
-                if at == one.sha:
-                    return path, "on disk"
+            if os.path.isdir(path) and head(path) == one.sha and deep_enough(path, need):
+                return path, "on disk"
     path = os.path.join(cache, "%s-%s" % (one.name, one.sha[:12]))
-    if head(path) == one.sha:
+    if head(path) == one.sha and deep_enough(path, need):
         return path, "cached"
     if not fetch:
         return None, "no clone at %s, and fetching is off" % one.sha[:12]
     if os.path.isdir(path):
-        shutil.rmtree(path)
+        support.remove(path)  # Git's objects are read-only, which Windows won't delete as they are.
     os.makedirs(path)
     for command in (["git", "init", "-q", path],
-                    ["git", "-C", path, "fetch", "-q", "--depth", "1", one.url, one.sha],
+                    ["git", "-C", path, "fetch", "-q", "--depth", str(depth), one.url, one.sha],
                     ["git", "-C", path, "-c", "advice.detachedHead=false", "checkout", "-q", "FETCH_HEAD"]):
         result = run(command)
         if result.returncode != 0:

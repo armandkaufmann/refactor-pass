@@ -7,13 +7,18 @@
   test_heatmap.py     heatmap.py's columns, window and scopes
   test_pairs.py       files that change together, and the tests that change with several
   test_window.py      bots, reformats, asked commits and --since
+  test_fixes.py       the fixes trace: which commits say they fixed a defect, read by type and by words
+  test_reverts.py     the trace's reading of reverts, withdrawals and re-landings
+  test_kinds.py       the whole heatmap over a repo with a file of each kind of path
+  test_diffs.py       --show FILE --diffs: a file's changes in the commits given
   test_checklists.py  --checklists, --page, recorded commits, worktrees and a copy kept in a project
   test_check_page.py  check_page.py's errors and warnings, and old checklists (fixtures/)
   test_page.py        assets/page.html, read without a browser
-  test_robustness.py  a short fuzz and extreme inputs
+  test_robustness.py  a short fuzz and extreme inputs, and the scripts' last line of defence
   test_documents.py   the documents against the scripts, and the code's hygiene
   test_install.py     install.py, from source repos built here: what it installs and where, which version,
                       update, check and uninstall, and every refusal leaving the target as it was
+  test_tools.py       the clone the tools in tools/ share
   support.py          what they share: the scripts' folder, running them, and building git repos
 
 Run it with python3 -B, which keeps Python from writing bytecode beside the tests and scripts. This file

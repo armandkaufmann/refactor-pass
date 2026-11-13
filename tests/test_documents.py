@@ -84,7 +84,7 @@ class Help(unittest.TestCase):
     def setUpClass(cls):
         cls.help = {}
         for script in SCRIPTS:
-            cls.help[script] = support.run(script, "--help")
+            cls.help[script] = support.run(script, "--help", env={"COLUMNS": "80"})  # argparse wraps to it.
         installer = subprocess.run([sys.executable, os.path.join(ROOT, "install.py"), "--help"], capture_output=True,
                                    env=support.environment())
         cls.installer_help = support.Result(installer.returncode, support._text(installer.stdout),
@@ -109,6 +109,11 @@ class Help(unittest.TestCase):
                 self.assertIn("usage:", result.out)
         self.assertEqual(self.installer_help.code, 0, self.installer_help)
         self.assertTrue(self.installer_help.out.startswith("usage: install.py"), self.installer_help.out[:200])
+
+    def test_the_heatmaps_help_stays_short(self):
+        # An agent pays for it each time it reads it: it keeps what a reader of the output needs, and the account
+        # of how the fixes trace was measured is in the references. v1.0.1's was 12,675 characters.
+        self.assertLess(len(self.help["heatmap.py"].out), 16000)
 
     def test_docstrings_name_only_real_options(self):
         # A script's docstring may name another script's option, as check_page.py names heatmap.py --page.
@@ -135,9 +140,12 @@ class Help(unittest.TestCase):
     def test_the_heatmaps_columns_are_its_helps(self):
         doc = ast.get_docstring(ast.parse(read(os.path.join(support.SCRIPTS, "heatmap.py"))))
         columns = re.findall(r"(?m)^  (\w+)  ", doc)
-        self.assertEqual(columns, ["commits", "recent", "last", "churn", "rel", "size", "growth"])
+        # The table's columns, then the ways a commit reads as a fix, the fixes table's columns after its counts.
+        self.assertEqual(columns, ["commits", "recent", "last", "churn", "rel", "size", "growth", "revert", "type",
+                                   "words"])
         source = read(os.path.join(support.SCRIPTS, "heatmap.py"))
         self.assertIn('("commits", "recent", "last", "churn", "rel", "size", "growth")', source)
+        self.assertIn('("fixes", "recent", "revert", "type", "words")', source)
         doc = ast.get_docstring(ast.parse(read(os.path.join(support.SCRIPTS, "measure.py"))))
         self.assertEqual(re.findall(r"(?m)^  (\w+)  ", doc), ["lines", "band", "funcs", "longest", "long", "deepest"])
 
@@ -180,14 +188,21 @@ class Skill(unittest.TestCase):
                     if anchor:
                         self.assertIn(anchor, anchors(linked))
 
+    def test_step_4_shows_with_step_1s_window_scope_and_options(self):
+        # --show's marks count a commit's files by the scope and --max-files: the same as step 1's, or they differ.
+        text = " ".join(read(os.path.join(SKILL, "SKILL.md")).split())
+        self.assertIn("`heatmap.py -C <repo> --show <file> --messages`, with step 1's window, scope and options,", text)
+        help_text = " ".join(support.run("heatmap.py", "--help").out.split())
+        self.assertIn("the heatmap's window, scope and options", help_text)
+
     def test_the_words_skill_md_quotes_are_the_scripts(self):
         text = read(os.path.join(SKILL, "SKILL.md"))
         vocabulary = set()
         check_page = support.load("check_page")
         for shape in (check_page.PASS, check_page.REFACTOR, check_page.OTHER, check_page.COST, check_page.EARLIER,
-                      check_page.RESULT):
+                      check_page.RESULT, check_page.FIXES):
             vocabulary |= set(shape)
-        vocabulary |= set(check_page.STATUSES) | {"from", "what", "why", "date", "text"}
+        vocabulary |= set(check_page.STATUSES) | {"from", "fixes", "what", "why", "date", "text"}
         vocabulary |= {"commits", "recent", "last", "churn", "rel", "size", "growth"}  # The heatmap's columns.
         others = {"heatmap", "pass", "null", "app", "py", "python", "python3"}  # Block names, a scope, commands.
         for word in sorted(set(re.findall(r"`([a-z_0-9]+)`", text))):
@@ -205,17 +220,32 @@ class NothingAboutTheSuite(unittest.TestCase):
     """What agents load never mentions this suite, and the suite holds nothing an agent would take for
     instructions."""
 
-    def test_documents_agents_load(self):
+    def names(self):
         names = {"unittest", "test suite", "REFACTOR_PASS_SCRIPTS", "tests/", "the skill's tests",
                  "this skill's tests", "the suite", "install.py", ".install.json"}
         for folder, dirs, files in os.walk(support.HERE):
             dirs[:] = [d for d in dirs if d != "__pycache__"]
             names.update(n for n in files if n.endswith(".py") and n != "__init__.py")
+        return names
+
+    def test_documents_agents_load(self):
+        names = self.names()
         for path in loaded_by_agents():
             text = read(path)
             for name in sorted(names):
                 with self.subTest(document=os.path.basename(path), name=name):
                     self.assertNotIn(name, text)
+
+    def test_the_scripts(self):
+        # An installed copy has the skill alone: a script names nothing of the suite, in a comment either. It
+        # can name the record an installed copy holds, which scoping.py looks for.
+        names = self.names() - {".install.json"}
+        for name in sorted(os.listdir(support.SCRIPTS)):
+            if name.endswith(".py"):
+                text = read(os.path.join(support.SCRIPTS, name))
+                for found in sorted(n for n in names if n in text):
+                    with self.subTest(script=name, name=found):
+                        self.fail("%s names %s" % (name, found))
 
     def test_no_instructions_for_agents_in_the_suite(self):
         for folder, dirs, files in os.walk(support.HERE):
@@ -234,7 +264,7 @@ class NothingAboutTheSuite(unittest.TestCase):
                     size = len(f.read().replace(b"\r\n", b"\n"))
                 total += size
                 biggest = max(biggest, (size, name))
-        self.assertLess(total, 400 * 1024)
+        self.assertLess(total, 600000)
         self.assertLess(biggest[0], 60 * 1024, biggest[1])
 
     def test_a_copy_by_hand_takes_only_the_skill(self):

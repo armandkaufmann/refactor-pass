@@ -64,10 +64,48 @@ or internal paths is tied to their internals, while a broad test that
 follows features through them, or follows files that already change
 together, isn't.
 
---show FILE prints a file's commits in the window instead, to read the
-reasons it keeps changing: a file git tracks, or one a commit in the window
-changed, as one deleted in it; a name a file had before a rename in the
-window means it as it's named today. Any other is an error, as a scope is.
+And the fixes: the commits whose messages say they fixed a defect in the
+project's own code (wrong behaviour, a crash, a security hole, a regression,
+a compile or type error, a guard against a failure that could happen as the
+code stood), at least that many, since many fixes don't say so. One that
+changed only documentation, tests, or CI, build or dependency files never
+counts. Per file, how many of the commits that changed it say so, and how
+many of those in the newer half (those files, and commits of more than
+--max-files files, aside): which files to read, not a count of their fixes,
+as a fix elsewhere can touch a file in passing. Each commit counts once, as
+the first of these that it reads as:
+
+  revert  its subject starts Revert and its body "This reverts commit <hash>",
+          of another author's commit; one of the author's own withdraws it
+          and isn't counted, one of a change to the docs or of a chore isn't
+          a fix, and a re-landing (Reapply "X", a revert of a revert) is
+          neither, as is a revert of one, unless that one is a Reapply.
+          Without git's line, a revert reads by its own words
+  type    its type says fix (fix:, fix(scope)!:, [fix], the bug emoji), read
+          where at least half the subjects carry a type; there another type
+          (feat:, [Feature], a gitmoji ...) or fix(deps):, fix(ci): or
+          fix(docs): says it isn't. Other tags ([clang], [SPARK-1],
+          [hotfix]) are passed over
+  words   its subject says fix, bug, error, wrong, correct, crash, overflow,
+          CVE, prevent, problem or mistake, in any of their forms, or 修复,
+          修正, 漏洞, 问题, 越界 or 空指针, and not typo, formatting, lint,
+          docs, warning, release, error message, 注释 or 文档; an issue
+          closed (Fixed #12 --) and code say nothing
+
+The header says the share of subjects with a type, and so whether the count
+is close to complete (90% or more carry one) or a floor. Where most subjects
+are a word or two, or in a language it doesn't read (it reads English and
+Chinese; 修正, fix, reads so in Japanese too), it lists no files. On commits
+labelled by hand, about 9 in 10 of those it marks are fixes; it finds nearly
+all the fixes where subjects carry a type, and typically a third to a half
+where they don't (references/smells.md, Counting fixes, has the account).
+
+--show FILE prints a file's commits in the window instead, newest first: hash,
+date, half, subject and how it reads as a fix; --messages adds what each
+changed and its message, without who signed it, cut at 12 lines, and any line
+it prints is cut at 200 characters. The file is one git tracks or the window
+changed (one deleted, or a name before a rename, meaning the file today); any
+other is an error, as a scope is.
 
 History is followed across renames, so a file moved or renamed in the window
 keeps the changes it had under its old name. Merge commits are skipped, and so
@@ -124,7 +162,6 @@ Examples:
 """
 
 import argparse
-import email.utils
 import json
 import os
 import re
@@ -164,23 +201,38 @@ def git(repo, *args):
 # git log as read_log reads it, whatever the user's or the repo's config says: the root commit's changes shown
 # (log.showRoot), no signature checked, whose output would come first (log.showSignature), git's own diff and
 # limit on renames, which change the counts (diff.algorithm, diff.renameLimit), and the subjects in UTF-8
-# (i18n.logOutputEncoding), and git's own size past which a file is read as binary (core.bigFileThreshold).
+# (i18n.logOutputEncoding), git's own size past which a file is read as binary (core.bigFileThreshold), and its
+# own context, at 0 of which git cuts the files' common end before it diffs them (diff.context).
 # No text conversion, external diff, notes or colour either, though git leaves them
-# out of --numstat today. Each commit is its hash, time, author and subject, each after a NUL, which no
-# subject or name can hold; then its numstat lines, each ending with a NUL, a rename's followed by its old
-# and its new name.
-LOG = ["-c", "core.bigFileThreshold=512m", "log", "--no-merges", "-z", "-M", "-l1000", "--numstat", "--root",
-       "--no-show-signature", "--no-textconv", "--no-ext-diff", "--diff-algorithm=myers", "--no-notes", "--no-color",
-       "--encoding=UTF-8", "--format=%x00%H%x00%ct%x00%aN <%aE>%x00%s"]
+# out of --numstat today. Each commit is its hash, time, author, subject, body (the message after the
+# subject, which says what a revert reverts) and parents, each after a NUL, which no message or name can hold;
+# then its numstat lines, each ending with a NUL, a rename's followed by its old and its new name.
+LOG = ["-c", "core.bigFileThreshold=512m", "-c", "diff.context=3", "log", "--no-merges", "-z", "-M", "-l1000",
+       "--numstat", "--root", "--no-show-signature", "--no-textconv", "--no-ext-diff", "--diff-algorithm=myers",
+       "--no-notes", "--no-color", "--encoding=UTF-8", "--format=%x00%H%x00%ct%x00%aN <%aE>%x00%s%x00%b%x00%P"]
+# git show as file_diffs reads it, whatever the config says: each commit's patch of the paths given, after a
+# NUL and its hash, the root commit's too (log.showRoot); git's own diff, context and renames; paths quoted as
+# git does by default, with a/ and b/ whatever diff.noprefix, diff.mnemonicPrefix, diff.srcPrefix and
+# diff.dstPrefix say; blank context lines as a space; nothing run or converted, and no colour, notes or
+# signature; and the paths given read as names, not as pathspecs, so a name such as :weird.py is the file's.
+DIFF = ["--literal-pathspecs", "-c", "core.bigFileThreshold=512m", "-c", "core.quotePath=true",
+        "-c", "diff.suppressBlankEmpty=false", "-c", "diff.indentHeuristic=true", "-c", "diff.interHunkContext=0",
+        "-c", "diff.relative=false", "-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false", "show",
+        "--root", "--no-color", "--no-ext-diff", "--no-textconv", "--diff-algorithm=myers", "-M", "-l1000", "-U3",
+        "--no-notes", "--no-show-signature", "--encoding=UTF-8", "--src-prefix=a/", "--dst-prefix=b/",
+        "--format=%x00%H", "--patch"]
 COMMIT = re.compile(r"[0-9a-f]{40}(?:[0-9a-f]{24})?\Z")  # A full hash, of SHA-1 or SHA-256.
 NUMSTAT = re.compile(r"(\d+|-)\t(\d+|-)\t")
 
 
-def read_log(repo, revs):
-    """The commits in revs, newest first: (sha, time, subject, [(path, old_path, added, removed)], author).
+def read_log(repo, revs, merges=False, changes=True):
+    """The commits in revs, newest first: (sha, time, subject, [(path, old_path, added, removed)], author, body,
+    [parents]).
     old_path is the name before a rename, else None; added and removed are None for a binary file. Read by
-    position, so a subject or an author can hold any character."""
-    tokens = git(repo, *(LOG + revs)).split("\0")
+    position, so a message or an author can hold any character. Merges are left out unless merges is true, and
+    the changes are read only where changes is."""
+    tokens = git(repo, *([a for a in LOG if (not merges or a != "--no-merges") and
+                          (changes or a not in ("--numstat", "-M", "-l1000", "--root"))] + revs)).split("\0")
     commits = []
     i = 0
     while i < len(tokens):
@@ -197,10 +249,10 @@ def read_log(repo, revs):
                 i += 2
             binary = added == "-"
             commits[-1][3].append((path, old, None if binary else int(added), None if binary else int(removed)))
-        elif COMMIT.match(token) and i + 3 <= len(tokens):
-            stamp, author, subject = tokens[i:i + 3]
-            i += 3
-            commits.append((token, int(stamp), subject, [], author))
+        elif COMMIT.match(token) and i + 5 <= len(tokens):
+            stamp, author, subject, body, parents = tokens[i:i + 5]
+            i += 5
+            commits.append((token, int(stamp), subject, [], author, body, parents.split()))
         else:
             raise ValueError("git log printed something read_log doesn't read: %r" % token[:80])
     return commits
@@ -236,6 +288,7 @@ def since_date(since):
     from its start, local time, as git would read it at the time of day it is now; or None. Stop if it's
     in such a form but isn't a real date."""
     text = since.strip()
+    import email.utils  # Here, as it takes as long to load as the rest of the script.
     if RELATIVE.match(text) or (RFC_2822.match(text) and email.utils.parsedate_tz(text)):
         return text
     if text.lower() == "today":
@@ -351,7 +404,10 @@ def checklist_places(repo, folders):
     pass out of the main checkout."""
     git_dir, common = folders[:2]
     trees, main = [], None
-    for index, entry in enumerate(git(repo, "worktree", "list", "--porcelain").split("\n\n")):
+    # A repo with no linked worktree, which git keeps a folder of in worktrees/, is its own one: no git to ask.
+    listed = git(repo, "worktree", "list", "--porcelain") if git_dir != common or os.path.isdir(
+        os.path.join(common, "worktrees")) else "worktree %s" % repo
+    for index, entry in enumerate(listed.split("\n\n")):
         lines = entry.strip().split("\n")
         if not lines[0].startswith("worktree ") or "bare" in lines:
             continue
@@ -537,6 +593,633 @@ def line_counts(repo, wanted):
     return counts
 
 
+# The fixes trace: which commits fixed a defect in the project's own code, as their messages say. Each rule
+# here was measured on commits of public repos labelled fix or not by reading their messages and diffs, and a
+# word or an exclusion stays only where, dropped alone, it took away more right calls than wrong ones (修复,
+# fix, at one each, shares most commits with 问题).
+#
+# A type at the start of a subject: Conventional Commits' (fix(scope)!: ..., or with a full-width colon), a
+# type in brackets ([Fix], as open-mmlab writes them), or a gitmoji, or the type after one. A tag in brackets
+# whose word isn't a type names an area or a ticket ([clang], [SPARK-1]), and Flink's [hotfix] a change made
+# without one: they're passed over, a type may follow them, and the subject's words are read without them.
+CONVENTIONAL = re.compile(r"\s*(?P<type>[A-Za-z]+)(?:\((?P<scope>[^)]*)\))?!?\s*[:\uff1a]")
+TAG = re.compile(r"\s*\[(?P<tag>[^\]]*)\]")
+TYPES = {"feat", "feature", "fix", "docs", "doc", "chore", "refactor", "perf", "test", "tests", "style", "build",
+         "ci", "revert", "release", "deps", "hotfix", "bugfix", "bug", "wip", "i18n", "types"}
+BRACKET_TYPES = TYPES - {"hotfix"} | {"enhance", "enhancement", "improve", "improvement"}
+FIX_TYPES = {"fix", "hotfix", "bugfix", "bug"}
+# Gitmoji's emoji, as gitmoji.dev lists them, without the variation selector some are written with, and their
+# codes; any other emoji isn't a type.
+GITMOJI = set(("\U0001F3A8 \u26a1 \U0001F525 \U0001F41B \U0001F691 \u2728 \U0001F4DD \U0001F680 \U0001F484 "
+               "\U0001F389 \u2705 \U0001F512 \U0001F510 \U0001F516 \U0001F6A8 \U0001F6A7 \U0001F49A \u2b07 \u2b06 "
+               "\U0001F4CC \U0001F477 \U0001F4C8 \u267b \u2795 \u2796 \U0001F527 \U0001F528 \U0001F310 \u270f "
+               "\U0001F4A9 \u23ea \U0001F500 \U0001F4E6 \U0001F47D \U0001F69A \U0001F4C4 \U0001F4A5 \U0001F371 "
+               "\u267f \U0001F4A1 \U0001F37B \U0001F4AC \U0001F5C3 \U0001F50A \U0001F507 \U0001F465 \U0001F6B8 "
+               "\U0001F3D7 \U0001F4F1 \U0001F921 \U0001F95A \U0001F648 \U0001F4F8 \u2697 \U0001F50D \U0001F3F7 "
+               "\U0001F331 \U0001F6A9 \U0001F945 \U0001F4AB \U0001F5D1 \U0001F6C2 \U0001FA79 \U0001F9D0 \u26b0 "
+               "\U0001F9EA \U0001F454 \U0001FA7A \U0001F9F1 \U0001F9D1\u200d\U0001F4BB \U0001F4B8 \U0001F9F5 "
+               "\U0001F9BA \u2708 \U0001F996").split())
+GITMOJI_CODES = set(("art zap fire bug ambulance sparkles memo rocket lipstick tada white_check_mark lock "
+                     "closed_lock_with_key bookmark rotating_light construction green_heart arrow_down arrow_up "
+                     "pushpin construction_worker chart_with_upwards_trend recycle heavy_plus_sign heavy_minus_sign "
+                     "wrench hammer globe_with_meridians pencil2 poop rewind twisted_rightwards_arrows package alien "
+                     "truck page_facing_up boom bento wheelchair bulb beers speech_balloon card_file_box loud_sound "
+                     "mute busts_in_silhouette children_crossing building_construction iphone clown_face egg "
+                     "see_no_evil camera_flash alembic mag label seedling triangular_flag_on_post goal_net dizzy "
+                     "wastebasket passport_control adhesive_bandage monocle_face coffin test_tube necktie "
+                     "stethoscope bricks technologist money_with_wings thread safety_vest airplane t-rex").split())
+FIX_EMOJI = {"\U0001F41B", ":bug:", "\U0001F691", ":ambulance:", "\U0001FA79", ":adhesive_bandage:", "\U0001F512",
+             ":lock:"}  # And the lock: "fix security or privacy issues".
+# Scopes that make a fix type a chore: renovate's fix(deps), and fixes to CI or the docs.
+CHORE_SCOPES = {"deps", "deps-dev", "dev-deps", "ci", "docs", "doc"}
+# The types of a reverted change that isn't the code's, whose revert isn't a fix.
+CHORE_TYPES = {"docs", "doc", "chore", "ci", "build", "style", "test", "tests", "release", "deps"}
+# A revert, as git writes one: its subject says revert, and its body names the commit. Squash merges carry
+# their branch's reverts in their bodies, so the subject has to say it too.
+REVERT_LINE = re.compile(r"(?m)^\s*This reverts commit ([0-9a-fA-F]{7,64})")
+QUOTED = re.compile(r'\brevert(?:s|ed)?\s*"(.*)"', re.I)
+# A subject that says it's a revert, at its start, after a type or the issue it closes if it has one (Django's
+# Fixed #12 -- Reverted "..."); and one that re-lands.
+REVERT_OF = re.compile(r"\s*(?:[A-Za-z]+(?:\([^)]*\))?!?:\s*|[A-Za-z]+ #\d+ --\s*)?revert(?:s|ed|ing)?\b", re.I)
+RELANDS = re.compile(r'\s*(?:[A-Za-z]+(?:\([^)]*\))?!?:\s*)?(?:reapply\b|revert\s*"(?:[A-Za-z]+(?:\([^)]*\))?!?:\s*)?'
+                     r'revert\b)', re.I)
+# Issue references, whose words name the tracker, not the change: "Fixed #12 --" closes an issue of any kind,
+# where "fix: #12" is a fix by its type. An issue is a number (#12, gh-12, org/repo#12), as #include isn't.
+CLOSER = re.compile(r"\b(?:fix(?:e[sd])?|close[sd]?|resolve[sd]?)\s*:?\s*(?:#|gh-|[\w.-]+/[\w.-]+#)\d+\b", re.I)
+REFERENCE = re.compile(r"\b(?:issues?|pr|pull|ticket)\s*#?\d+\b", re.I)
+# The words, each with the forms that count as it. A subject's code (in backticks, or an identifier such as
+# should_ignore_error or Data.Render) isn't read.
+FIX_WORDS = {"fix": "fix fixes fixed fixing hotfix", "bug": "bug bugs bugfix bugfixes buggy",
+             "error": "error errors erroneous", "wrong": "wrong wrongly",
+             "correct": "correct corrects corrected correction corrections", "crash": "crash crashes crashed crashing",
+             "overflow": "overflow overflows underflow underflows", "cve": "cve",
+             "prevent": "prevent prevents prevented preventing", "problem": "problem problems",
+             "mistake": "mistake mistakes mistaken mistakenly"}
+FIX_FORMS = set(" ".join(FIX_WORDS.values()).split())
+FIX_CHINESE = ["修复", "修正", "漏洞", "问题", "越界", "空指针"]
+NOT_FIX_WORDS = {"typo": "typo typos spelling grammar grammatical wording", "formatting": "formatting reformat",
+                 "lint": "lint linting linter clippy eslint codespell mypy pylint flake8",
+                 "docs": "docs doc documentation readme changelog docstring docstrings javadoc",
+                 "warning": "warning warnings", "release": "release"}
+NOT_FIX_PHRASES = {"error message": ("error message", "error messages")}
+NOT_FIX_CHINESE = ["注释", "文档"]
+# Documentation by its name: a changelog, a readme, a licence and the like, with a documentation extension or
+# one in capitals (COPYING.LESSER), as against src/history.ts or news.py, or with none, where anything after
+# the word needs the word in capitals (LICENSE-MIT, as against bin/license-checker); or Markdown and the like.
+DOC_NAMES = re.compile(r"(?P<word>changelog|changes|history|news|authors|contributors|readme|license|copying|"
+                       r"contributing|code_of_conduct)(?P<more>[._-][\w.-]*)?$", re.I)
+DOC_EXTENSIONS = {"md", "markdown", "rst", "txt", "text", "adoc", "asciidoc", "rdoc", "org", "pod"}
+DOC_FILES = re.compile(r".*\.(?:md|markdown|rst|adoc|asciidoc|rdoc)$", re.I)
+
+
+# CI, build and dependency files: what a project runs its checks with, builds and packages itself with, and
+# names its dependencies in. A fix in them isn't a fix of the project's code.
+CI_FOLDERS = {".github", ".circleci", ".buildkite", ".gitlab", ".azure-pipelines"}
+CHORE_FILES = re.compile(
+    r"(?:\.gitlab-ci\.yml|\.travis\.yml|appveyor\.yml|\.appveyor\.yml|azure-pipelines\.yml|Jenkinsfile|\.cirrus\.yml|"
+    r"\.pre-commit-config\.yaml|\.?codecov\.ya?ml|renovate\.json5?|\.readthedocs\.ya?ml|"
+    r"Makefile|makefile|GNUmakefile|[\w.-]+\.mk|CMakeLists\.txt|[\w.-]+\.cmake|meson\.build|BUILD(?:\.bazel)?|"
+    r"WORKSPACE|"
+    r"SConstruct|configure\.ac|Makefile\.am|build\.xml|build\.gradle(?:\.kts)?|settings\.gradle(?:\.kts)?|"
+    r"gradle\.properties|pom\.xml|[\w.-]+\.(?:csproj|fsproj|vbproj|vcxproj|sln)|Directory\.(?:Build|Packages)\.props|"
+    r"Dockerfile|docker-compose\.ya?ml|make\.bat|"
+    r"go\.mod|go\.sum|go\.work|pyproject\.toml|setup\.cfg|MANIFEST\.in|requirements[\w.-]*\.(?:txt|in)|"
+    r"Pipfile|Pipfile\.lock|poetry\.lock|uv\.lock|tox\.ini|noxfile\.py|package\.json|package-lock\.json|"
+    r"npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|pnpm-workspace\.yaml|bun\.lockb?|lerna\.json|"
+    r"tsconfig[\w.-]*\.json|(?:vite|vitest|rollup|webpack|babel|jest|tsup|esbuild)\.config\.[cm]?[jt]s|"
+    r"Cargo\.toml|Cargo\.lock|Gemfile|Gemfile\.lock|[\w.-]+\.gemspec|composer\.json|composer\.lock|mix\.exs|"
+    r"mix\.lock|Package\.swift|Package\.resolved|Podfile|Podfile\.lock|packages\.config)$")
+
+
+# Code by its extension: in a docs folder, such a file is taken for code, as cobra's doc/ is a package of the
+# library and tokio's src/doc/ a module, though some are documentation's own scripts (docs/conf.py).
+CODE_EXTENSIONS = set(".c .cc .cpp .cxx .h .hh .hpp .hxx .m .mm .cs .fs .vb .java .kt .kts .scala .groovy .clj .go .rs "
+                      ".swift .py .pyx .rb .php .pl .pm .lua .js .jsx .mjs .cjs .ts .tsx .mts .cts .vue .svelte .dart "
+                      ".ex .exs .erl .hs .ml .elm .jl .r .zig .nim .cr .gd .sh .ps1 .sql".split())
+
+
+def is_doc(path):
+    """Whether a file is documentation: a changelog, a readme, Markdown and the like, or in a docs folder and not
+    code by its extension."""
+    name = path.split("/")[-1]
+    _, dot, extension = name.rpartition(".")
+    found = DOC_NAMES.match(name)
+    named = found and (extension.lower() in DOC_EXTENSIONS or extension.isupper() if dot else
+                       not found.group("more") or found.group("word").isupper())
+    in_docs = set(path.lower().split("/")[:-1]) & {"doc", "docs", "documentation"}
+    return bool(named or DOC_FILES.match(name) or in_docs and not (dot and "." + extension.lower() in CODE_EXTENSIONS))
+
+
+def package_tops(paths):
+    """The folders where a setup.py is a package's manifest, of the paths a repo holds: where its manifests are,
+    the repo's top and a folder with a pyproject.toml or a setup.cfg."""
+    return {""} | set(p.rpartition("/")[0] for p in paths if p.rpartition("/")[2] in ("pyproject.toml", "setup.cfg"))
+
+
+def is_chore(path, tops=None):
+    """Whether a file is CI, build or dependency config: a CI folder's, a Makefile, a package's manifest, a lock
+    file, a list in a requirements folder (requirements/tests.txt) and the like; a setup.py at a package's top,
+    of tops (package_tops; the repo's top alone where not given), and not one elsewhere (src/setup.py)."""
+    parts = path.split("/")
+    return bool(set(parts[:-1]) & CI_FOLDERS or CHORE_FILES.match(parts[-1]) or
+                "requirements" in parts[:-1] and re.search(r"\.(?:txt|in)$", parts[-1]) or
+                parts[-1] == "setup.py" and "/".join(parts[:-1]) in (tops if tops is not None else {""}))
+
+
+def not_code(path, is_test, tops=None):
+    """What a file is if it isn't the project's own code, as the fixes trace says it: documentation, tests, or
+    CI, build or dependency files (tops as is_chore takes them); or None."""
+    return ("documentation" if is_doc(path) else "tests" if is_test(path) else
+            "CI, build or dependency files" if is_chore(path, tops) else None)
+
+
+def fix_words(text):
+    """The words a subject says, lower case: no issue references, code in backticks or identifiers. A fix type
+    at its start is its words, though an issue's number follows it (fix: #482), as a closer's isn't."""
+    lead = CONVENTIONAL.match(text)
+    keep = lead.end() if lead and lead.group("type").lower() in FIX_TYPES else 0
+    text = re.sub(r"`[^`]*`", " ", REFERENCE.sub(" ", text[:keep] + CLOSER.sub(" ", text[keep:])))
+    found = []
+    for token in re.findall(r"[A-Za-z][A-Za-z0-9_]*(?:'[a-z]+)?(?:\.[A-Za-z_]\w*)*(?:\(\))?", text):
+        # A fix word's own form is a word in camelCase too: BugFix, HotFix, not an identifier as isFixed is.
+        if token.lower() in FIX_FORMS or not ("_" in token or "." in token or "(" in token or
+                                              re.search(r"[a-z][A-Z]", token)):
+            found.append(token.lower())
+    return found, text
+
+
+def says(text):
+    """(the fix words a subject says, the words that say it isn't one), each as its family's name."""
+    found, plain = fix_words(text)
+    words, joined = set(found), " %s " % " ".join(found)
+    fixes = [name for name, forms in FIX_WORDS.items() if words & set(forms.split())]
+    fixes += [w for w in FIX_CHINESE if w in plain]
+    nots = [name for name, forms in NOT_FIX_WORDS.items() if words & set(forms.split())]
+    nots += [name for name, forms in NOT_FIX_PHRASES.items() if any(" %s " % f in joined for f in forms)]
+    nots += [w for w in NOT_FIX_CHINESE if w in plain]
+    return fixes, nots
+
+
+def untagged(subject):
+    """A subject without the tags at its start that aren't types, as its words are read."""
+    while True:
+        tag = TAG.match(subject)
+        if not tag or tag.group("tag").strip().lower() in BRACKET_TYPES:
+            return subject
+        subject = subject[tag.end():]
+
+
+def type_of(subject):
+    """The type a subject carries at its start, after any tags that aren't types, as (its kind, how it's
+    written), or None. Its kind is fix, chore (a fix of the dependencies, CI or docs) or other. Where a gitmoji
+    has a type after it (\U0001F527 fix: ...), that word is the type."""
+    rest = untagged(subject)
+    tag = TAG.match(rest)
+    if tag:
+        return ("fix" if tag.group("tag").strip().lower() in FIX_TYPES else "other"), tag.group(0).strip()
+    found = CONVENTIONAL.match(rest)
+    if not found:
+        rest = rest.lstrip()
+        code = re.match(r":([a-z0-9_+-]+):", rest)
+        emoji = code.group(0) if code and code.group(1) in GITMOJI_CODES else next(
+            (rest[:len(e) + (rest[len(e):len(e) + 1] == "\ufe0f")] for e in GITMOJI if rest.startswith(e)), None)
+        if not emoji:
+            return None
+        found = CONVENTIONAL.match(rest[len(emoji):])
+        if not (found and found.group("type").lower() in TYPES):
+            return ("fix" if emoji.rstrip("\ufe0f") in FIX_EMOJI else "other"), emoji
+    kind = found.group("type").lower()
+    if kind not in TYPES:
+        return None
+    written = found.group(0).strip()
+    if kind in FIX_TYPES:
+        return ("chore" if (found.group("scope") or "").strip().lower() in CHORE_SCOPES else "fix"), written
+    return "other", written
+
+
+def same_person(one, other):
+    """Whether two "Name <email>" authors are one person: the same name or the same email, a blank one being
+    no one's."""
+    (name, _, email), (other_name, _, other_email) = [x.rpartition(" <") for x in (one, other)]
+    name, other_name = name.strip().lower(), other_name.strip().lower()
+    email, other_email = email.rstrip(">").strip().lower(), other_email.rstrip(">").strip().lower()
+    return bool(name) and name == other_name or bool(email) and email == other_email
+
+
+def how_long(seconds):
+    """A span of time in words, to the unit that suits it: 40 minutes, 5 hours, 12 days, 3 months, 2 years."""
+    for unit, size, below in (("minute", 60, 3600), ("hour", 3600, 86400), ("day", 86400, 60 * 86400),
+                              ("month", 2629746, 730 * 86400), ("year", 31556952, None)):
+        if below is None or seconds < below:
+            count = max(1, int(round(seconds / float(size))))
+            return "%d %s%s" % (count, unit, "" if count == 1 else "s")
+
+
+def read_fix(subject, typed):
+    """A subject read as a fix by its type, where the window's subjects carry types, else by its words: (2 or 3,
+    what said so), (0, why not), or (0, "") when it says nothing either way."""
+    kind = type_of(subject) if typed else None
+    fixes, nots = says(untagged(subject))
+    if kind:
+        # Another type says it isn't a fix; worth saying only where its words say fix.
+        return (2, kind[1]) if kind[0] == "fix" else (0, "labelled %s" % kind[1] if fixes or kind[0] == "chore"
+                                                      else "")
+    if fixes and not nots:
+        return 3, ", ".join(fixes)
+    return 0, ("says " + ", ".join(nots)) if fixes else ""
+
+
+def reverted(commit):
+    """The hashes a revert names, if the commit is one: its subject says revert at its start, and its body names
+    the commits; else none."""
+    return REVERT_LINE.findall(commit[5]) if REVERT_OF.match(commit[2]) else []
+
+
+def find_commit(commits, prefix):
+    """The one commit of commits whose hash starts with prefix, or None."""
+    prefix = prefix.lower()
+    found = [c for c in commits if c[0].startswith(prefix)]
+    return found[0] if len(found) == 1 else None
+
+
+def outside_window(repo, commits, window):
+    """The commits the reverts in commits name that the window doesn't hold, read from the repo in one git
+    call, as read_log reads them but without their changes, merges too; by the name the revert gives. One the
+    repo hasn't, as a shallow clone's, is left out."""
+    names = sorted(set(n for c in commits for n in reverted(c) if not find_commit(window, n)))
+    read = read_log(repo, ["--no-walk=unsorted", "--ignore-missing"] + names, merges=True, changes=False) \
+        if names else []
+    return dict((n, find_commit(read, n)) for n in names if find_commit(read, n))
+
+
+NOT_IN_REPO = ("isn't in the repo", "aren't in the repo")  # A revert's commits, as fix_trace says them.
+
+
+def fix_trace(commits, window, typed, is_test=None, outside=None, tops=None):
+    """Per commit, how it reads: (tier, what said so, the seconds a reverted commit stood, or None where it's not
+    a revert or that commit is dated after it). Tier 1 is a revert of another's commit, 2 a fix by its type, 3 by
+    its words; 0 not a fix, with why not, or "" when nothing said either way. A revert of its author's own
+    commits is a withdrawal, not a fix, and one of a commit not in the repo isn't counted, unless its type, where
+    types are read, says fix. window is every commit read, newest first, where a reverted commit is looked for,
+    and outside those named from outside it (outside_window); is_test tells a test, and tops (package_tops) a
+    setup.py that's a manifest."""
+    is_test = is_test or (lambda path: scoping.is_test(path, [], []))
+    by_sha = dict((c[0], c) for c in window)
+    outside = outside or {}
+
+    def find(prefix, quoted, stamp):
+        """The commit a revert names: by its hash, in the window or the repo; or, where a rebase rewrote that
+        hash, the newest in the window before the revert with the subject it quotes."""
+        found = by_sha.get(prefix.lower()) or find_commit(window, prefix) or outside.get(prefix)
+        return found or next((c for c in window if quoted and c[2] == quoted and c[1] <= stamp), None)
+
+    def read(commit):
+        """How a commit reads; but one that changed none of the project's own code isn't a fix of it."""
+        found = reads(commit)
+        if not found[0]:
+            return found
+        kinds = set()
+        for change in commit[3]:
+            kind = not_code(change[0], is_test, tops)
+            if not kind:  # A file of the project's code: that settles it.
+                return found
+            kinds.add(kind)
+        return 0, "changes only %s" % and_list(sorted(kinds)) if kinds else "changes no file", None
+
+    def reads(commit):
+        sha, stamp, subject, changes, author, body = commit[:6]
+        quoted = QUOTED.search(subject)
+        quoted = quoted.group(1) if quoted else ""
+        # Lands a change again: Reapply "X", as git writes it, or Revert "Revert ...". Not a fix, nor a revert.
+        if RELANDS.match(subject):
+            return 0, "re-lands a change", None
+        targets = reverted(commit)
+        if not targets:  # Without git's line, a subject that says Revert is read by its words, not the change's.
+            return read_fix(re.sub(r'".*"', " ", subject) if REVERT_OF.match(subject) else subject, typed) + (None,)
+        befores = [find(target, quoted, stamp) for target in targets]
+        if any(before is not None and reverted(before) for before in befores):
+            return 0, "re-lands a change", None
+        said = quoted or (befores[0][2] if befores[0] else "")
+        typed_said = CONVENTIONAL.match(said)
+        chore = says(said)[1] or (typed_said and (typed_said.group("type") or "").lower() in CHORE_TYPES)
+        # A fix by the type its author gave it, where the commits it names don't make it a revert of another's,
+        # and the change it undid was to the code.
+        kind = type_of(subject) if typed and not chore else None
+        fix_type = (2, kind[1], None) if kind and kind[0] == "fix" else None
+        # Its author's withdrawal where every commit it names is theirs; a revert where one is another's.
+        if all(before is not None and same_person(before[4], author) for before in befores):
+            return fix_type or (0, "its author withdraws %s" % ", ".join(before[0][:9] for before in befores), None)
+        if chore:
+            return 0, "reverts a change that isn't to the code", None
+        named = ", ".join(t[:9] for t in targets)
+        other = next((b for b in befores if b is not None and not same_person(b[4], author)), None)
+        if other is None:  # One it names isn't in the repo, as a shallow clone's: whose change it undid is unknown.
+            missing = [t[:9] for t, before in zip(targets, befores) if before is None]
+            which = "which" if len(missing) == len(targets) else "of which " + ", ".join(missing)
+            return fix_type or (0, "reverts %s, %s %s" % (named, which, NOT_IN_REPO[len(missing) > 1]), None)
+        stood = stamp - other[1]
+        return 1, "reverts %s" % named, stood if stood >= 0 else None  # Not said where it's dated after the revert.
+
+    return dict((c[0], read(c)) for c in commits)
+
+
+# Chinese and Japanese, written without spaces between words: Han, and Japanese's kana.
+CJK = "\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff"
+
+
+def words(subject):
+    """How many words a subject has, in any script: each run of letters, and each character or two of Chinese
+    or Japanese."""
+    return len(re.findall(r"[%s]{1,2}|[^\W\d_%s]+" % (CJK, CJK), subject))
+
+
+def foreign(subject):
+    """Whether a subject is in a script the words aren't of: most of its letters neither Latin nor Han, as in
+    Russian, Korean, or Japanese with its kana. (A language written in Latin letters other than English isn't
+    told apart.)"""
+    letters = re.findall(r"[^\W\d_]", subject)
+    read = sum(1 for ch in letters if ch < "\u0250" or "\u3400" <= ch <= "\u4dbf" or "\u4e00" <= ch <= "\u9fff")
+    return read * 2 < len(letters)
+
+
+def fix_mark(found, files=None):
+    """--show's mark of how a commit reads, after its subject: [fix: ...], [not a fix: ...], or nothing where
+    nothing said either way; for a fix of files files, more than --max-files, that the table by file leaves it
+    out."""
+    if not found or not found[1]:
+        return ""
+    tier, what, stood = found
+    if tier == 1 and stood is not None:
+        what += ", %s after it" % how_long(stood)
+    if tier and files:
+        what += "; not counted by file: it changed %d files" % files
+    return "  [%s: %s]" % (("fix, " + {1: "revert", 2: "type", 3: "words"}[tier]) if tier else "not a fix",
+                           printable(what))
+
+
+# Where types are read as labels: where at least half the subjects carry one. Where the count is close to
+# complete: where nearly all do, as in every typed repo measured (97% to 100%); between the two, the subjects
+# without one are read by their words, which find a third to a half of the fixes.
+LABELLED = 0.5
+NEARLY_ALL = 0.9
+
+
+def fix_summary(commits, fixes, typed):
+    """The header's two lines on the fixes trace, and its facts for the page. The first: how many commits read
+    as fixes and how, at least, since many fixes don't say so, and the reverts not counted, an author's
+    withdrawals and those of a commit not in the repo. The second: where the subjects can't tell a fix
+    from anything else, that; the share of subjects with a type, and so how near complete the count is; and how
+    many more commits close an issue without saying what kind of change."""
+    tiers = Counter(found[0] for found in fixes.values())
+    stood = [found[2] for found in fixes.values() if found[0] == 1]
+    known = sorted(t for t in stood if t is not None)
+    reverts = "1 a revert" if tiers[1] == 1 else "%d reverts" % tiers[1]
+    if len(known) == 1:
+        reverts += " (of a commit that had stood %s" % how_long(known[0])
+    elif known:
+        reverts += " (of commits that had stood %s" % (and_list([how_long(t) for t in known]) if len(known) <= 3
+                                                       else "a median %s" % how_long(known[len(known) // 2]))
+    if known:
+        reverts += ")"
+    withdrawn = sum(1 for found in fixes.values() if found[1].startswith("its author withdraws"))
+    missing = sum(1 for found in fixes.values() if not found[0] and found[1].endswith(NOT_IN_REPO))
+    ways = [way for count, way in ((tiers[1], reverts), (tiers[2], "%d by their type" % tiers[2]),
+                                   (tiers[3], "%d by their words" % tiers[3])) if count]
+    counted = sum(tiers[t] for t in (1, 2, 3))
+    of = "%d commit%s" % (len(commits), "" if len(commits) == 1 else "s")
+    first = ("Fixes, a lead and not a verdict: at least %d of the %s fixed a defect in the project's own code, as "
+             "their messages say: %s." % (counted, of, and_list(ways)) if counted else
+             "Fixes, a lead and not a verdict: none of the %s says in its message that it fixed a defect in the "
+             "project's own code." % of)
+    if withdrawn:
+        first += " %s, of %s author's own commit%s, %s." % (
+            "1 more revert" if withdrawn == 1 else "%d more reverts" % withdrawn, "its" if withdrawn == 1 else
+            "their", "" if withdrawn == 1 else "s", "withdraws it and isn't counted" if withdrawn == 1 else
+            "withdraw them and aren't counted")
+    if missing:
+        first += " %s, of %s not in the repo, %s counted." % (
+            "1 more revert" if missing == 1 else "%d more reverts" % missing, "a commit" if missing == 1 else
+            "commits", "isn't" if missing == 1 else "aren't")
+    labelled = typed >= LABELLED
+    complete = labelled and typed >= NEARLY_ALL
+    # Commits that close an issue and say nothing else either way: not one read as no fix for a reason.
+    closing = sum(1 for c in commits if fixes[c[0]][:2] == (0, "") and (CLOSER.search(c[2]) or CLOSER.search(c[5]))
+                  and not (labelled and type_of(c[2])))
+    # Subjects in a language the words aren't of, or of a word or two (Details, wip, update), with no type to
+    # read, can't say what a change was; where most of the commits have one, the count can't be read.
+    plain = [c[2] for c in commits if not (labelled and type_of(c[2]))]
+    unread = sum(1 for subject in plain if foreign(subject))
+    short = sum(1 for subject in plain if words(subject) < 3)
+    language = unread * 2 > len(commits)
+    thin = language or short * 2 > len(commits)
+    share = "%d%% of the subjects carry a type" % int(round(typed * 100))
+    if language:
+        second = "Most subjects here are in a language the trace doesn't read, which reads English and Chinese " \
+                 "(%d of the %d), so the count can't be read and the fixes by file aren't listed. %s." % (
+                     unread, len(commits), share)
+    elif thin:
+        second = "Most subjects here are a word or two (%d of the %d), too little to tell a fix from anything " \
+                 "else, so the count can't be read and the fixes by file aren't listed. %s." % (
+                     short, len(commits), share)
+    elif complete:
+        second = "%s, read as a label, so the count is close to complete." % share
+    elif labelled:
+        second = "%s, read as a label; those without one are read by their words, so the count is a floor: such " \
+                 "subjects typically say so for a third to a half of their fixes, and the rest are among the " \
+                 "commits --show leaves unmarked." % share
+    else:
+        second = "%s, too few to read as labels, so the count is a floor: subjects without a type typically say " \
+                 "so for a third to a half of the fixes, and the rest are among the commits --show leaves " \
+                 "unmarked." % share
+    if closing:
+        second += " %d more commit%s close%s an issue without saying what kind of change." % (
+            closing, "" if closing == 1 else "s", "s" if closing == 1 else "")
+    facts = {"fixes": counted, "revert": tiers[1], "type": tiers[2], "words": tiers[3],
+             "typed": round(typed, 2), "labels": labelled, "thin": thin, "language": language, "complete": complete}
+    return [first, second], facts
+
+
+# Trailers that say who signed, reviewed or co-wrote a commit, which tell a reader nothing of what it fixed.
+# Reported-by, Fixes, Closes and Bug lines stay.
+IDENTITY = re.compile(r"\s*(?:signed-off-by|co-authored-by|reviewed-by|reviewed-on|acked-by|tested-by|cc|change-id|"
+                      r"helped-by|suggested-by|approved-by|assisted-by)\s*:", re.I)
+
+
+DIFF_LINES = 60  # --diffs's lines per commit: the whole change to the file, for four commits in five.
+# --show --messages's commits: a file's newest 12, a sample a reader judges whole. At a fix in four, the rate in
+# untyped repos' unmarked commits, 12 shows about three, enough to set apart a file that keeps breaking from
+# one that doesn't, at a few thousand bytes of messages.
+SAMPLE = 12
+
+
+def message_lines(body, most=12):
+    """A commit's message after its subject, for --show --messages: indented under its line, without who signed,
+    reviewed or co-wrote it, its blank lines run together, and cut at most lines, saying how many more git show
+    has; or None if it has none."""
+    lines = []
+    for line in body.strip().split("\n"):
+        if IDENTITY.match(line):
+            continue
+        if line.strip() or (lines and lines[-1]):
+            lines.append(clip(line.rstrip()))
+    while lines and not lines[-1]:
+        lines.pop()
+    if len(lines) > most:
+        lines = lines[:most - 1] + ["(%d more lines)" % (len(lines) - most + 1)]
+    return "\n".join("      " + line if line else "" for line in lines) if lines else None
+
+
+def change_hint(commit, change, is_test):
+    """--show --messages's facts on what a commit changed: in this file, lines added and removed (or that it's
+    binary) and a rename; and how many other files, and how many of them tests."""
+    path, old, added, removed = change
+    here = "binary" if added is None else "+%d -%d" % (added, removed)
+    others = sorted(set(c[0] for c in commit[3]) - {path})
+    tests = sum(1 for p in others if is_test(p))
+    return "      [%s in this file%s; %s%s]" % (
+        here, ", renamed from %s" % printable(old) if old else "",
+        "no other file" if not others else "1 other file" if len(others) == 1 else "%d other files" % len(others),
+        "" if not tests else ", a test" if len(others) == 1 else ", 1 of them a test" if tests == 1 else
+        ", %d of them tests" % tests)
+
+
+def file_diffs(repo, wanted, most=60):
+    """One file's changes in several commits, in one git call: for each (hash, its path in that commit, its
+    path before, if the commit renamed it), the hunks of that file only, cut at most lines, as a list of lines
+    with a last one saying how many more there are; keyed by (hash, path). Each commit is one that changed the
+    file, so where none of its change is found, the lines say it couldn't be read."""
+    names = sorted(set(n for _, path, old in wanted for n in (path, old) if n))
+    shas = sorted(set(sha for sha, _, _ in wanted))
+    out = git(repo, *(DIFF + shas + ["--"] + names))
+    # Each commit's part starts with a NUL, its hash and a newline: split there, as a change git diffs as text
+    # can hold a NUL.
+    parts = re.split("\0(%s)\n" % "|".join(shas), out)
+    found = dict(zip(parts[1::2], parts[2::2]))
+    result = {}
+    for sha, path, old in wanted:
+        sections = [x for x in re.split(r"(?m)^(?=diff --git )", found.get(sha, "")) if x.strip()]
+        # A section is the file's where its header names it, as git writes the name.
+        mine = set("%s %s" % (side, quoted(prefix + n)) for n in (path, old) if n
+                   for side, prefix in (("---", "a/"), ("+++", "b/")))
+        mine |= set("rename %s %s" % (way, quoted(n)) for n in (path, old) if n for way in ("from", "to"))
+        # A binary file's change, a mode's or a pure rename's has only this.
+        mine.add("diff --git %s %s" % (quoted("a/" + (old or path)), quoted("b/" + path)))
+        kept = [x for x in sections if mine & set(x.split("\n")[:8])]
+        lines = []
+        for section in kept:
+            body = section.split("\n")
+            start = next((i for i, line in enumerate(body) if line.startswith("@@")), len(body))
+            notes = [line for line in body[1:start] if line.startswith(("rename from", "new file", "deleted file",
+                                                                        "Binary files", "old mode"))]
+            # A line's carriage return, as a CRLF file's lines end, says nothing a reader needs.
+            lines += ["(%s)" % printable(n) for n in notes] + [clip(line[:-1] if line.endswith("\r") else line)
+                                                                for line in body[start:]]
+        while lines and not lines[-1]:
+            lines.pop()
+        if not lines:  # It's asked only for commits that changed the file: none found is a gap in reading git.
+            lines = ["(its change to %s couldn't be read here: git show %s -- %s shows it)" % (
+                printable(path), sha[:9], printable(path))]
+        if len(lines) > most:
+            lines = lines[:most - 1] + ["(%d more lines: git show %s -- %s)" % (
+                len(lines) - most + 1, sha[:9], printable(path))]
+        result[(sha, path)] = lines
+    return result
+
+
+LINE_CHARS = 200  # A line --show prints: git's subject is a message's first paragraph, a minified file one line.
+
+
+def clip(line):
+    """A line of a subject, a message or a change, as --show prints it: cut at LINE_CHARS characters, saying how
+    many more there are."""
+    if len(line) > LINE_CHARS:
+        line = "%s... (%d more characters)" % (line[:LINE_CHARS], len(line) - LINE_CHARS)
+    return printable(line)
+
+
+def quoted(name):
+    """A path as git's diff writes it with core.quotePath: in double quotes, C-style, where it holds a quote, a
+    backslash, a control character or anything past ASCII."""
+    raw = name.encode("utf-8")
+    if not any(b < 0x20 or b in (0x22, 0x5c, 0x7f) or b >= 0x80 for b in raw):
+        return name
+    special = {7: "\\a", 8: "\\b", 9: "\\t", 10: "\\n", 11: "\\v", 12: "\\f", 13: "\\r", 0x22: '\\"', 0x5c: "\\\\"}
+    return '"%s"' % "".join(special.get(b) or (chr(b) if 0x20 <= b < 0x7f else "\\%03o" % b) for b in raw)
+
+
+# A sample nearly all in the newer half: how many of a file's fixes are there says nothing the count doesn't.
+NEWER_NEARLY_ALL = 0.9
+
+
+def newer_line(count, total):
+    """--show --messages's line on how many of the commits it lists are in the newer half, and, where nearly
+    all are, that the count of the file's fixes there isn't said, as the checklist records it (newer: null)."""
+    nearly = count >= NEWER_NEARLY_ALL * total
+    if total == 1:
+        some = "this one" if count else "not this one"
+    else:
+        some = "all %d" % total if count == total else "%s of these %d%s" % (count or "none", total,
+                                                                            ", nearly all" if nearly else "")
+    return "In the newer half: %s%s." % (some, ", so how many of its fixes are there isn't said (newer: null)"
+                                         if nearly else "")
+
+
+def half_of(commit, newer):
+    """Whether a commit is in the window's newer half, as --show says it, the same width either way."""
+    return "newer" if commit[0] in newer else "older"
+
+
+def show_diffs(repo, shows, given, changed_as, fixes, newer, wide, more):
+    """--show FILE ... --diffs SHAS: those of the commits --show FILE ... --messages lists, each with its changes
+    to each file that lists it; shows is each file's (path, title, the commits listed). A hash that names none of
+    them, or more than one, is an error, which says which, and more whether --newest would list more."""
+    listed, paths = [], [path for path, _, _ in shows]
+    for _, _, mine in shows:
+        listed += [c for c in mine if c not in listed]
+    if not listed:
+        sys.exit("--diffs: %s %s no commit in the window, so there's no change to show." % (
+            and_list(paths), "has" if len(paths) == 1 else "have"))
+    chosen, problems, wrong = [], [], []
+    for value in given:
+        matches = [c for c in listed if re.match(r"[0-9a-fA-F]{4,}\Z", value) and c[0].startswith(value.lower())]
+        if len(matches) == 1:
+            chosen += [matches[0]] if matches[0] not in chosen else []  # Given twice, shown once.
+        else:
+            problems.append("%s %s" % (value, "is more than one of them" if matches else "isn't one of them"))
+            wrong.append(value)
+    lists = "%s --messages lists" % " ".join("--show " + p for p in paths)
+    if (problems or not chosen) and len(listed) == 1:  # Its one commit, said: no hash names more than one.
+        one = listed[0][0][:9]
+        sys.exit("--diffs: %s %s the one commit %s, %s." % (and_list(wrong), "isn't" if len(wrong) == 1 else "aren't",
+                                                           lists, one) if wrong else
+                 "--diffs: no commit given. The one commit %s is %s." % (lists, one))
+    if problems or not chosen:
+        sys.exit("--diffs: %s. Give hashes of the %d commits %s%s." % (
+            "; ".join(problems) or "no commit given", len(listed), lists,
+            ", or widen it with --newest" if more else ""))
+    diffs = file_diffs(repo, [(c[0],) + changed_as[(c[0], path)][:2] for path, _, mine in shows for c in chosen
+                              if c in mine], DIFF_LINES)
+    for path, title, mine in shows:
+        here = [c for c in chosen if c in mine]
+        if not here:
+            print("%s: none of the commits given is among its listed ones.\n" % title)
+            continue
+        print("%s: its changes in %d of its commits, each cut at %d lines" % (title, len(here), DIFF_LINES))
+        for commit in here:
+            info = describe(commit)
+            print("  %s %s %s  %s%s" % (info["sha"], info["date"], half_of(commit, newer), clip(info["subject"]),
+                                        fix_mark(fixes.get(commit[0]), wide.get(commit[0]))))
+            print("\n".join("      " + line for line in diffs[(commit[0], changed_as[(commit[0], path)][0])]))
+        print()
+
+
+def typed_share(commits):
+    """The share of the commits whose subjects carry a type: Conventional Commits', one in brackets or a
+    gitmoji; in whole percent, rounded down, as it's printed, so what's said and what's decided from it agree
+    (99 of 200 is 49%, too few to read as labels)."""
+    return sum(1 for c in commits if type_of(c[2])) * 100 // len(commits) / 100.0 if commits else 0.0
+
+
 def printable(text):
     """Text from a commit, as the output writes it: a control character as its escape, as \\x1b, so a subject
     or a name can't drive the terminal the output goes to."""
@@ -669,11 +1352,30 @@ def main():
                              "top, or the main checkout's from a linked worktree), making it from the skill's "
                              "assets/page.html if it doesn't exist; only the page's heatmap block changes")
     parser.add_argument("--show", action="append", default=[], metavar="FILE",
-                        help="print this file's commits in the window (its name today), instead of the heatmap")
+                        help="print this file's commits in the window (its name today), instead of the heatmap; "
+                             "with the heatmap's window, scope and options, which its marks count by")
+    parser.add_argument("--messages", action="store_true",
+                        help="with --show, the file's newest %d commits, each with what it changed and its "
+                             "message" % SAMPLE)
+    parser.add_argument("--newest", type=scoping.count(1), metavar="N",
+                        help="with --show, the file's newest N commits (with --messages, %d unless given); "
+                             "--diffs takes only those" % SAMPLE)
+    parser.add_argument("--diffs", metavar="SHAS",
+                        help="with --show, these of the commits it lists (comma-separated hashes), each with its "
+                             "changes to each file listing it, cut at %d lines" % DIFF_LINES)
+    parser.add_argument("--no-fixes", action="store_true",
+                        help="leave out the fixes trace: the header's count, the table of fixes by file and "
+                             "--show's marks")
     parser.add_argument("--checklists", action="store_true",
                         help="list the checklists in every worktree's .refactor-pass/, newest first, with their "
                              "items' statuses, and the name a new one takes, and stop; needs no scope")
     args = parser.parse_args()
+    if args.messages and not args.show:
+        parser.error("--messages goes with --show: --show FILE --messages")
+    if args.newest and not args.show:
+        parser.error("--newest goes with --show: --show FILE --newest N")
+    if args.diffs is not None and not args.show:
+        parser.error("--diffs goes with --show: --show FILE --diffs SHA,SHA")
 
     repo = scoping.toplevel(args.repo)
     known = scoping.facts(args.repo)
@@ -768,9 +1470,15 @@ def main():
         return
 
     newer = set(c[0] for c in commits[:(len(commits) + 1) // 2])
-    # Just before the window: --since's revision, or the oldest commit's parent (none at the root).
-    base = since_rev or git(repo, "rev-list", "--parents", "-n", "1", everything[-1][0]).split()[1:2]
-    base = base if isinstance(base, str) else (base[0] if base else None)
+    # The fixes trace, of the commits counted: types are read as labels where most subjects carry one.
+    typed = typed_share(commits)
+    def is_test(path):
+        return scoping.is_test(path, args.test, args.not_test)
+
+    tops = package_tops(tracked)
+    fixes = {} if args.no_fixes else fix_trace(commits, everything, typed >= LABELLED, is_test,
+                                                 outside_window(repo, commits, everything), tops)
+    fix_lines, fix_facts = fix_summary(commits, fixes, typed) if fixes else ([], None)
     # Newest first, so a rename is met before the older commits that used the
     # old name: from then on the old name means the file's name today. And the
     # oldest name met for a file is its name just before the window.
@@ -781,9 +1489,11 @@ def main():
         return current.get(path, path)
 
     patterns = scoping.DEFAULT_IGNORE + args.ignore
-    files = defaultdict(lambda: {"commits": 0, "recent": 0, "added": 0, "removed": 0})
-    sets, set_dates = [], []  # Per commit, newest first, the files it changed and its date.
+    files = defaultdict(lambda: {"commits": 0, "recent": 0, "added": 0, "removed": 0, "fixes": [0, 0, 0, 0],
+                                 "fixes_recent": 0})
+    sets, set_dates, set_shas = [], [], []  # Per commit, newest first, the files it changed, its date and hash.
     logs = defaultdict(list)  # Per file (in scope or not), the commits that changed it.
+    changed_as = {}  # Per commit and file, the file's change in it, under its name in that commit.
     own_left_out = set()
     for commit in everything:
         sha, changes = commit[0], commit[3]
@@ -797,6 +1507,7 @@ def main():
                 continue
             if not logs[name] or logs[name][-1] is not commit:
                 logs[name].append(commit)
+                changed_as[(sha, name)] = (path, old, added, removed)
             if not scoping.in_scope(name, args.scope) or scoping.ignored(name, patterns):
                 continue
             mine = [f for f in own if name.startswith(f + "/")]
@@ -817,37 +1528,102 @@ def main():
         if sha not in excluded:
             sets.append(touched)
             set_dates.append(describe(commit)["date"])
+            set_shas.append(sha)
+    # The table's rows, the one set of files the pairs, the fixes by file and --max-files's count are of: those
+    # changed in the window that are files at HEAD (not symbolic links or submodules), text both by git's diff
+    # and by their content there, and not tests unless kept. A commit of more of them than --max-files pairs
+    # nothing and adds to no file's fixes, as such a fix touches most of them in passing.
+    # Read in one batch with the sizes before the window, which only the heatmap needs (not --show): its base is
+    # --since's revision, or the oldest commit's first parent (none at the root).
+    at_head = set(tracked)
+    base = None if args.show else since_rev or (everything[-1][6][:1] or [None])[0]
+    read = line_counts(repo, [("HEAD", p) for p in sorted(files) if p in at_head] + (
+        [(base, None)] + [(base, earliest.get(p, p)) for p in sorted(files)] if base else []))
+    sizes = dict((p, n) for (rev, p), n in read.items() if rev == "HEAD" and p is not None)
+    text = set(p for p in sizes if not files[p]["binary"])
+    # Tests have their history read like the rest, but stay out of the table and the pairs.
+    tests = set() if args.keep_tests else set(p for p in text if is_test(p))
+    alive = text - tests
+    wide = dict((sha, len(touched & alive)) for sha, touched in zip(set_shas, sets)
+                if len(touched & alive) > args.max_files)
+    for sha, touched in zip(set_shas, sets):
+        tier = fixes.get(sha, (0,))[0]
+        if tier and sha not in wide:  # Counted once, the strongest way it reads as a fix; fixes[0] counts all.
+            for name in touched:
+                files[name]["fixes"][tier] += 1
+                files[name]["fixes"][0] += 1
+                files[name]["fixes_recent"] += sha in newer
 
-    read = line_counts(repo, [("HEAD", p) for p in sorted(files)] + ([(base, None)] if base else []) +
-                       [(base, earliest.get(p, p)) for p in sorted(files) if base])
-    sizes = dict((p, read[("HEAD", p)]) for p in files if ("HEAD", p) in read)
-    before = dict((p, read.get((base, earliest.get(p, p)), 0)) for p in files) if base else {}
+    # --show, before the work the heatmap alone needs: every file's size, and the pairs.
+    oldest, latest = describe(commits[-1]), describe(commits[0])
+    newer_from = describe(commits[(len(commits) + 1) // 2 - 1])["date"]
+    if args.show:
+        # A file git tracks, or one changed in the window, as a file deleted in it; or a name a file had before
+        # it was renamed in the window, read as its name today. Any other is a mistake, as a scope's would be.
+        shows, known = [], set(tracked) | set(logs)
+        for given in args.show:
+            path = scoping.show_path(args.repo, repo, given, tracked)
+            if path not in known and today(path) in known:
+                shows.append((today(path), "%s, %s before it was renamed in the window" % (today(path), path)))
+            elif path in known:
+                shows.append((path, path))
+            else:
+                sys.exit(scoping.unknown_file(path, known, repo, "changed in the window"))
+        # With --messages, a file's newest commits, a sample: the ones --diffs takes.
+        limit = args.newest or (SAMPLE if args.messages or args.diffs is not None else None)
+        if args.diffs is not None:
+            show_diffs(repo, [(path, title, logs.get(path, [])[:limit]) for path, title in shows],
+                       [v.strip() for v in args.diffs.split(",") if v.strip()], changed_as, fixes, newer, wide,
+                       any(len(logs.get(path, [])) > limit for path, _ in shows))
+            return
+        for path, title in shows:
+            mine = logs.get(path, [])
+            listed = mine[:limit]
+            print("%s: %s from %s (%s) to %s (%s); newer: in the window's newer half, from %s.%s" % (
+                title, "the newest %d of its %d commits, of the %d" % (len(listed), len(mine), len(commits))
+                if len(listed) < len(mine) else "%d of the %d commits" % (len(mine), len(commits)),
+                oldest["sha"], oldest["date"], latest["sha"], latest["date"], newer_from,
+                " %d more: --newest %d lists them all." % (len(mine) - len(listed), len(mine))
+                if len(listed) < len(mine) else ""))
+            if args.messages and listed:
+                print(newer_line(sum(1 for c in listed if c[0] in newer), len(listed)))
+            for commit in listed:
+                info = describe(commit)
+                print("  %s %s %s  %s%s" % (info["sha"], info["date"], half_of(commit, newer),
+                                            clip(info["subject"]),
+                                            fix_mark(fixes.get(commit[0]), wide.get(commit[0]))))
+                if args.messages:
+                    print(change_hint(commit, changed_as[(commit[0], path)], is_test))
+                    message = message_lines(commit[5])
+                    if message:
+                        print(message)
+            print()
+        return
+    before = dict((p, read.get((base, earliest.get(p, p)), 0)) for p in text) if base else {}
     base_time = read.get((base, None), 0)
     rows = []
-    at_head = set(tracked)  # Not symbolic links or submodules.
     # Files git's diff reads as binary though they're text at HEAD: the repo's attributes (-diff, binary), or
     # the user's, say so. They're left out as git says, and the output names them.
-    marked = sorted(p for p, s in files.items() if s["binary"] and p in sizes and p in at_head)
-    for path, stats in files.items():
-        if path not in sizes or stats["binary"] or path not in at_head:  # Gone at HEAD, binary, or not a file.
-            continue
+    marked = sorted(p for p in sizes if files[p]["binary"])
+    for path in text:
+        stats = files[path]
         row = {"path": path, "commits": stats["commits"], "recent": stats["recent"], "last": stats["last"],
                "churn": stats["added"] + stats["removed"], "added": stats["added"], "removed": stats["removed"],
                "size": sizes[path], "rel": round((stats["added"] + stats["removed"]) / max(sizes[path], 1), 2),
                "size_before": before.get(path, 0), "growth": sizes[path] - before.get(path, 0)}
         rows.append(row)
     rows.sort(key=lambda r: (-r["commits"] * r["size"], -r["commits"], -r["churn"], r["path"]))
+    # For the page: per file, the commits that say they fixed a defect, where the trace counts them;
+    # documentation, tests, and CI, build and dependency files aside, as in the table of fixes by file.
+    for row in rows:
+        if fix_facts and not fix_facts["thin"] and not not_code(row["path"], is_test, tops):
+            row.update(fixes=files[row["path"]]["fixes"][0], fixes_recent=files[row["path"]]["fixes_recent"])
     by_path = dict((r["path"], r) for r in rows)
-    # Tests have their history read like the rest, but stay out of the table and the pairs.
-    tests = set() if args.keep_tests else set(r["path"] for r in rows
-                                              if scoping.is_test(r["path"], args.test, args.not_test))
-    rows = [r for r in rows if r["path"] not in tests]
-    alive = set(r["path"] for r in rows)
+    rows = [r for r in rows if r["path"] in alive]
     in_scope = [p for p in tracked if scoping.in_scope(p, args.scope) and not scoping.ignored(p, patterns)]
     doubts = scoping.doubtful_tests(tests, in_scope, args.test)
     # Each production file's name, so a test's own file is found even where it isn't in the window.
-    stems = set(scoping.flat(scoping.stem(p, False)) for p in in_scope
-                if not scoping.is_test(p, args.test, args.not_test))
+    stems = set(scoping.flat(scoping.stem(p, False)) for p in in_scope if not is_test(p))
 
     shared, with_tests = Counter(), Counter()
     seen_in = defaultdict(set)  # Per file, the commits counted for pairs that changed it.
@@ -855,7 +1631,7 @@ def main():
     too_big = 0
     for index, touched in enumerate(sets):
         mine = sorted(touched & alive)
-        if len(mine) > args.max_files:
+        if set_shas[index] in wide:
             too_big += 1
             continue
         shared.update(combinations(mine, 2))
@@ -950,33 +1726,13 @@ def main():
             for test, found in tied.items() if len(found) > 1]
     tied.sort(key=lambda t: (-len(t["files"]), -sum(f["shared"] for f in t["files"]), t["test"]))
 
-    window = {"commits": len(commits), "newest": describe(commits[0]), "oldest": describe(commits[-1]),
-              "newer_half_from": describe(commits[(len(commits) + 1) // 2 - 1])["date"],
+    window = {"commits": len(commits), "newest": latest, "oldest": oldest, "newer_half_from": newer_from,
               "excluded": len(excluded), "excluded_asked": len(asked), "excluded_ignore_revs": len(listed),
               "excluded_checklists": len(recorded), "excluded_bots": len(bots), "bots": bot_names,
               "too_big_for_pairs": too_big,
               "since": args.since, "tests_aside": None if args.keep_tests else len(tests), "shallow": bool(cut)}
-    if args.show:
-        # A file git tracks, or one changed in the window, as a file deleted in it; or a name a file had before
-        # it was renamed in the window, read as its name today. Any other is a mistake, as a scope's would be.
-        shows, known = [], set(tracked) | set(logs)
-        for given in args.show:
-            path = scoping.show_path(args.repo, repo, given, tracked)
-            if path not in known and today(path) in known:
-                shows.append((today(path), "%s, %s before it was renamed in the window" % (today(path), path)))
-            elif path in known:
-                shows.append((path, path))
-            else:
-                sys.exit(scoping.unknown_file(path, known, repo, "changed in the window"))
-        for path, title in shows:
-            print("%s: %d of the %d commits from %s (%s) to %s (%s)" % (
-                title, len(logs.get(path, [])), len(commits), window["oldest"]["sha"], window["oldest"]["date"],
-                window["newest"]["sha"], window["newest"]["date"]))
-            for commit in logs.get(path, []):
-                info = describe(commit)
-                print("  %s %s %s" % (info["sha"], info["date"], printable(info["subject"])))
-            print()
-        return
+    if fix_facts:
+        window["fixes"] = fix_facts
     scope = args.scope or ["(everything)"]
     if page:
         options = {"top": args.top, "pairs": args.pairs, "max_files": args.max_files, "min_shared": args.min_shared,
@@ -1029,6 +1785,8 @@ def main():
     if own_left_out:
         print("This skill's own files, in %s, are left out; a scope naming that folder counts them."
               % " and ".join(f + "/" for f in sorted(own_left_out)))
+    for line in fix_lines:
+        print(line)
     if marked:
         named = marked[:5] + (["%d more" % (len(marked) - 5)] if len(marked) > 5 else [])
         print("Git's attributes mark %s that changed in the window as binary, though %s text at HEAD, so %s left "
@@ -1049,6 +1807,30 @@ def main():
     if len(rows) > args.top:
         print("  ... %d more files changed in the window" % (len(rows) - args.top))
     print()
+    if fix_facts and not fix_facts["thin"]:
+        # Fixes by file: where the commits that read as fixes landed, each counted once, its strongest way.
+        place = dict((r["path"], i) for i, r in enumerate(rows))
+        fixed = sorted((p for p in place if files[p]["fixes"][0] and not not_code(p, is_test, tops)),
+                       key=lambda p: (-files[p]["fixes"][0], -files[p]["fixes_recent"], place[p]))
+        many = sum(1 for sha in wide if fixes.get(sha, (0,))[0])
+        print("Fixes by file: of each file's commits, those whose messages say they fixed a defect, and how many "
+              "of those were in the newer half; documentation, tests, and CI, build and dependency files aside%s. A "
+              "lead, not a count of each file's fixes: a fix elsewhere can touch a file in passing, and many fixes "
+              "don't say so. --show FILE --messages gives each commit's message, to judge." % (
+                  ", and %s of more than %d files, as the pairs leave %s out" % (
+                      "1 fix commit" if many == 1 else "%d fix commits" % many, args.max_files,
+                      "it" if many == 1 else "them") if many else ""))
+        if fixed:
+            print("%7s %6s %6s %5s %5s  file" % ("fixes", "recent", "revert", "type", "words"))
+        for path in fixed[:args.top]:
+            counts = files[path]["fixes"]
+            print("%7d %6d %6d %5d %5d  %s" % (counts[0], files[path]["fixes_recent"], counts[1], counts[2],
+                                              counts[3], path))
+        if len(fixed) > args.top:
+            print("  ... %d more files with fixes" % (len(fixed) - args.top))
+        if not fixed:
+            print("  none")
+        print()
     print("Changed together (commits of %d files or fewer%s; files with %d+ commits, %d+ shared, degree %d%%+):"
           % (args.max_files, "" if args.keep_tests else ", tests aside", args.min_revs, args.min_shared,
              args.min_degree))
