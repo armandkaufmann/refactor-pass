@@ -648,7 +648,7 @@ RELANDS = re.compile(r'\s*(?:[A-Za-z]+(?:\([^)]*\))?!?:\s*)?(?:reapply\b|revert\
 CLOSER = re.compile(r"\b(?:fix(?:e[sd])?|close[sd]?|resolve[sd]?)\s*:?\s*(?:#|gh-|[\w.-]+/[\w.-]+#)\d+\b", re.I)
 REFERENCE = re.compile(r"\b(?:issues?|pr|pull|ticket)\s*#?\d+\b", re.I)
 # The words, each with the forms that count as it. A subject's code (in backticks, or an identifier such as
-# should_ignore_error or Data.Render) isn't read; "regression test" names a test.
+# should_ignore_error or Data.Render) isn't read.
 FIX_WORDS = {"fix": "fix fixes fixed fixing hotfix", "bug": "bug bugs bugfix bugfixes buggy",
              "error": "error errors erroneous", "wrong": "wrong wrongly",
              "correct": "correct corrects corrected correction corrections", "crash": "crash crashes crashed crashing",
@@ -739,7 +739,6 @@ def fix_words(text):
     lead = CONVENTIONAL.match(text)
     keep = lead.end() if lead and lead.group("type").lower() in FIX_TYPES else 0
     text = re.sub(r"`[^`]*`", " ", REFERENCE.sub(" ", text[:keep] + CLOSER.sub(" ", text[keep:])))
-    text = re.sub(r"(?i)\bregression[ -](?=tests?\b)", " ", text)
     found = []
     for token in re.findall(r"[A-Za-z][A-Za-z0-9_]*(?:'[a-z]+)?(?:\.[A-Za-z_]\w*)*(?:\(\))?", text):
         # A fix word's own form is a word in camelCase too: BugFix, HotFix, not an identifier as isFixed is.
