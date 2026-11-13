@@ -814,10 +814,9 @@ def read_fix(subject, typed):
 
 
 def reverted(commit):
-    """The hash a revert names, if the commit is one: its subject says revert at its start, and its body names the
-    commit."""
-    line = REVERT_LINE.search(commit[5])
-    return line.group(1) if line and REVERT_OF.match(commit[2]) else None
+    """The hashes a revert names, if the commit is one: its subject says revert at its start, and its body names
+    the commits; else none."""
+    return REVERT_LINE.findall(commit[5]) if REVERT_OF.match(commit[2]) else []
 
 
 def find_commit(commits, prefix):
@@ -831,7 +830,7 @@ def outside_window(repo, commits, window):
     """The commits the reverts in commits name that the window doesn't hold, read from the repo in one git
     call, as read_log reads them, merges too; by the name the revert gives. One the repo hasn't, as a shallow
     clone's, is left out."""
-    names = sorted(set(n for n in (reverted(c) for c in commits) if n and not find_commit(window, n)))
+    names = sorted(set(n for c in commits for n in reverted(c) if not find_commit(window, n)))
     read = read_log(repo, ["--no-walk=unsorted", "--ignore-missing"] + names, merges=True) if names else []
     return dict((n, find_commit(read, n)) for n in names if find_commit(read, n))
 
@@ -867,19 +866,21 @@ def fix_trace(commits, window, typed, is_test=None, outside=None, tops=None):
         # Lands a change again: Reapply "X", as git writes it, or Revert "Revert ...". Not a fix, nor a revert.
         if RELANDS.match(subject):
             return 0, "re-lands a change", None
-        target = reverted(commit)
-        if not target:  # Without git's line, a subject that says Revert is read by its words, not the change's.
+        targets = reverted(commit)
+        if not targets:  # Without git's line, a subject that says Revert is read by its words, not the change's.
             return read_fix(re.sub(r'".*"', " ", subject) if REVERT_OF.match(subject) else subject, typed) + (None,)
-        before = find(target, quoted, stamp)
-        if before is not None and reverted(before):
+        befores = [find(target, quoted, stamp) for target in targets]
+        if any(before is not None and reverted(before) for before in befores):
             return 0, "re-lands a change", None
-        if before and same_person(before[4], author):
-            return 0, "its author withdraws %s" % before[0][:9], None
-        said = quoted or (before[2] if before else "")
+        # Its author's withdrawal where every commit it names is theirs; a revert where one is another's.
+        if all(before is not None and same_person(before[4], author) for before in befores):
+            return 0, "its author withdraws %s" % ", ".join(before[0][:9] for before in befores), None
+        said = quoted or (befores[0][2] if befores[0] else "")
         typed_said = CONVENTIONAL.match(said)
         if says(said)[1] or (typed_said and (typed_said.group("type") or "").lower() in CHORE_TYPES):
             return 0, "reverts a change that isn't to the code", None
-        return 1, "reverts %s" % target[:9], (stamp - before[1]) if before else None
+        other = next((b for b in befores if b is not None and not same_person(b[4], author)), None)
+        return 1, "reverts %s" % ", ".join(t[:9] for t in targets), (stamp - other[1]) if other else None
 
     return dict((c[0], read(c)) for c in commits)
 

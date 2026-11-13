@@ -171,7 +171,6 @@ class OneCommit(unittest.TestCase):
                  "* Revert it\n\nThis reverts commit %s.\n" % land[0])
         self.assertEqual(heatmap.fix_trace([merge], [merge, land], False)[merge[0]], (0, "", None))
 
-    @unittest.expectedFailure
     def test_a_revert_of_several_commits(self):
         # A withdrawal only where every commit it names is its author's own; another's makes it a revert.
         heatmap = self.heatmap
