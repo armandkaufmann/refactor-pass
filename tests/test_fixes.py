@@ -296,7 +296,6 @@ class Typed(unittest.TestCase):
         self.assertTrue(fixes_lines(support.run("heatmap.py", "-C", repo.path).out)[1].startswith(
             "27% of the subjects carry a type, too few to read as labels, so the count is a floor"))
 
-    @unittest.expectedFailure
     def test_tags_that_arent_types_read_by_their_words(self):
         # Component and ticket tags are areas, not types: none of these subjects carries one but "feat: start".
         repo = build_typed(["[clang] Fix crash when parsing templates", "[driver] Fix wrong default for the flag",
@@ -507,7 +506,6 @@ class Words(unittest.TestCase):
         self.assertIsNone(type_of("ignore: respect the filters"))  # An area, as ripgrep's, not a type.
         self.assertIsNone(type_of("Fix the crash"))
 
-    @unittest.expectedFailure
     def test_a_tag_or_an_emoji_is_a_type_only_where_its_word_is_one(self):
         type_of, read_fix = self.heatmap.type_of, self.heatmap.read_fix
         for subject in ["[clang] Fix crash", "[SPARK-1][SQL] Fix the join", "[hotfix] Fix log levels", "[] x",
@@ -522,7 +520,7 @@ class Words(unittest.TestCase):
         self.assertEqual(type_of("\U0001F691\ufe0f x"), ("fix", "\U0001F691\ufe0f"))
         # The rest of the subject read by its words, without the tags that aren't types: Flink's [hotfix] is
         # a change made without a ticket.
-        self.assertEqual(read_fix("[hotfix] Fix typo in the docs", True), (0, "says typo"))
+        self.assertEqual(read_fix("[hotfix] Fix typo in a comment", True), (0, "says typo"))
         self.assertEqual(read_fix("[hotfix] Update the example URL", True), (0, ""))
         self.assertEqual(read_fix("[hotfix][runtime] Fix log levels", True), (3, "fix"))
         self.assertEqual(read_fix("[PROJ-123] Fix the removal of the cache for upgrades", True), (3, "fix"))

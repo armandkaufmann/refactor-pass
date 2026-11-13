@@ -87,8 +87,10 @@ strongest way it reads:
   type    its subject's type says fix (fix:, fix(scope)!:, hotfix:, bugfix:,
           [fix], the bug emoji), read only where at least half the window's
           subjects carry a type, as with Conventional Commits. There another
-          type (feat:, docs:, chore: ...) says it isn't a fix, and so do
-          fix(deps):, fix(ci): and fix(docs):
+          type (feat:, docs:, [Feature], a gitmoji ...) says it isn't a fix,
+          and so do fix(deps):, fix(ci): and fix(docs):. A tag in brackets
+          that isn't a type ([clang], [SPARK-1], [hotfix]) is passed over, and
+          the subject read without it; an emoji that isn't a gitmoji is no type
   words   its subject says fix, bug, error, wrong, correct, crash, overflow,
           CVE, prevent, problem or mistake, in any of their forms, or 修复,
           修正, 漏洞, 问题, 越界 or 空指针; and not typo, formatting, lint,
@@ -627,13 +629,36 @@ def line_counts(repo, wanted):
 # (tests/tools/measure_fixes.py), and a word or an exclusion stays only where, dropped alone, it took away
 # more right calls than wrong ones (修复, fix, at one each, shares most commits with 问题).
 #
-# A type at the start of a subject: Conventional Commits' (fix(scope)!: ..., or with a full-width colon),
-# a [tag], or a gitmoji.
-TYPED = re.compile(r"\s*(?:(?P<type>[A-Za-z]+)(?:\((?P<scope>[^)]*)\))?!?\s*[:\uff1a]|\[(?P<tag>[^\]]+)\]|"
-                   r"(?P<emoji>:[a-z_]+:|[\U0001F300-\U0001FAFF\u2600-\u27BF]))")
+# A type at the start of a subject: Conventional Commits' (fix(scope)!: ..., or with a full-width colon), a
+# type in brackets ([Fix], as open-mmlab writes them), or a gitmoji. A tag in brackets whose word isn't a type
+# names an area or a ticket ([clang], [SPARK-1]), and Flink's [hotfix] a change made without one: they're passed
+# over, a type may follow them, and the subject's words are read without them.
+CONVENTIONAL = re.compile(r"\s*(?P<type>[A-Za-z]+)(?:\((?P<scope>[^)]*)\))?!?\s*[:\uff1a]")
+TAG = re.compile(r"\s*\[(?P<tag>[^\]]*)\]")
 TYPES = {"feat", "feature", "fix", "docs", "doc", "chore", "refactor", "perf", "test", "tests", "style", "build",
          "ci", "revert", "release", "deps", "hotfix", "bugfix", "bug", "wip", "i18n", "types"}
+BRACKET_TYPES = TYPES - {"hotfix"} | {"enhance", "enhancement", "improvement"}
 FIX_TYPES = {"fix", "hotfix", "bugfix", "bug"}
+# Gitmoji's emoji, as gitmoji.dev lists them, without the variation selector some are written with, and their
+# codes; any other emoji isn't a type.
+GITMOJI = set(("\U0001F3A8 \u26a1 \U0001F525 \U0001F41B \U0001F691 \u2728 \U0001F4DD \U0001F680 \U0001F484 "
+               "\U0001F389 \u2705 \U0001F512 \U0001F510 \U0001F516 \U0001F6A8 \U0001F6A7 \U0001F49A \u2b07 \u2b06 "
+               "\U0001F4CC \U0001F477 \U0001F4C8 \u267b \u2795 \u2796 \U0001F527 \U0001F528 \U0001F310 \u270f "
+               "\U0001F4A9 \u23ea \U0001F500 \U0001F4E6 \U0001F47D \U0001F69A \U0001F4C4 \U0001F4A5 \U0001F371 "
+               "\u267f \U0001F4A1 \U0001F37B \U0001F4AC \U0001F5C3 \U0001F50A \U0001F507 \U0001F465 \U0001F6B8 "
+               "\U0001F3D7 \U0001F4F1 \U0001F921 \U0001F95A \U0001F648 \U0001F4F8 \u2697 \U0001F50D \U0001F3F7 "
+               "\U0001F331 \U0001F6A9 \U0001F945 \U0001F4AB \U0001F5D1 \U0001F6C2 \U0001FA79 \U0001F9D0 \u26b0 "
+               "\U0001F9EA \U0001F454 \U0001FA7A \U0001F9F1 \U0001F9D1\u200d\U0001F4BB \U0001F4B8 \U0001F9F5 "
+               "\U0001F9BA \u2708 \U0001F996").split())
+GITMOJI_CODES = set(("art zap fire bug ambulance sparkles memo rocket lipstick tada white_check_mark lock "
+                     "closed_lock_with_key bookmark rotating_light construction green_heart arrow_down arrow_up "
+                     "pushpin construction_worker chart_with_upwards_trend recycle heavy_plus_sign heavy_minus_sign "
+                     "wrench hammer globe_with_meridians pencil2 poop rewind twisted_rightwards_arrows package alien "
+                     "truck page_facing_up boom bento wheelchair bulb beers speech_balloon card_file_box loud_sound "
+                     "mute busts_in_silhouette children_crossing building_construction iphone clown_face egg "
+                     "see_no_evil camera_flash alembic mag label seedling triangular_flag_on_post goal_net dizzy "
+                     "wastebasket passport_control adhesive_bandage monocle_face coffin test_tube necktie "
+                     "stethoscope bricks technologist money_with_wings thread safety_vest airplane t-rex").split())
 FIX_EMOJI = {"\U0001F41B", ":bug:", "\U0001F691", ":ambulance:", "\U0001FA79", ":adhesive_bandage:"}
 # Scopes that make a fix type a chore: renovate's fix(deps), and fixes to CI or the docs.
 CHORE_SCOPES = {"deps", "deps-dev", "dev-deps", "ci", "docs", "doc"}
@@ -728,13 +753,24 @@ def says(text):
     return fixes, nots
 
 
+def untagged(subject):
+    """A subject without the tags at its start that aren't types, as its words are read."""
+    while True:
+        tag = TAG.match(subject)
+        if not tag or tag.group("tag").strip().lower() in BRACKET_TYPES:
+            return subject
+        subject = subject[tag.end():]
+
+
 def type_of(subject):
-    """The type a subject carries at its start, as (its kind, how it's written), or None. Its kind is fix, chore
-    (a fix of the dependencies, CI or docs) or other."""
-    found = TYPED.match(subject)
-    if not found:
-        return None
-    if found.group("type"):
+    """The type a subject carries at its start, after any tags that aren't types, as (its kind, how it's
+    written), or None. Its kind is fix, chore (a fix of the dependencies, CI or docs) or other."""
+    rest = untagged(subject)
+    tag = TAG.match(rest)
+    if tag:
+        return ("fix" if tag.group("tag").strip().lower() in FIX_TYPES else "other"), tag.group(0).strip()
+    found = CONVENTIONAL.match(rest)
+    if found:
         kind = found.group("type").lower()
         if kind not in TYPES:
             return None
@@ -742,9 +778,13 @@ def type_of(subject):
         if kind in FIX_TYPES:
             return ("chore" if (found.group("scope") or "").strip().lower() in CHORE_SCOPES else "fix"), written
         return "other", written
-    if found.group("tag"):
-        return ("fix" if found.group("tag").strip().lower() in FIX_TYPES else "other"), found.group(0)
-    return ("fix" if found.group("emoji") in FIX_EMOJI else "other"), found.group("emoji")
+    rest = rest.lstrip()
+    code = re.match(r":([a-z0-9_+-]+):", rest)
+    emoji = code.group(0) if code and code.group(1) in GITMOJI_CODES else next(
+        (rest[:len(e) + (rest[len(e):len(e) + 1] == "\ufe0f")] for e in GITMOJI if rest.startswith(e)), None)
+    if emoji:
+        return ("fix" if emoji.rstrip("\ufe0f") in FIX_EMOJI else "other"), emoji
+    return None
 
 
 def same_person(one, other):
@@ -769,7 +809,7 @@ def read_fix(subject, typed):
     """A subject read as a fix by its type, where the window's subjects carry types, else by its words: (2 or 3,
     what said so), (0, why not), or (0, "") when it says nothing either way."""
     kind = type_of(subject) if typed else None
-    fixes, nots = says(subject)
+    fixes, nots = says(untagged(subject))
     if kind:
         # Another type says it isn't a fix; worth saying only where its words say fix.
         return (2, kind[1]) if kind[0] == "fix" else (0, "labelled %s" % kind[1] if fixes or kind[0] == "chore"
@@ -824,7 +864,7 @@ def fix_trace(commits, window, typed, is_test=None):
             return (tier, "re-lands %s" % what, None) if tier else (0, "re-lands a change that wasn't a fix", None)
         if before and same_person(before[4], author):
             return 0, "its author withdraws %s" % before[0][:9], None
-        typed_inner = TYPED.match(inner)
+        typed_inner = CONVENTIONAL.match(inner)
         if says(inner)[1] or (typed_inner and (typed_inner.group("type") or "").lower() in CHORE_TYPES):
             return 0, "reverts a change that isn't to the code", None
         return 1, "reverts %s" % target[:9], (stamp - before[1]) if before else None
@@ -1018,7 +1058,8 @@ def show_diffs(repo, show, given, listed, changed_as, fixes, newer):
 
 
 def typed_share(commits):
-    """The share of the commits whose subjects carry a type: Conventional Commits', a [tag] or a gitmoji."""
+    """The share of the commits whose subjects carry a type: Conventional Commits', one in brackets or a
+    gitmoji."""
     return sum(1 for c in commits if type_of(c[2])) / float(len(commits)) if commits else 0.0
 
 
