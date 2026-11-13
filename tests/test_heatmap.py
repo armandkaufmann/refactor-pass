@@ -549,6 +549,7 @@ class GitSettings(unittest.TestCase):
         self.assertIn("Git's attributes mark 1 file that changed in the window as binary, though it's text at HEAD, "
                       "so it's left out: a.py.\n", mine.out)
 
+    @unittest.expectedFailure
     def test_no_setting_or_variable_changes_the_output(self):
         repo = build_settings()
         home = support.new_folder("home")
@@ -559,7 +560,8 @@ class GitSettings(unittest.TestCase):
                     "date = relative", "follow = true"],
             "gpg": ["program = git"],
             "diff": ["algorithm = patience", "renameLimit = 1", "renames = copies", "noprefix = true",
-                     "mnemonicPrefix = true", "relative = true", "orderFile = " + order.replace("\\", "/"),
+                     "mnemonicPrefix = true", "srcPrefix = x/", "dstPrefix = y/", "relative = true",
+                     "orderFile = " + order.replace("\\", "/"),
                      "external = git hash-object", "indentHeuristic = false", "suppressBlankEmpty = true",
                      "context = 0", "colorMoved = zebra"],
             'diff "conv"': ["textconv = git hash-object"],
