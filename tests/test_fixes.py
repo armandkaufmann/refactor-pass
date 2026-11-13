@@ -393,7 +393,6 @@ class Reverts(unittest.TestCase):
         assert result.code == 0, result
         cls.marks = marks_of(result.out)
 
-    @unittest.expectedFailure
     def test_a_relanding_reads_as_nothing(self):
         marks = self.marks
         self.assertEqual(marks['Revert "Revert "Fix the crash in a""'], "not a fix: re-lands a change")
@@ -404,12 +403,10 @@ class Reverts(unittest.TestCase):
         self.assertEqual(marks['Revert "Add a hat to b"'], "fix, revert: reverts %s, 4 days after it"
                          % self.repo.short(self.hat))
 
-    @unittest.expectedFailure
     def test_a_relanding_whose_revert_is_outside_the_window(self):
         self.assertEqual(self.marks['Revert "Revert "Fix the crash in c""'], "not a fix: re-lands a change")
         self.assertEqual(self.marks['Revert "Revert "Add a hat""'], "not a fix: re-lands a change")
 
-    @unittest.expectedFailure
     def test_reverts_as_github_writes_them_and_without_their_line(self):
         marks = self.marks
         self.assertEqual(marks['Revert "Fix the crash in d (#12)" (#14)'],
@@ -420,7 +417,6 @@ class Reverts(unittest.TestCase):
         self.assertEqual(marks['Revert "docs: say more"'], "not a fix: reverts a change that isn't to the code")
         self.assertEqual(marks['Revert "Reword the readme"'], "not a fix: reverts a change that isn't to the code")
 
-    @unittest.expectedFailure
     def test_a_relanding_anywhere_in_a_chain_reads_as_nothing(self):
         # A revert of a revert re-lands a change, whatever it re-lands, as git's Reapply "X" does.
         repo = support.Repo("chain")
@@ -448,7 +444,6 @@ class Reverts(unittest.TestCase):
         header = fixes_lines(support.run("heatmap.py", "-C", repo.path).out)[0]
         self.assertTrue(header.endswith("2 reverts (of commits that had stood 1 day and 6 days)."), header)
 
-    @unittest.expectedFailure
     def test_a_revert_whose_hash_was_rewritten(self):
         # Rebased and merged, a revert names a hash the repo hasn't: the commit with its quoted subject is it.
         repo = support.Repo("rewritten")
@@ -791,7 +786,6 @@ class Words(unittest.TestCase):
         self.assertEqual([heatmap.words(s) for s in ("Исправлена ошибка при сохранении", "파일 저장 시 오류를 수정했습니다",
                                                      "修复价格计算错误", "wip", "v1.2.3", "Update deps")], [4, 5, 4, 1, 1, 2])
 
-    @unittest.expectedFailure
     def test_a_revert_without_gits_line_reads_by_its_own_words(self):
         heatmap = self.heatmap
         commits = [("%040d" % n, n, subject, [("a.py", None, 1, 0)], "Ann <a@b>", "") for n, subject in enumerate(

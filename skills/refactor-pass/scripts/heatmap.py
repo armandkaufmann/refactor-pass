@@ -70,20 +70,21 @@ a compile or type error, a guard against a failure that could happen as the
 code stood), at least that many, since many fixes don't say so. One that
 changed only documentation, tests, or CI, build or dependency files never
 counts. Per file, how many of the commits that changed it say so, and how
-many of those in the newer half, those files and commits of more than
---max-files files aside: a lead to which files to read, not a count of a
-file's fixes, as a fix elsewhere can touch it in passing. Each commit counts
-once, as the first of these that it reads as:
+many of those in the newer half (those files, and commits of more than
+--max-files files, aside): which files to read, not a count of their fixes,
+as a fix elsewhere can touch a file in passing. Each commit counts once, as
+the first of these that it reads as:
 
   revert  its subject says revert and its body "This reverts commit <hash>",
-          of another author's commit; a revert of the author's own withdraws
-          it and isn't counted, one of a revert reads as what it re-lands,
-          and one of a change to the docs or of a chore isn't a fix
-  type    its type says fix (fix:, fix(scope)!:, hotfix:, bugfix:, [fix], the
-          bug emoji), read where at least half the subjects carry a type;
-          there another type (feat:, [Feature], a gitmoji ...) or fix(deps):,
-          fix(ci): or fix(docs): says it isn't. A tag that isn't a type
-          ([clang], [SPARK-1], [hotfix]) is passed over
+          of another author's commit; one of the author's own withdraws it
+          and isn't counted, one of a change to the docs or of a chore isn't
+          a fix, and a re-landing (Reapply "X", a revert of a revert) is
+          neither. Without git's line, a revert reads by its own words
+  type    its type says fix (fix:, fix(scope)!:, [fix], the bug emoji), read
+          where at least half the subjects carry a type; there another type
+          (feat:, [Feature], a gitmoji ...) or fix(deps):, fix(ci): or
+          fix(docs): says it isn't. A tag that isn't a type ([clang],
+          [SPARK-1], [hotfix]) is passed over
   words   its subject says fix, bug, error, wrong, correct, crash, overflow,
           CVE, prevent, problem or mistake, in any of their forms, or 修复,
           修正, 漏洞, 问题, 越界 or 空指针, and not typo, formatting, lint,
@@ -98,13 +99,12 @@ labelled by hand, about 9 in 10 of those it marks are fixes; it finds nearly
 all the fixes where subjects carry a type, and typically a third to a half
 where they don't (references/smells.md, Counting fixes, has the account).
 
---show FILE prints a file's commits in the window instead, newest first, each
-with its hash, date, half (newer or older), subject (cut at 200 characters)
-and how it reads as a fix; --messages adds what each changed and its message,
-cut at 12 lines, without who signed, reviewed or co-wrote it. The file is one
-git tracks, or one a commit in the window changed, as one deleted in it; a
-name a file had before a rename in the window means it as it's named today.
-Any other is an error, as a scope is.
+--show FILE prints a file's commits in the window instead, newest first: hash,
+date, half, subject (cut at 200 characters) and how it reads as a fix;
+--messages adds what each changed and its message, without who signed it, cut
+at 12 lines. The file is one git tracks, or one a commit in the window
+changed, as one deleted in it; a name a file had before a rename in the
+window means it as it's named today. Any other is an error, as a scope is.
 
 History is followed across renames, so a file moved or renamed in the window
 keeps the changes it had under its old name. Merge commits are skipped, and so
@@ -631,7 +631,10 @@ CHORE_TYPES = {"docs", "doc", "chore", "ci", "build", "style", "test", "tests", 
 REVERT_LINE = re.compile(r"(?m)^\s*This reverts commit ([0-9a-fA-F]{7,64})")
 REVERT_WORD = re.compile(r"\brevert(?:s|ed|ing)?\b", re.I)
 QUOTED = re.compile(r'\brevert(?:s|ed)?\s*"(.*)"', re.I)
-REVERT_OF = re.compile(r"(?:[A-Za-z]+(?:\([^)]*\))?!?:\s*)?revert", re.I)  # A subject that says it's a revert.
+# A subject that says it's a revert or a re-landing, after a type if it has one; and one that re-lands.
+REVERT_OF = re.compile(r"\s*(?:[A-Za-z]+(?:\([^)]*\))?!?:\s*)?(?:revert|reapply)", re.I)
+RELANDS = re.compile(r'\s*(?:[A-Za-z]+(?:\([^)]*\))?!?:\s*)?(?:reapply\b|revert\s*"(?:[A-Za-z]+(?:\([^)]*\))?!?:\s*)?'
+                     r'revert\b)', re.I)
 # Issue references, whose words name the tracker, not the change: "Fixed #12 --" closes an issue of any kind.
 # An issue is a number (#12, gh-12, org/repo#12), as #include and #ifdef aren't.
 CLOSER = re.compile(r"\b(?:fix(?:e[sd])?|close[sd]?|resolve[sd]?)\s*:?\s*(?:#|gh-|[\w.-]+/[\w.-]+#)\d+\b", re.I)
@@ -846,59 +849,36 @@ def fix_trace(commits, window, typed, is_test=None, outside=None, tops=None):
     by_sha = dict((c[0], c) for c in window)
     outside = outside or {}
 
-    def find(prefix):
-        found = by_sha.get(prefix.lower()) or find_commit(window, prefix)
-        return found or outside.get(prefix)
+    def find(prefix, quoted, stamp):
+        """The commit a revert names: by its hash, in the window or the repo; or, where a rebase rewrote that
+        hash, the newest in the window before the revert with the subject it quotes."""
+        found = by_sha.get(prefix.lower()) or find_commit(window, prefix) or outside.get(prefix)
+        return found or next((c for c in window if quoted and c[2] == quoted and c[1] <= stamp), None)
 
-    def read(commit, depth=0):
+    def read(commit):
         """How a commit reads; but one that changed none of the project's own code isn't a fix of it."""
-        found = reads(commit, depth)
+        found = reads(commit)
         kinds = [not_code(c[0], is_test, tops) for c in commit[3]]
         if found[0] and kinds and all(kinds):
             return 0, "changes only %s" % and_list(sorted(set(kinds))), None
         return found
 
-    def chain(commit, depth=0):
-        """The change at the foot of a commit's chain of reverts, its subject, and whether the commit undoes it:
-        a revert undoes the change its commit landed, and a revert of a revert lands it again. A commit outside
-        what's read is told by the reverts its subject quotes, Revert "Revert "X"" landing X again."""
-        target = reverted(commit)
-        if not target:
-            return commit, commit[2], False
-        before = find(target)
-        if before is not None and depth < 20:
-            change, said, undoes = chain(before, depth + 1)
-            return change, said, not undoes
-        said, wrapped = unwrap(commit[2])
-        return None, said, wrapped % 2 == 0
-
-    def unwrap(subject):
-        """What a revert's subject quotes, without the reverts around it, and how many there were: Revert
-        "Revert "X"" quotes X, in one; or "" where it quotes nothing."""
-        quoted = QUOTED.search(subject)
-        said, wrapped = quoted.group(1) if quoted else "", 0
-        while REVERT_OF.match(said) and QUOTED.search(said):
-            said, wrapped = QUOTED.search(said).group(1), wrapped + 1
-        return said, wrapped
-
-    def reads(commit, depth):
+    def reads(commit):
         sha, stamp, subject, changes, author, body = commit
+        quoted = QUOTED.search(subject)
+        quoted = quoted.group(1) if quoted else ""
+        # Lands a change again: Reapply "X", as git writes it, or Revert "Revert ...". Not a fix, nor a revert.
+        if RELANDS.match(subject):
+            return 0, "re-lands a change", None
         target = reverted(commit)
-        if not target:
-            return read_fix(subject, typed) + (None,)
-        before = find(target)
-        change, said, undoes = chain(commit)
-        if not undoes:  # It lands again a change a revert undid, and reads as that change did.
-            if change is not None and depth < 20:
-                tier, what, _ = read(change, depth + 1)
-            else:
-                tier, what = read_fix(said, typed)
-            return (tier, "re-lands %s" % what, None) if tier else (0, "re-lands a change that wasn't a fix", None)
-        # It reverts the commit that landed the change, first or again: read against that commit, and against
-        # the change as its subject quotes it, or as the change's own says.
+        if not target:  # Without git's line, a subject that says Revert is read by its words, not the change's.
+            return read_fix(re.sub(r'".*"', " ", subject) if REVERT_OF.match(subject) else subject, typed) + (None,)
+        before = find(target, quoted, stamp)
+        if before is not None and reverted(before):
+            return 0, "re-lands a change", None
         if before and same_person(before[4], author):
             return 0, "its author withdraws %s" % before[0][:9], None
-        said = unwrap(subject)[0] or said
+        said = quoted or (before[2] if before else "")
         typed_said = CONVENTIONAL.match(said)
         if says(said)[1] or (typed_said and (typed_said.group("type") or "").lower() in CHORE_TYPES):
             return 0, "reverts a change that isn't to the code", None
