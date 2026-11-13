@@ -585,6 +585,18 @@ class Words(unittest.TestCase):
         for subject in ("\U0001F512 fix xss in the comment form", "\U0001F512\ufe0f x", ":lock: x"):
             self.assertEqual(self.heatmap.type_of(subject)[0], "fix", subject)
 
+    @unittest.expectedFailure
+    def test_a_type_after_a_gitmoji(self):
+        # Where a type follows the emoji, that word is the type: one may say what the other doesn't.
+        type_of = self.heatmap.type_of
+        self.assertEqual(type_of("⚡️ fix(parser): x"), ("fix", "fix(parser):"))
+        self.assertEqual(type_of(":zap: fix: crash"), ("fix", "fix:"))
+        self.assertEqual(type_of("\U0001F527 fix: config loading wrong"), ("fix", "fix:"))
+        self.assertEqual(type_of("\U0001F41B feat: x"), ("other", "feat:"))
+        self.assertEqual(type_of(":bug: fix(deps): bump x"), ("chore", "fix(deps):"))
+        self.assertEqual(type_of("\U0001F527 config: x"), ("other", "\U0001F527"))  # Not a type: the emoji is.
+        self.assertEqual(self.heatmap.read_fix(":zap: fix: crash", True), (2, "fix:"))
+
     def test_open_mmlabs_types_in_brackets(self):
         # As mmengine writes them: [Fix], [Feature], [Enhance], [Improve], [Refactor], [Docs], [Test].
         for word in ("Feature", "Enhance", "Improve", "Refactor", "Docs", "Test"):
