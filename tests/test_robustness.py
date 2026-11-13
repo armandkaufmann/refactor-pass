@@ -249,6 +249,36 @@ runpy.run_path(sys.argv[0], run_name="__main__")
 """
 
 
+# A pipe whose reader has gone, as Windows tells it before Python 3.14: a write fails with EINVAL, not EPIPE, and
+# one too big for the 8 KiB buffer, its lines ending in \r\n, is lost with it, so a flush after it succeeds
+# (3.14's 128 KiB buffer keeps a help whole, so its flush fails as a reader gone). Once the script points its
+# output at devnull, as it does when it sees the reader gone, writes go through, as they would there.
+GONE_ON_WINDOWS = """
+import errno, io, os, runpy, sys
+class Gone(io.RawIOBase):
+    reader_gone = True
+    def __init__(self):
+        super().__init__()
+        self.fd = os.dup(1)
+    def writable(self):
+        return True
+    def fileno(self):
+        return self.fd
+    def write(self, data):
+        if Gone.reader_gone:
+            raise OSError(errno.EINVAL, "Invalid argument")
+        return len(data)
+dup2 = os.dup2
+def to_devnull(fd, fd2, *args):
+    Gone.reader_gone = False
+    return dup2(fd, fd2, *args)
+os.dup2 = to_devnull
+sys.stdout = io.TextIOWrapper(io.BufferedWriter(Gone(), buffer_size=8192), encoding="utf-8", newline="\\r\\n")
+sys.argv = [os.path.join(os.environ["REFACTOR_PASS_SCRIPTS"], sys.argv[1])] + sys.argv[2:]
+runpy.run_path(sys.argv[0], run_name="__main__")
+"""
+
+
 class LastLineOfDefence(unittest.TestCase):
     """An exception a script doesn't foresee ends it with one plain line that says it's a bug in the script,
     and where, not a traceback; and a reader that stops reading, as head does, isn't one."""
@@ -297,6 +327,14 @@ class LastLineOfDefence(unittest.TestCase):
         for script in ("heatmap.py", "measure.py", "check_page.py"):
             with self.subTest(script=script):
                 self.assertEqual(self.gone(script, "--help"), ("", 1))
+
+    @unittest.expectedFailure
+    def test_a_reader_gone_as_windows_says_it(self):
+        for args in (["heatmap.py", "--help"], ["measure.py", "--help"], ["check_page.py", "--help"],
+                     ["heatmap.py", "-C", self.repo]):
+            with self.subTest(args=args[:2]):
+                result = support.run_python(GONE_ON_WINDOWS, *args)
+                self.assertEqual((result.err, result.code), ("", 1))
 
     def test_skill_md_says_what_to_do(self):
         with open(os.path.join(os.path.dirname(support.SCRIPTS), "SKILL.md"), encoding="utf-8") as f:
