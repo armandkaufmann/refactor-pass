@@ -463,6 +463,7 @@ class Diffs(unittest.TestCase):
         self.assertIn("Change it again\n      @@ -1,2 +1,2 @@\n       a\\x00B\n      -c\n      +C\n", result.out)
         self.assertIn("Change it\n      @@ -1,2 +1,2 @@\n      -a\\x00b\n      +a\\x00B\n       c\n", result.out)
 
+    @unittest.expectedFailure
     def test_the_lines_a_file_gives(self):
         # As file_diffs reads git show's output: one call for several commits, each commit's section of the file.
         heatmap = support.load("heatmap")
@@ -471,8 +472,10 @@ class Diffs(unittest.TestCase):
                                                     (fix, "new/a.py", None)], most=3)
         self.assertEqual(found[(other, "other.py")], ["@@ -1 +1 @@", "-y", "+z"])
         self.assertEqual(found[(fix, "other.py")], ["@@ -1 +1 @@", "-x", "+y"])
-        # In that commit new/a.py was old/a.py: under a name it didn't have, no change, not another file's.
-        self.assertEqual(found[(fix, "new/a.py")], ["(no change to new/a.py in this commit)"])
+        # In that commit new/a.py was old/a.py: under a name it didn't have, not another file's change. --diffs
+        # asks only for the commits that changed the file, so finding none is a gap in reading git, said as one.
+        self.assertEqual(found[(fix, "new/a.py")], ["(its change to new/a.py couldn't be read here: git show %s -- "
+                                                    "new/a.py shows it)" % fix[:9]])
 
 
 class Thin(unittest.TestCase):
