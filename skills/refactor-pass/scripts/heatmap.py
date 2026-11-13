@@ -1150,12 +1150,16 @@ def half_of(commit, newer):
     return "newer" if commit[0] in newer else "older"
 
 
-def show_diffs(repo, show, given, listed, changed_as, fixes, newer, wide):
-    """--show FILE --diffs SHAS: those of the commits --show FILE --messages lists, each with its changes to the
-    file. A hash that names none of them, or more than one, is an error, which says which."""
-    path, title = show
+def show_diffs(repo, shows, given, changed_as, fixes, newer, wide, more):
+    """--show FILE ... --diffs SHAS: those of the commits --show FILE ... --messages lists, each with its changes
+    to each file that lists it; shows is each file's (path, title, the commits listed). A hash that names none of
+    them, or more than one, is an error, which says which, and more whether --newest would list more."""
+    listed, paths = [], [path for path, _, _ in shows]
+    for _, _, mine in shows:
+        listed += [c for c in mine if c not in listed]
     if not listed:
-        sys.exit("--diffs: %s has no commit in the window, so there's no change to show." % path)
+        sys.exit("--diffs: %s %s no commit in the window, so there's no change to show." % (
+            and_list(paths), "has" if len(paths) == 1 else "have"))
     chosen, problems, wrong = [], [], []
     for value in given:
         matches = [c for c in listed if re.match(r"[0-9a-fA-F]{4,}\Z", value) and c[0].startswith(value.lower())]
@@ -1164,7 +1168,7 @@ def show_diffs(repo, show, given, listed, changed_as, fixes, newer, wide):
         else:
             problems.append("%s %s" % (value, "is more than one of them" if matches else "isn't one of them"))
             wrong.append(value)
-    lists = "--show %s --messages lists" % path
+    lists = "%s --messages lists" % " ".join("--show " + p for p in paths)
     if (problems or not chosen) and len(listed) == 1:  # Its one commit, said: no hash names more than one.
         one = listed[0][0][:9]
         sys.exit("--diffs: %s %s the one commit %s, %s." % (and_list(wrong), "isn't" if len(wrong) == 1 else "aren't",
@@ -1173,16 +1177,21 @@ def show_diffs(repo, show, given, listed, changed_as, fixes, newer, wide):
     if problems or not chosen:
         sys.exit("--diffs: %s. Give hashes of the %d commits %s%s." % (
             "; ".join(problems) or "no commit given", len(listed), lists,
-            ", or widen it with --newest" if len(listed) == SAMPLE else ""))
-    diffs = file_diffs(repo, [(c[0], changed_as[(c[0], path)][0], changed_as[(c[0], path)][1]) for c in chosen],
-                       DIFF_LINES)
-    print("%s: its changes in %d of its commits, each cut at %d lines" % (title, len(chosen), DIFF_LINES))
-    for commit in chosen:
-        info = describe(commit)
-        print("  %s %s %s  %s%s" % (info["sha"], info["date"], half_of(commit, newer), clip(info["subject"]),
-                                    fix_mark(fixes.get(commit[0]), wide.get(commit[0]))))
-        print("\n".join("      " + line for line in diffs[(commit[0], changed_as[(commit[0], path)][0])]))
-    print()
+            ", or widen it with --newest" if more else ""))
+    diffs = file_diffs(repo, [(c[0],) + changed_as[(c[0], path)][:2] for path, _, mine in shows for c in chosen
+                              if c in mine], DIFF_LINES)
+    for path, title, mine in shows:
+        here = [c for c in chosen if c in mine]
+        if not here:
+            print("%s: none of the commits given is among its listed ones.\n" % title)
+            continue
+        print("%s: its changes in %d of its commits, each cut at %d lines" % (title, len(here), DIFF_LINES))
+        for commit in here:
+            info = describe(commit)
+            print("  %s %s %s  %s%s" % (info["sha"], info["date"], half_of(commit, newer), clip(info["subject"]),
+                                        fix_mark(fixes.get(commit[0]), wide.get(commit[0]))))
+            print("\n".join("      " + line for line in diffs[(commit[0], changed_as[(commit[0], path)][0])]))
+        print()
 
 
 def typed_share(commits):
@@ -1333,8 +1342,8 @@ def main():
                         help="with --show, the file's newest N commits (with --messages, %d unless given); "
                              "--diffs takes only those" % SAMPLE)
     parser.add_argument("--diffs", metavar="SHAS",
-                        help="with one --show FILE, these of the commits it lists (comma-separated hashes), each "
-                             "with its changes to the file, cut at %d lines" % DIFF_LINES)
+                        help="with --show, these of the commits it lists (comma-separated hashes), each with its "
+                             "changes to each file listing it, cut at %d lines" % DIFF_LINES)
     parser.add_argument("--no-fixes", action="store_true",
                         help="leave out the fixes trace: the header's count, the table of fixes by file and "
                              "--show's marks")
@@ -1346,8 +1355,8 @@ def main():
         parser.error("--messages goes with --show: --show FILE --messages")
     if args.newest and not args.show:
         parser.error("--newest goes with --show: --show FILE --newest N")
-    if args.diffs is not None and len(args.show) != 1:
-        parser.error("--diffs goes with one --show: --show FILE --diffs SHA,SHA")
+    if args.diffs is not None and not args.show:
+        parser.error("--diffs goes with --show: --show FILE --diffs SHA,SHA")
 
     repo = scoping.toplevel(args.repo)
     known = scoping.facts(args.repo)
@@ -1544,8 +1553,9 @@ def main():
         # With --messages, a file's newest commits, a sample: the ones --diffs takes.
         limit = args.newest or (SAMPLE if args.messages or args.diffs is not None else None)
         if args.diffs is not None:
-            show_diffs(repo, shows[0], [v.strip() for v in args.diffs.split(",") if v.strip()],
-                       logs.get(shows[0][0], [])[:limit], changed_as, fixes, newer, wide)
+            show_diffs(repo, [(path, title, logs.get(path, [])[:limit]) for path, title in shows],
+                       [v.strip() for v in args.diffs.split(",") if v.strip()], changed_as, fixes, newer, wide,
+                       any(len(logs.get(path, [])) > limit for path, _ in shows))
             return
         for path, title in shows:
             mine = logs.get(path, [])

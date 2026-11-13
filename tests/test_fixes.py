@@ -203,7 +203,6 @@ class Shop(unittest.TestCase):
             "      Reported-by: Cy <c@y>"])
         self.assertIsNone(heatmap.message_lines("Signed-off-by: A <a@b>\n"))
 
-    @unittest.expectedFailure
     def test_messages_goes_with_show(self):
         result = support.run("heatmap.py", "-C", self.repo.path, "--messages")
         self.assertEqual(result.code, 2, result)

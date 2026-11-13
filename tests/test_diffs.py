@@ -61,7 +61,6 @@ class Diffs(unittest.TestCase):
         self.assertEqual((none.code, none.err), (1, "--diffs: a.py has no commit in the window, so there's no change "
                                                     "to show.\n"))
 
-    @unittest.expectedFailure
     def test_several_files_in_one_run(self):
         # Each file's changes in those of the commits given that it lists; a hash none of them lists is an error.
         repo, marks = self.repo, dict((m, self.repo.short(c)) for m, c in self.marks.items())
