@@ -61,6 +61,30 @@ class Diffs(unittest.TestCase):
         self.assertEqual((none.code, none.err), (1, "--diffs: a.py has no commit in the window, so there's no change "
                                                     "to show.\n"))
 
+    @unittest.expectedFailure
+    def test_several_files_in_one_run(self):
+        # Each file's changes in those of the commits given that it lists; a hash none of them lists is an error.
+        repo, marks = self.repo, dict((m, self.repo.short(c)) for m, c in self.marks.items())
+        result = support.run("heatmap.py", "-C", repo.path, "--show", "new/a.py", "--show", "other.py", "--show",
+                             "img.png", "--diffs", "%s,%s" % (marks["fix"], marks["other"]))
+        self.assertEqual(result.code, 0, result)
+        fix = "  %s 2026-01-02 older  Fix a's first line  [fix, words: fix]\n" % marks["fix"]
+        self.assertEqual(result.out, "new/a.py: its changes in 1 of its commits, each cut at 60 lines\n" + fix +
+                         "      @@ -1,4 +1,4 @@\n      -a 1\n      +a one\n       a 2\n       a 3\n       a 4\n\n"
+                         "other.py: its changes in 2 of its commits, each cut at 60 lines\n" + fix +
+                         "      @@ -1 +1 @@\n      -x\n      +y\n"
+                         "  %s 2026-01-05 newer  Change other\n      @@ -1 +1 @@\n      -y\n      +z\n\n"
+                         "img.png: its changes in 1 of its commits, each cut at 60 lines\n" % marks["other"] + fix +
+                         "      (Binary files a/img.png and b/img.png differ)\n\n")
+        none = support.run("heatmap.py", "-C", repo.path, "--show", "img.png", "--show", "other.py", "--diffs",
+                           marks["other"])
+        self.assertTrue(none.out.startswith("img.png: none of the commits given is among its listed ones.\n\n"
+                                            "other.py: its changes in 1 of its commits"), none)
+        wrong = support.run("heatmap.py", "-C", repo.path, "--show", "new/a.py", "--show", "other.py", "--diffs",
+                            "%s,zzzz" % marks["fix"])
+        self.assertEqual((wrong.code, wrong.err), (1, "--diffs: zzzz isn't one of them. Give hashes of the 5 commits "
+                                                      "--show new/a.py --show other.py --messages lists.\n"))
+
     @unittest.skipIf(support.WINDOWS, "a file's name can't start with a colon on Windows")
     def test_a_name_git_would_read_as_pathspec_magic(self):
         repo = support.Repo("colon")
