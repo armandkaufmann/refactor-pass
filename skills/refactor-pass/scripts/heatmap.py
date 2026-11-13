@@ -1443,11 +1443,17 @@ def main():
             sets.append(touched)
             set_dates.append(describe(commit)["date"])
             set_shas.append(sha)
-    # The files the table and the pairs count: at HEAD, text, and tests aside unless kept. A commit of more of
-    # them than --max-files pairs nothing and adds to no file's fixes, as such a fix touches most in passing.
-    at_head = set(tracked)  # Not symbolic links or submodules.
-    alive = set(p for p, s in files.items() if p in at_head and not s["binary"] and
-                (args.keep_tests or not scoping.is_test(p, args.test, args.not_test)))
+    # The table's rows, the one set of files the pairs, the fixes by file and --max-files's count are of: those
+    # changed in the window that are files at HEAD (not symbolic links or submodules), text both by git's diff
+    # and by their content there, and not tests unless kept. A commit of more of them than --max-files pairs
+    # nothing and adds to no file's fixes, as such a fix touches most of them in passing.
+    at_head = set(tracked)
+    sizes = dict((p, n) for (_, p), n in line_counts(repo, [("HEAD", p) for p in sorted(files)
+                                                             if p in at_head]).items())
+    text = set(p for p in sizes if not files[p]["binary"])
+    # Tests have their history read like the rest, but stay out of the table and the pairs.
+    tests = set() if args.keep_tests else set(p for p in text if scoping.is_test(p, args.test, args.not_test))
+    alive = text - tests
     wide = dict((sha, len(touched & alive)) for sha, touched in zip(set_shas, sets)
                 if len(touched & alive) > args.max_files)
     for sha, touched in zip(set_shas, sets):
@@ -1502,18 +1508,16 @@ def main():
     # Just before the window: --since's revision, or the oldest commit's parent (none at the root).
     base = since_rev or git(repo, "rev-list", "--parents", "-n", "1", everything[-1][0]).split()[1:2]
     base = base if isinstance(base, str) else (base[0] if base else None)
-    read = line_counts(repo, [("HEAD", p) for p in sorted(files)] + ([(base, None)] if base else []) +
-                       [(base, earliest.get(p, p)) for p in sorted(files) if base])
-    sizes = dict((p, read[("HEAD", p)]) for p in files if ("HEAD", p) in read)
-    before = dict((p, read.get((base, earliest.get(p, p)), 0)) for p in files) if base else {}
+    read = line_counts(repo, ([(base, None)] if base else []) + [(base, earliest.get(p, p)) for p in sorted(text)
+                                                                    if base])
+    before = dict((p, read.get((base, earliest.get(p, p)), 0)) for p in text) if base else {}
     base_time = read.get((base, None), 0)
     rows = []
     # Files git's diff reads as binary though they're text at HEAD: the repo's attributes (-diff, binary), or
     # the user's, say so. They're left out as git says, and the output names them.
-    marked = sorted(p for p, s in files.items() if s["binary"] and p in sizes and p in at_head)
-    for path, stats in files.items():
-        if path not in sizes or stats["binary"] or path not in at_head:  # Gone at HEAD, binary, or not a file.
-            continue
+    marked = sorted(p for p in sizes if files[p]["binary"])
+    for path in text:
+        stats = files[path]
         row = {"path": path, "commits": stats["commits"], "recent": stats["recent"], "last": stats["last"],
                "churn": stats["added"] + stats["removed"], "added": stats["added"], "removed": stats["removed"],
                "size": sizes[path], "rel": round((stats["added"] + stats["removed"]) / max(sizes[path], 1), 2),
@@ -1526,10 +1530,7 @@ def main():
         if fix_facts and not fix_facts["thin"] and not not_code(row["path"], is_test, tops):
             row.update(fixes=files[row["path"]]["fixes"][0], fixes_recent=files[row["path"]]["fixes_recent"])
     by_path = dict((r["path"], r) for r in rows)
-    # Tests have their history read like the rest, but stay out of the table and the pairs.
-    tests = set() if args.keep_tests else set(r["path"] for r in rows
-                                              if scoping.is_test(r["path"], args.test, args.not_test))
-    rows = [r for r in rows if r["path"] not in tests]
+    rows = [r for r in rows if r["path"] in alive]
     in_scope = [p for p in tracked if scoping.in_scope(p, args.scope) and not scoping.ignored(p, patterns)]
     doubts = scoping.doubtful_tests(tests, in_scope, args.test)
     # Each production file's name, so a test's own file is found even where it isn't in the window.

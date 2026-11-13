@@ -33,19 +33,20 @@ def build_every_kind():
     def content(path, n):
         return b"\x89PNG\x00%d\n" % n if path == "img.png" else b"a\x00%d\nc\n" % n if path == "zeros.dat" else \
             lines(n, path)
-    repo.commit("2026-01-01", "Start", dict([(p, content(p, 3)) for p in every] + [
+    repo.commit("2026-01-01", "Start the shop's files", dict([(p, content(p, 3)) for p in every] + [
         (".gitattributes", "zeros.dat diff\n"), (SKILL_COPY + "SKILL.md", "x\n"),
         (SKILL_COPY + "scripts/scoping.py", "x\n"), ("link.py", support.Link("src/a.py")),
         ("vendor/lib", support.Gitlink("1" * 40))]))
     for day in range(2, 8):
-        repo.commit("2026-01-%02d" % day, ("Fix the crash in step %d" if day % 2 else "Add step %d") % day, dict(
+        subject = ("Fix the crash in step %d" if day % 2 else "Add the cart's step %d") % day
+        repo.commit("2026-01-%02d" % day, subject, dict(
             [(p, content(p, day + 3)) for p in every] + [("link.py", support.Link("src/old.py" if day % 2 else
                                                                                      "src/a.py")),
                                                           ("vendor/lib", support.Gitlink(str(day) * 40))]))
-    repo.commit("2026-01-08", "Move old", rename={"src/old.py": "src/new.py"})
+    repo.commit("2026-01-08", "Move the old module", rename={"src/old.py": "src/new.py"})
     repo.commit("2026-01-09", "Fix the wrong total", {"src/new.py": lines(12, "o"), "src/a.py": lines(12, "a"),
                                                       "zeros.dat": b"a\x00z\nc\n", "img.png": b"\x89PNG\x00z\n"})
-    repo.commit("2026-01-10", "Drop gone", delete=["src/gone.py"])
+    repo.commit("2026-01-10", "Drop the gone module", delete=["src/gone.py"])
     repo.done()
     return repo
 
@@ -61,19 +62,18 @@ class EveryKindOfPath(unittest.TestCase):
         cls.result = support.run("heatmap.py", "-C", cls.repo.path, "--min-shared", "2", "--min-revs", "2", "--page",
                                  cls.page)
 
-    @unittest.expectedFailure
     def test_the_heatmap(self):
         self.assertEqual((self.result.code, self.result.err), (0, ""), self.result)
         rows = support.heatmap_rows(self.result.out)
         self.assertEqual(set(rows), {"src/a.py", "src/new.py", "docs/guide.md", "package.json", "other/out.py",
                                      ".gitattributes"})
         # Fixes by file: of the rows, the code. zeros.dat, img.png, the test, the deleted and the skill's copy
-        # are rows of nothing, here or in the pairs.
+        # are rows of nothing, here or in the pairs (a test has its own list, of what it changes with).
         self.assertEqual(fix_rows(self.result.out), {"src/a.py": (4, 2, 0, 0, 4), "src/new.py": (4, 2, 0, 0, 4),
                                                      "other/out.py": (3, 1, 0, 0, 3)})
         for path in ("zeros.dat", "img.png", "src/gone.py", "test_a.py", SKILL_COPY + "scripts", "link.py",
                      "vendor/lib"):
-            self.assertNotIn(path, self.result.out.split("Changed together")[1], path)
+            self.assertNotIn(path, self.result.out.split("Changed together")[1].split("Tests changed")[0], path)
         self.assertEqual(support.run("check_page.py", self.page).code, 0)
         scoped = support.run("heatmap.py", "-C", self.repo.path, "src", "--min-shared", "2", "--min-revs", "2")
         self.assertEqual((scoped.code, scoped.err), (0, ""), scoped)

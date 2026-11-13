@@ -222,10 +222,13 @@ class Shop(unittest.TestCase):
         self.assertTrue(twice.out.startswith("app.py: its changes in 1 of its commits"), twice)
         self.assertEqual(twice.out.count("Fix the total's rounding"), 1)
 
-    def test_show_reads_no_files_sizes(self):
-        # --show lists a file's commits: it doesn't read every file's size, or pair them, and throw that away.
+    def test_show_reads_no_files_sizes_before_the_window(self):
+        # --show lists a file's commits: it reads the files at HEAD, which say the table's rows its marks count,
+        # but not the sizes before the window, which only the table's growth needs.
         code = ("import os, sys\nsys.path.insert(0, os.environ['REFACTOR_PASS_SCRIPTS'])\nimport heatmap\n"
-                "def unread(*args):\n    raise RuntimeError('read the sizes')\nheatmap.line_counts = unread\n"
+                "counts = heatmap.line_counts\ndef at_head(repo, wanted):\n"
+                "    if any(rev != 'HEAD' for rev, _ in wanted):\n        raise RuntimeError('read the sizes before')\n"
+                "    return counts(repo, wanted)\nheatmap.line_counts = at_head\n"
                 "sys.argv = ['heatmap.py'] + sys.argv[1:]\nheatmap.main()\n")
         for args in (["--messages"], ["--diffs", self.repo.short(self.marks["crash"])]):
             result = support.run_python(code, "-C", self.repo.path, "--show", "app.py", *args)
