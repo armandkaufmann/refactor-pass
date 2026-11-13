@@ -665,7 +665,6 @@ class Words(unittest.TestCase):
         facts = heatmap.fix_summary(commits, heatmap.fix_trace(commits, commits, False), 0.0)[1]
         self.assertEqual((facts["fixes"], facts["closing"]), (1, 1))
 
-    @unittest.expectedFailure
     def test_an_issue_is_a_number(self):
         # #include, #ifdef and #define are code, not issues: an issue is #12, gh-12 or org/repo#12.
         heatmap = self.heatmap

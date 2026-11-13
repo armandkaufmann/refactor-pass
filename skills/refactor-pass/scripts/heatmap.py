@@ -628,8 +628,9 @@ REVERT_LINE = re.compile(r"(?m)^\s*This reverts commit ([0-9a-fA-F]{7,64})")
 REVERT_WORD = re.compile(r"\brevert(?:s|ed|ing)?\b", re.I)
 QUOTED = re.compile(r'\brevert(?:s|ed)?\s*"(.*)"', re.I)
 # Issue references, whose words name the tracker, not the change: "Fixed #12 --" closes an issue of any kind.
-CLOSER = re.compile(r"\b(?:fix(?:e[sd])?|close[sd]?|resolve[sd]?)\s*:?\s*(?:#|gh-|[\w.-]+/[\w.-]+#)\w+", re.I)
-REFERENCE = re.compile(r"\b(?:issues?|pr|pull|ticket)\s*(?:#\w+|\d+\b)", re.I)
+# An issue is a number (#12, gh-12, org/repo#12), as #include and #ifdef aren't.
+CLOSER = re.compile(r"\b(?:fix(?:e[sd])?|close[sd]?|resolve[sd]?)\s*:?\s*(?:#|gh-|[\w.-]+/[\w.-]+#)\d+\b", re.I)
+REFERENCE = re.compile(r"\b(?:issues?|pr|pull|ticket)\s*#?\d+\b", re.I)
 # The words, each with the forms that count as it. A subject's code (in backticks, or an identifier such as
 # should_ignore_error or Data.Render) isn't read; "regression test" names a test.
 FIX_WORDS = {"fix": "fix fixes fixed fixing hotfix", "bug": "bug bugs bugfix bugfixes buggy",
