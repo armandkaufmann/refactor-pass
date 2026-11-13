@@ -228,8 +228,8 @@ Outside that run, `tests/tools/` holds five checks to run by hand:
   parser to compare with here, on 15 pinned repos: it counts the functions
   that run on past their end, and the definitions a looser rule finds that
   `measure.py` doesn't, against recorded ceilings.
-- `measure_fixes.py` measures the heatmap's count of fixes against 1,023
-  commits of ten pinned repos labelled fix or not by reading each one's
+- `measure_fixes.py` measures the heatmap's count of fixes against 1,113
+  commits of thirteen pinned repos labelled fix or not by reading each one's
   message and diff (`tests/fixes_labels.txt`), and fails where a repo's
   precision or recall falls below its recorded floors.
 - `render_pages.py` renders checklist pages in headless Chrome, today's and

@@ -252,7 +252,12 @@ subjects carry a type (88% to 100% in four such repos); typically a third to
 a half where they don't (33% to 64% in six of seven such repos, 80% in one
 whose subjects nearly always say fix); 35% over the nine others, one of them
 typed; and none of 14 in one whose subjects name the area and the new
-behaviour, and whose bodies say what was wrong. On the commits it leaves
+behaviour, and whose bodies say what was wrong. Of 90 commits of three repos
+that put tags in brackets, labelled after the tags were read, 16 of its 20
+calls were right and it found 38% of the fixes: 43% and 22% in two whose tags
+name an area or a ticket and are passed over, and all 5 in one whose tags
+are types, where 4 of its 9 calls were a lint, a CI change or changes for a
+new version of a dependency, labelled [Fix]. On the commits it leaves
 unmarked, one that changed a test too was a fix about twice as often as one
 that didn't (45% against 24% in the labelled commits), and one of over 200
 lines rarely (1 of 20).
