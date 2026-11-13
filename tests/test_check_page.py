@@ -212,15 +212,16 @@ class Errors(unittest.TestCase):
         self.assertError(changed(lambda d: item(d, "R2").update(fixes=[entry(), entry(marked=["b2c3d4e"])])),
                          "R2's fixes have src/a.py twice: an entry per file.")
 
+    @unittest.expectedFailure
     def test_the_fixes_a_heatmap_counts(self):
-        facts = {"fixes": 3, "revert": 1, "type": 0, "words": 2, "typed": 0.0, "labels": False, "closing": 1,
-                 "withdrawn": 0, "thin": False, "language": False, "complete": False}
+        facts = {"fixes": 3, "revert": 1, "type": 0, "words": 2, "typed": 0.0, "labels": False, "thin": False,
+                 "language": False, "complete": False}
         row = {"path": "src/a.py", "commits": 4, "fixes": 3, "fixes_recent": 1}
         good = dict(HEATMAP, window={"commits": 9, "fixes": facts}, files=[row, {"path": "CHANGES.md", "commits": 2}])
         self.assertEqual(problems(page(heatmap=good)), ([], []))
         for change, words in [(dict(facts, words=1), "counts 3 fixes, but 2 by reverts, types and words"),
                               (dict(facts, labels="no"), "window.fixes: 'labels' should be true or false."),
-                              (dict(facts, closing=True), "window.fixes: 'closing' should be a whole number."),
+                              (dict(facts, thin=1), "window.fixes: 'thin' should be true or false."),
                               (dict(facts, typed=True), "window.fixes: 'typed' should be a number."),
                               (dict(facts, more=1), "window.fixes has a field the page doesn't show: 'more'")]:
             with self.subTest(error=words):

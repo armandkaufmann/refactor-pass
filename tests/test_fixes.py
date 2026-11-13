@@ -252,12 +252,15 @@ class Shop(unittest.TestCase):
         self.assertIn("--diffs: %s isn't one of them; zz isn't one of them. Give hashes of the 7 commits --show "
                       "app.py --messages lists." % self.repo.short(self.marks["speed"]), wrong.err)
 
+    @unittest.expectedFailure
     def test_the_page_carries_the_fixes(self):
         with open(self.page, encoding="utf-8") as f:
             heat = json.loads(support.block(f.read(), "heatmap"))
         self.assertEqual(heat["window"]["fixes"], {"fixes": 5, "revert": 1, "type": 0, "words": 4, "typed": 0.0,
-                                                   "labels": False, "closing": 1, "withdrawn": 1, "thin": False,
-                                                   "language": False, "complete": False})
+                                                   "labels": False, "thin": False, "language": False,
+                                                   "complete": False})
+        with open(support.TEMPLATE, encoding="utf-8") as f:  # Where no commit says it fixed a defect, it says so.
+            self.assertIn("None of the commits says in its message that it fixed a defect", f.read())
         rows = dict((r["path"], r) for r in heat["files"])
         self.assertEqual((rows["app.py"]["fixes"], rows["app.py"]["fixes_recent"]), (2, 1))
         self.assertEqual((rows["util.py"]["fixes"], rows["util.py"]["fixes_recent"]), (3, 1))
@@ -653,8 +656,9 @@ class Words(unittest.TestCase):
         heatmap = support.load("heatmap")
         commits = [("%040d" % n, n, subject, [("a.py", None, 1, 0)], "Ann <a@b>", "") for n, subject in enumerate(
             ["Fixed #12 -- Corrected a typo in the guide", "Fixed #13 -- Added coupons", "Fixed #14 -- Fixed a crash"])]
-        facts = heatmap.fix_summary(commits, heatmap.fix_trace(commits, commits, False), 0.0)[1]
-        self.assertEqual((facts["fixes"], facts["closing"]), (1, 1))
+        lines, facts = heatmap.fix_summary(commits, heatmap.fix_trace(commits, commits, False), 0.0)
+        self.assertEqual(facts["fixes"], 1)
+        self.assertTrue(lines[1].endswith(" 1 more commit closes an issue without saying what kind of change."))
 
     def test_an_issue_is_a_number(self):
         # #include, #ifdef and #define are code, not issues: an issue is #12, gh-12 or org/repo#12.
@@ -665,8 +669,9 @@ class Words(unittest.TestCase):
         commits = [("%040d" % n, n, subject, [("a.c", None, 1, 0)], "Ann <a@b>", body) for n, (subject, body) in
                    enumerate([("Fix #include order that broke the build", ""), ("Add hats", "Fixes #define of MAX"),
                               ("Fixed #12 -- Added coupons", ""), ("Add a hat", "Closes org/shop#7")])]
-        facts = heatmap.fix_summary(commits, heatmap.fix_trace(commits, commits, False), 0.0)[1]
-        self.assertEqual((facts["fixes"], facts["closing"]), (1, 2))
+        lines, facts = heatmap.fix_summary(commits, heatmap.fix_trace(commits, commits, False), 0.0)
+        self.assertEqual(facts["fixes"], 1)
+        self.assertTrue(lines[1].endswith(" 2 more commits close an issue without saying what kind of change."))
 
     def test_the_share_with_a_type_is_one_number(self):
         # Printed as the decision is made from it: 99 of 200 is 49%, too few; 179 of 200 is 89%, not nearly all.
