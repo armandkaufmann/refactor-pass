@@ -585,7 +585,6 @@ class Words(unittest.TestCase):
         for subject in ("\U0001F512 fix xss in the comment form", "\U0001F512\ufe0f x", ":lock: x"):
             self.assertEqual(self.heatmap.type_of(subject)[0], "fix", subject)
 
-    @unittest.expectedFailure
     def test_a_type_after_a_gitmoji(self):
         # Where a type follows the emoji, that word is the type: one may say what the other doesn't.
         type_of = self.heatmap.type_of

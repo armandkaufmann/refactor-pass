@@ -599,9 +599,9 @@ def line_counts(repo, wanted):
 # fix, at one each, shares most commits with 问题).
 #
 # A type at the start of a subject: Conventional Commits' (fix(scope)!: ..., or with a full-width colon), a
-# type in brackets ([Fix], as open-mmlab writes them), or a gitmoji. A tag in brackets whose word isn't a type
-# names an area or a ticket ([clang], [SPARK-1]), and Flink's [hotfix] a change made without one: they're passed
-# over, a type may follow them, and the subject's words are read without them.
+# type in brackets ([Fix], as open-mmlab writes them), or a gitmoji, or the type after one. A tag in brackets
+# whose word isn't a type names an area or a ticket ([clang], [SPARK-1]), and Flink's [hotfix] a change made
+# without one: they're passed over, a type may follow them, and the subject's words are read without them.
 CONVENTIONAL = re.compile(r"\s*(?P<type>[A-Za-z]+)(?:\((?P<scope>[^)]*)\))?!?\s*[:\uff1a]")
 TAG = re.compile(r"\s*\[(?P<tag>[^\]]*)\]")
 TYPES = {"feat", "feature", "fix", "docs", "doc", "chore", "refactor", "perf", "test", "tests", "style", "build",
@@ -766,27 +766,30 @@ def untagged(subject):
 
 def type_of(subject):
     """The type a subject carries at its start, after any tags that aren't types, as (its kind, how it's
-    written), or None. Its kind is fix, chore (a fix of the dependencies, CI or docs) or other."""
+    written), or None. Its kind is fix, chore (a fix of the dependencies, CI or docs) or other. Where a gitmoji
+    has a type after it (\U0001F527 fix: ...), that word is the type."""
     rest = untagged(subject)
     tag = TAG.match(rest)
     if tag:
         return ("fix" if tag.group("tag").strip().lower() in FIX_TYPES else "other"), tag.group(0).strip()
     found = CONVENTIONAL.match(rest)
-    if found:
-        kind = found.group("type").lower()
-        if kind not in TYPES:
+    if not found:
+        rest = rest.lstrip()
+        code = re.match(r":([a-z0-9_+-]+):", rest)
+        emoji = code.group(0) if code and code.group(1) in GITMOJI_CODES else next(
+            (rest[:len(e) + (rest[len(e):len(e) + 1] == "\ufe0f")] for e in GITMOJI if rest.startswith(e)), None)
+        if not emoji:
             return None
-        written = found.group(0).strip()
-        if kind in FIX_TYPES:
-            return ("chore" if (found.group("scope") or "").strip().lower() in CHORE_SCOPES else "fix"), written
-        return "other", written
-    rest = rest.lstrip()
-    code = re.match(r":([a-z0-9_+-]+):", rest)
-    emoji = code.group(0) if code and code.group(1) in GITMOJI_CODES else next(
-        (rest[:len(e) + (rest[len(e):len(e) + 1] == "\ufe0f")] for e in GITMOJI if rest.startswith(e)), None)
-    if emoji:
-        return ("fix" if emoji.rstrip("\ufe0f") in FIX_EMOJI else "other"), emoji
-    return None
+        found = CONVENTIONAL.match(rest[len(emoji):])
+        if not (found and found.group("type").lower() in TYPES):
+            return ("fix" if emoji.rstrip("\ufe0f") in FIX_EMOJI else "other"), emoji
+    kind = found.group("type").lower()
+    if kind not in TYPES:
+        return None
+    written = found.group(0).strip()
+    if kind in FIX_TYPES:
+        return ("chore" if (found.group("scope") or "").strip().lower() in CHORE_SCOPES else "fix"), written
+    return "other", written
 
 
 def same_person(one, other):
