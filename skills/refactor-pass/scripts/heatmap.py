@@ -858,9 +858,8 @@ def fix_trace(commits, window, typed, is_test=None, outside=None, tops=None):
     def read(commit):
         """How a commit reads; but one that changed none of the project's own code isn't a fix of it."""
         found = reads(commit)
-        kinds = [not_code(c[0], is_test, tops) for c in commit[3]]
-        if found[0] and kinds and all(kinds):
-            return 0, "changes only %s" % and_list(sorted(set(kinds))), None
+        if found[0] and commit[3] and all(not_code(c[0], is_test, tops) for c in commit[3]):
+            return 0, "changes only %s" % and_list(sorted(set(not_code(c[0], is_test, tops) for c in commit[3]))), None
         return found
 
     def reads(commit):
@@ -906,9 +905,10 @@ def foreign(subject):
     return read * 2 < len(letters)
 
 
-def fix_mark(found):
+def fix_mark(found, files=None):
     """--show's mark of how a commit reads, after its subject: [fix: ...], [not a fix: ...], or nothing where
-    nothing said either way."""
+    nothing said either way; for a fix of files files, more than --max-files, that the table by file leaves it
+    out."""
     if not found or not found[1]:
         return ""
     tier, what, stood = found
@@ -916,6 +916,8 @@ def fix_mark(found):
         what += ", %s after it" % how_long(stood)
     elif tier == 1:
         what += ", from before the window"
+    if tier and files:
+        what += "; not counted by file: it changed %d files" % files
     return "  [%s: %s]" % (("fix, " + {1: "revert", 2: "type", 3: "words"}[tier]) if tier else "not a fix",
                            printable(what))
 
@@ -1100,7 +1102,7 @@ def half_of(commit, newer):
     return "newer" if commit[0] in newer else "older"
 
 
-def show_diffs(repo, show, given, listed, changed_as, fixes, newer):
+def show_diffs(repo, show, given, listed, changed_as, fixes, newer, wide):
     """--show FILE --diffs SHAS: those of the commits --show FILE --messages lists, each with its changes to the
     file. A hash that names none of them, or more than one, is an error, which says which."""
     path, title = show
@@ -1121,7 +1123,7 @@ def show_diffs(repo, show, given, listed, changed_as, fixes, newer):
     for commit in chosen:
         info = describe(commit)
         print("  %s %s %s  %s%s" % (info["sha"], info["date"], half_of(commit, newer), subject_line(info["subject"]),
-                                    fix_mark(fixes.get(commit[0]))))
+                                    fix_mark(fixes.get(commit[0]), wide.get(commit[0]))))
         print("\n".join("      " + line for line in diffs[(commit[0], changed_as[(commit[0], path)][0])]))
     print()
 
@@ -1404,22 +1406,13 @@ def main():
     patterns = scoping.DEFAULT_IGNORE + args.ignore
     files = defaultdict(lambda: {"commits": 0, "recent": 0, "added": 0, "removed": 0, "fixes": [0, 0, 0, 0],
                                  "fixes_recent": 0})
-    sets, set_dates = [], []  # Per commit, newest first, the files it changed and its date.
+    sets, set_dates, set_shas = [], [], []  # Per commit, newest first, the files it changed, its date and hash.
     logs = defaultdict(list)  # Per file (in scope or not), the commits that changed it.
     changed_as = {}  # Per commit and file, the file's change in it, under its name in that commit.
     own_left_out = set()
-
-    def sweeping(commit):
-        """Whether a commit changed more files than --max-files, tests aside unless kept: as it pairs nothing, it
-        adds to no file's fixes, since such a fix touches most of them in passing."""
-        return len(set(p for p, _, _, _ in commit[3] if scoping.in_scope(today(p), args.scope) and not
-                       scoping.ignored(today(p), patterns) and (args.keep_tests or not is_test(today(p))))) \
-            > args.max_files
-
     for commit in everything:
         sha, changes = commit[0], commit[3]
         touched = set()
-        tier = 0 if sha not in fixes or sweeping(commit) else fixes[sha][0]
         for path, old, added, removed in changes:
             name = today(path)
             if old is not None:
@@ -1443,10 +1436,6 @@ def main():
             if name not in touched:
                 stats["commits"] += 1
                 stats["recent"] += sha in newer
-                if tier:  # Counted once, the strongest way it reads as a fix; fixes[0] counts them all.
-                    stats["fixes"][tier] += 1
-                    stats["fixes"][0] += 1
-                    stats["fixes_recent"] += sha in newer
             touched.add(name)
             if added is not None:
                 stats["added"] += added
@@ -1454,6 +1443,21 @@ def main():
         if sha not in excluded:
             sets.append(touched)
             set_dates.append(describe(commit)["date"])
+            set_shas.append(sha)
+    # The files the table and the pairs count: at HEAD, text, and tests aside unless kept. A commit of more of
+    # them than --max-files pairs nothing and adds to no file's fixes, as such a fix touches most in passing.
+    at_head = set(tracked)  # Not symbolic links or submodules.
+    alive = set(p for p, s in files.items() if p in at_head and not s["binary"] and
+                (args.keep_tests or not scoping.is_test(p, args.test, args.not_test)))
+    wide = dict((sha, len(touched & alive)) for sha, touched in zip(set_shas, sets)
+                if len(touched & alive) > args.max_files)
+    for sha, touched in zip(set_shas, sets):
+        tier = fixes.get(sha, (0,))[0]
+        if tier and sha not in wide:  # Counted once, the strongest way it reads as a fix; fixes[0] counts all.
+            for name in touched:
+                files[name]["fixes"][tier] += 1
+                files[name]["fixes"][0] += 1
+                files[name]["fixes_recent"] += sha in newer
 
     # --show, before the work the heatmap alone needs: every file's size, and the pairs.
     oldest, latest = describe(commits[-1]), describe(commits[0])
@@ -1474,7 +1478,7 @@ def main():
         limit = args.newest or (SAMPLE if args.messages or args.diffs is not None else None)
         if args.diffs is not None:
             show_diffs(repo, shows[0], [v.strip() for v in args.diffs.split(",") if v.strip()],
-                       logs.get(shows[0][0], [])[:limit], changed_as, fixes, newer)
+                       logs.get(shows[0][0], [])[:limit], changed_as, fixes, newer, wide)
             return
         for path, title in shows:
             mine = logs.get(path, [])
@@ -1488,7 +1492,8 @@ def main():
             for commit in listed:
                 info = describe(commit)
                 print("  %s %s %s  %s%s" % (info["sha"], info["date"], half_of(commit, newer),
-                                            subject_line(info["subject"]), fix_mark(fixes.get(commit[0]))))
+                                            subject_line(info["subject"]),
+                                            fix_mark(fixes.get(commit[0]), wide.get(commit[0]))))
                 if args.messages:
                     print(change_hint(commit, changed_as[(commit[0], path)], is_test))
                     if message_lines(commit[5]):
@@ -1504,7 +1509,6 @@ def main():
     before = dict((p, read.get((base, earliest.get(p, p)), 0)) for p in files) if base else {}
     base_time = read.get((base, None), 0)
     rows = []
-    at_head = set(tracked)  # Not symbolic links or submodules.
     # Files git's diff reads as binary though they're text at HEAD: the repo's attributes (-diff, binary), or
     # the user's, say so. They're left out as git says, and the output names them.
     marked = sorted(p for p, s in files.items() if s["binary"] and p in sizes and p in at_head)
@@ -1527,7 +1531,6 @@ def main():
     tests = set() if args.keep_tests else set(r["path"] for r in rows
                                               if scoping.is_test(r["path"], args.test, args.not_test))
     rows = [r for r in rows if r["path"] not in tests]
-    alive = set(r["path"] for r in rows)
     in_scope = [p for p in tracked if scoping.in_scope(p, args.scope) and not scoping.ignored(p, patterns)]
     doubts = scoping.doubtful_tests(tests, in_scope, args.test)
     # Each production file's name, so a test's own file is found even where it isn't in the window.
@@ -1540,7 +1543,7 @@ def main():
     too_big = 0
     for index, touched in enumerate(sets):
         mine = sorted(touched & alive)
-        if len(mine) > args.max_files:
+        if set_shas[index] in wide:
             too_big += 1
             continue
         shared.update(combinations(mine, 2))
@@ -1721,11 +1724,14 @@ def main():
         place = dict((r["path"], i) for i, r in enumerate(rows))
         fixed = sorted((p for p in place if files[p]["fixes"][0] and not not_code(p, is_test, tops)),
                        key=lambda p: (-files[p]["fixes"][0], -files[p]["fixes_recent"], place[p]))
+        many = sum(1 for sha in wide if fixes.get(sha, (0,))[0])
         print("Fixes by file: of each file's commits, those whose messages say they fixed a defect, and how many "
-              "of those were in the newer half; documentation, tests, and CI, build and dependency files aside, and "
-              "commits of more than %d files, as in the pairs. A lead, not a count of each file's fixes: a fix "
-              "elsewhere can touch a file in passing, and many fixes don't say so. --show FILE --messages gives "
-              "each commit's message, to judge." % args.max_files)
+              "of those were in the newer half; documentation, tests, and CI, build and dependency files aside%s. A "
+              "lead, not a count of each file's fixes: a fix elsewhere can touch a file in passing, and many fixes "
+              "don't say so. --show FILE --messages gives each commit's message, to judge." % (
+                  ", and %s of more than %d files, as the pairs leave %s out" % (
+                      "1 fix commit" if many == 1 else "%d fix commits" % many, args.max_files,
+                      "it" if many == 1 else "them") if many else ""))
         if fixed:
             print("%7s %6s %6s %5s %5s  file" % ("fixes", "recent", "revert", "type", "words"))
         for path in fixed[:args.top]:
