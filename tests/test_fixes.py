@@ -463,6 +463,7 @@ class Diffs(unittest.TestCase):
         binary = support.run("heatmap.py", "-C", repo.path, "--show", "img.png", "--diffs", shas[0])
         self.assertIn("      (Binary files a/img.png and b/img.png differ)\n", binary.out)
 
+    @unittest.skipIf(support.WINDOWS, "a file's name can't start with a colon on Windows")
     def test_a_name_git_would_read_as_pathspec_magic(self):
         repo = support.Repo("colon")
         repo.commit("2026-01-01", "Start", {":weird.py": lines(3, "w")})
@@ -472,12 +473,13 @@ class Diffs(unittest.TestCase):
         self.assertIn("\n      -w 3\n", result.out)
 
     def test_a_nul_in_a_change_git_diffs_as_text(self):
-        repo = support.Repo("nul")
-        repo.commit("2026-01-01", "Start", {".gitattributes": "nul.dat diff\n", "nul.dat": b"a\x00b\nc\n"})
-        one = repo.commit("2026-01-02", "Change it", {"nul.dat": b"a\x00B\nc\n"})
-        two = repo.commit("2026-01-03", "Change it again", {"nul.dat": b"a\x00B\nC\n"})
+        # Named so Windows can hold them: NUL, with or without an extension, is a device there.
+        repo = support.Repo("zero-bytes")
+        repo.commit("2026-01-01", "Start", {".gitattributes": "zeros.dat diff\n", "zeros.dat": b"a\x00b\nc\n"})
+        one = repo.commit("2026-01-02", "Change it", {"zeros.dat": b"a\x00B\nc\n"})
+        two = repo.commit("2026-01-03", "Change it again", {"zeros.dat": b"a\x00B\nC\n"})
         repo.done()
-        result = support.run("heatmap.py", "-C", repo.path, "--show", "nul.dat", "--diffs",
+        result = support.run("heatmap.py", "-C", repo.path, "--show", "zeros.dat", "--diffs",
                              "%s,%s" % (repo.short(two), repo.short(one)))
         self.assertIn("Change it again\n      @@ -1,2 +1,2 @@\n       a\\x00B\n      -c\n      +C\n", result.out)
         self.assertIn("Change it\n      @@ -1,2 +1,2 @@\n      -a\\x00b\n      +a\\x00B\n       c\n", result.out)

@@ -274,12 +274,16 @@ class LastLineOfDefence(unittest.TestCase):
                                  % (re.escape(script), re.escape(script)))
 
     def gone(self, script, *args):
-        """What a script writes to stderr, and its exit code, when the reader of its output is gone."""
-        process = subprocess.Popen([sys.executable, os.path.join(support.SCRIPTS, script)] + list(args),
-                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=support.environment())
-        process.stdout.close()
-        # Read what it writes to stderr and wait: communicate() would start a thread reading stdout, closed,
-        # which complains on Windows.
+        """What a script writes to stderr, and its exit code, when the reader of its output is gone before it
+        starts: its output is a pipe whose reading end is already closed, so no write can get in first."""
+        read, write = os.pipe()
+        os.close(read)
+        try:
+            process = subprocess.Popen([sys.executable, os.path.join(support.SCRIPTS, script)] + list(args),
+                                       stdout=write, stderr=subprocess.PIPE, env=support.environment())
+        finally:
+            os.close(write)
+        # Read what it writes to stderr and wait: communicate() would start a thread for it.
         err = process.stderr.read().decode("utf-8", "replace")
         process.stderr.close()
         return err, process.wait(timeout=60)

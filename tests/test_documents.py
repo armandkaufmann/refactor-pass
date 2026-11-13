@@ -84,7 +84,7 @@ class Help(unittest.TestCase):
     def setUpClass(cls):
         cls.help = {}
         for script in SCRIPTS:
-            cls.help[script] = support.run(script, "--help")
+            cls.help[script] = support.run(script, "--help", env={"COLUMNS": "80"})  # argparse wraps to it.
         installer = subprocess.run([sys.executable, os.path.join(ROOT, "install.py"), "--help"], capture_output=True,
                                    env=support.environment())
         cls.installer_help = support.Result(installer.returncode, support._text(installer.stdout),
