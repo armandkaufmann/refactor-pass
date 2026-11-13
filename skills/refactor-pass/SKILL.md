@@ -125,9 +125,9 @@ what it said, and go on without it, from `git log` and the code.
   and group them by feature. Many unrelated reasons to change one file is
   Divergent Change, and it shows here more directly than in any count.
 - **Fixes** count the commits whose messages say they fixed a defect in the
-  project's own code, so there are at least that many. Where most subjects
-  carry a type, the count is close to complete; elsewhere it's a floor, and
-  step 4 counts the rest for the files you'll recommend.
+  project's own code, so there are at least that many. Where nearly all
+  subjects carry a type, the count is close to complete; elsewhere it's a
+  floor, and step 4 counts the rest for the files you'll recommend.
 
 ## 2. What: the smells
 

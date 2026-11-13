@@ -569,7 +569,6 @@ class Words(unittest.TestCase):
                                  "--show leaves unmarked."])
         self.assertEqual((facts["fixes"], facts["thin"]), (0, False))
 
-    @unittest.expectedFailure
     def test_close_to_complete_only_where_nearly_all_subjects_carry_a_type(self):
         heatmap = support.load("heatmap")
         commits = [("%040d" % n, n, subject, [("a.py", None, 1, 0)], "Ann <a@b>", "")

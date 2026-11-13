@@ -99,7 +99,8 @@ strongest way it reads:
           identifier such as should_ignore_error) say nothing
 
 The header says how many commits read each way; the share of subjects with a
-type, and so whether the count is close to complete or a floor; and how many
+type, and so whether the count is close to complete (where 90% or more carry
+one) or a floor; and how many
 more close an issue without saying what kind of change, as Django's Fixed #12
 does. Where most subjects are a word or two, it says the messages can't be
 read for fixes, and lists no files. --no-fixes leaves it all out.
@@ -892,6 +893,12 @@ def fix_mark(found):
                            printable(what))
 
 
+# Where the count is close to complete: where nearly all subjects carry a type, as in every typed repo measured
+# (97% to 100%). Between a half and that, the subjects without one are read by their words, which find a third
+# to a half of the fixes.
+NEARLY_ALL = 0.9
+
+
 def fix_summary(commits, fixes, typed):
     """The header's two lines on the fixes trace, and its facts for the page. The first: how many commits read
     as fixes and how, at least, since many fixes don't say so. The second: where the subjects can't tell a fix
@@ -935,8 +942,12 @@ def fix_summary(commits, fixes, typed):
         second = "Most subjects here are a word or two (%d of the %d), too little to tell a fix from anything " \
                  "else, so the count can't be read and the fixes by file aren't listed. %s." % (
                      short, len(commits), share)
-    elif labelled:
+    elif labelled and round(typed, 2) >= NEARLY_ALL:
         second = "%s, read as a label, so the count is close to complete." % share
+    elif labelled:
+        second = "%s, read as a label; those without one are read by their words, so the count is a floor: such " \
+                 "subjects typically say so for a third to a half of their fixes, and the rest are among the " \
+                 "commits --show leaves unmarked." % share
     else:
         second = "%s, too few to read as labels, so the count is a floor: subjects without a type typically say " \
                  "so for a third to a half of the fixes, and the rest are among the commits --show leaves " \
