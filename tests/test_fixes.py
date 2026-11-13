@@ -186,6 +186,17 @@ class Shop(unittest.TestCase):
         self.assertEqual(result.code, 2, result)
         self.assertIn("--diffs goes with one --show: --show FILE --diffs SHA,SHA", result.err)
 
+    @unittest.expectedFailure
+    def test_newest_goes_with_show_and_a_commit_given_twice_is_shown_once(self):
+        result = support.run("heatmap.py", "-C", self.repo.path, "--newest", "3")
+        self.assertEqual(result.code, 2, result)
+        self.assertIn("--newest goes with --show: --show FILE --newest N", result.err)
+        rounding = self.repo.short(self.marks["rounding"])
+        twice = support.run("heatmap.py", "-C", self.repo.path, "--show", "app.py", "--diffs",
+                            "%s,%s" % (rounding, rounding[:7]))
+        self.assertTrue(twice.out.startswith("app.py: its changes in 1 of its commits"), twice)
+        self.assertEqual(twice.out.count("Fix the total's rounding"), 1)
+
     def test_diffs_give_each_commits_changes_to_the_file_only(self):
         rounding, crash = self.repo.short(self.marks["rounding"]), self.repo.short(self.marks["crash"])
         result = support.run("heatmap.py", "-C", self.repo.path, "--show", "app.py", "--diffs",
