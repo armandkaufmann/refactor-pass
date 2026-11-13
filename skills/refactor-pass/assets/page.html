@@ -500,7 +500,8 @@ function renderHeatmap(heat) {
       .filter(x => x[0]).map(x => `${number(x[0])} ${x[0] === 1 ? x[1] : x[2]}`);
     // What the block's facts decided, said: the page decides nothing.
     const share = `${Math.round(fx.typed * 100)}% of the subjects carry a type`;
-    text += ` At least ${number(fx.fixes)} of the commits fixed a defect in the project's own code, as their messages say${ways.length ? ` (${ways.join(", ")})` : ""}. ` +
+    text += (fx.fixes ? ` At least ${number(fx.fixes)} of the commits fixed a defect in the project's own code, as their messages say${ways.length ? ` (${ways.join(", ")})` : ""}. `
+      : " None of the commits says in its message that it fixed a defect in the project's own code. ") +
       (fx.complete ? `${share}, read as a label, so the count is close to complete.`
         : fx.labels ? `${share}, read as a label; those without one are read by their words, so the counts are a floor.`
         : `${share}, too few to read as labels, so the counts are a floor: subjects without a type typically say so for a third to a half of the fixes.`);

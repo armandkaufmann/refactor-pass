@@ -998,8 +998,7 @@ def fix_summary(commits, fixes, typed):
         second += " %d more commit%s close%s an issue without saying what kind of change." % (
             closing, "" if closing == 1 else "s", "s" if closing == 1 else "")
     facts = {"fixes": counted, "revert": tiers[1], "type": tiers[2], "words": tiers[3],
-             "typed": round(typed, 2), "labels": labelled, "closing": closing, "withdrawn": withdrawn, "thin": thin,
-             "language": language, "complete": complete}
+             "typed": round(typed, 2), "labels": labelled, "thin": thin, "language": language, "complete": complete}
     return [first, second], facts
 
 

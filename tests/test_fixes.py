@@ -252,7 +252,6 @@ class Shop(unittest.TestCase):
         self.assertIn("--diffs: %s isn't one of them; zz isn't one of them. Give hashes of the 7 commits --show "
                       "app.py --messages lists." % self.repo.short(self.marks["speed"]), wrong.err)
 
-    @unittest.expectedFailure
     def test_the_page_carries_the_fixes(self):
         with open(self.page, encoding="utf-8") as f:
             heat = json.loads(support.block(f.read(), "heatmap"))
