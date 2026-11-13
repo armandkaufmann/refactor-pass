@@ -876,10 +876,15 @@ def fix_trace(commits, window, typed, is_test=None, outside=None, tops=None):
     def read(commit):
         """How a commit reads; but one that changed none of the project's own code isn't a fix of it."""
         found = reads(commit)
-        if found[0] and all(not_code(c[0], is_test, tops) for c in commit[3]):  # As one that changed no file.
-            kinds = sorted(set(not_code(c[0], is_test, tops) for c in commit[3]))
-            return 0, "changes only %s" % and_list(kinds) if kinds else "changes no file", None
-        return found
+        if not found[0]:
+            return found
+        kinds = set()
+        for change in commit[3]:
+            kind = not_code(change[0], is_test, tops)
+            if not kind:  # A file of the project's code: that settles it.
+                return found
+            kinds.add(kind)
+        return 0, "changes only %s" % and_list(sorted(kinds)) if kinds else "changes no file", None
 
     def reads(commit):
         sha, stamp, subject, changes, author, body = commit[:6]
@@ -1509,7 +1514,7 @@ def main():
     sizes = dict((p, n) for (rev, p), n in read.items() if rev == "HEAD" and p is not None)
     text = set(p for p in sizes if not files[p]["binary"])
     # Tests have their history read like the rest, but stay out of the table and the pairs.
-    tests = set() if args.keep_tests else set(p for p in text if scoping.is_test(p, args.test, args.not_test))
+    tests = set() if args.keep_tests else set(p for p in text if is_test(p))
     alive = text - tests
     wide = dict((sha, len(touched & alive)) for sha, touched in zip(set_shas, sets)
                 if len(touched & alive) > args.max_files)
@@ -1558,8 +1563,9 @@ def main():
                                             fix_mark(fixes.get(commit[0]), wide.get(commit[0]))))
                 if args.messages:
                     print(change_hint(commit, changed_as[(commit[0], path)], is_test))
-                    if message_lines(commit[5]):
-                        print(message_lines(commit[5]))
+                    message = message_lines(commit[5])
+                    if message:
+                        print(message)
             print()
         return
     before = dict((p, read.get((base, earliest.get(p, p)), 0)) for p in text) if base else {}
@@ -1586,8 +1592,7 @@ def main():
     in_scope = [p for p in tracked if scoping.in_scope(p, args.scope) and not scoping.ignored(p, patterns)]
     doubts = scoping.doubtful_tests(tests, in_scope, args.test)
     # Each production file's name, so a test's own file is found even where it isn't in the window.
-    stems = set(scoping.flat(scoping.stem(p, False)) for p in in_scope
-                if not scoping.is_test(p, args.test, args.not_test))
+    stems = set(scoping.flat(scoping.stem(p, False)) for p in in_scope if not is_test(p))
 
     shared, with_tests = Counter(), Counter()
     seen_in = defaultdict(set)  # Per file, the commits counted for pairs that changed it.
