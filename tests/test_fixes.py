@@ -652,7 +652,6 @@ class Words(unittest.TestCase):
                            ("AUTHORS.txt", doc), ("README.zh-CN.md", doc), ("Changes", doc)]:
             self.assertEqual(not_code(path, lambda p: False), kind, path)
 
-    @unittest.expectedFailure
     def test_code_in_a_docs_folder_and_a_setup_py_at_no_packages_top(self):
         # In a docs folder, only what isn't code by its extension is documentation: cobra's doc/ is a package of
         # the library. setup.py is a manifest at a package's top, where its manifests are: the repo's, or beside

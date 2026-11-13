@@ -700,16 +700,9 @@ def is_doc(path):
 
 
 def package_tops(paths):
-    """The folders where a setup.py is a package's manifest, of the paths a repo holds: its top, and a folder
-    with a pyproject.toml, a setup.cfg or a package (a folder with an __init__.py) in it."""
-    tops = {""}
-    for path in paths:
-        folder, _, name = path.rpartition("/")
-        if name in ("pyproject.toml", "setup.cfg"):
-            tops.add(folder)
-        elif name == "__init__.py" and folder:
-            tops.add(folder.rpartition("/")[0])
-    return tops
+    """The folders where a setup.py is a package's manifest, of the paths a repo holds: where its manifests are,
+    the repo's top and a folder with a pyproject.toml or a setup.cfg."""
+    return {""} | set(p.rpartition("/")[0] for p in paths if p.rpartition("/")[2] in ("pyproject.toml", "setup.cfg"))
 
 
 def is_chore(path, tops=None):
