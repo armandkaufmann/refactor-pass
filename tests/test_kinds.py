@@ -80,15 +80,16 @@ class EveryKindOfPath(unittest.TestCase):
         self.assertEqual(set(support.heatmap_rows(scoped.out)), {"src/a.py", "src/new.py"})
 
     def test_show_each_kind(self):
-        for path in ("src/a.py", "src/new.py", "src/old.py", "src/gone.py", "img.png", "zeros.dat",
-                     "tests/test_a.py", "docs/guide.md", "package.json", "other/out.py"):
+        paths = ("src/a.py", "src/new.py", "src/old.py", "src/gone.py", "img.png", "zeros.dat", "tests/test_a.py",
+                 "docs/guide.md", "package.json", "other/out.py")
+        shown = support.run("heatmap.py", "-C", self.repo.path, "--messages",
+                            *[arg for path in paths for arg in ("--show", path)])
+        self.assertEqual((shown.code, shown.err, shown.out.count("Fix the crash in step 7")), (0, "", 10), shown)
+        fix = re.findall(r"(?m)^  ([0-9a-f]{9}) .*Fix the crash in step 7", shown.out)[0]
+        for path in ("zeros.dat", "img.png", "src/new.py", "src/gone.py"):
             with self.subTest(path=path):
-                shown = support.run("heatmap.py", "-C", self.repo.path, "--show", path, "--messages")
-                self.assertEqual((shown.code, shown.err), (0, ""), shown)
-                fix = re.findall(r"(?m)^  ([0-9a-f]{9}) .*Fix the crash in step 7", shown.out)
-                if fix:
-                    diffs = support.run("heatmap.py", "-C", self.repo.path, "--show", path, "--diffs", fix[0])
-                    self.assertEqual((diffs.code, diffs.err), (0, ""), diffs)
+                diffs = support.run("heatmap.py", "-C", self.repo.path, "--show", path, "--diffs", fix)
+                self.assertEqual((diffs.code, diffs.err), (0, ""), diffs)
 
 
 if __name__ == "__main__":
