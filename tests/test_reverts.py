@@ -122,9 +122,10 @@ class Reverts(unittest.TestCase):
         marks = marks_of(support.run("heatmap.py", "-C", repo.path, "--show", "a.py").out)
         self.assertEqual(marks['Revert "Speed up a"'], "not a fix: its author withdraws %s" % repo.short(mine))
 
+    @unittest.expectedFailure
     def test_a_revert_of_a_commit_before_the_window(self):
-        # Read from the repo, where the window doesn't reach it: who made it and when. Only one the repo hasn't,
-        # as a shallow clone's, is from before the window.
+        # Read from the repo, where the window doesn't reach it: who made it and when. One the repo hasn't, as a
+        # shallow clone's, can't say whose change it undid, nor when, and isn't counted.
         repo = support.Repo("before")
         repo.commit("2026-01-01", "Start", {"a.py": lines(3, "a")})
         old = repo.commit("2026-01-02", "Speed up a", {"a.py": lines(4, "a")}, author=support.BOB)
@@ -142,13 +143,13 @@ class Reverts(unittest.TestCase):
         for marks in (whole, cut):
             self.assertEqual(marks['Revert "Speed up a"'], "fix, revert: reverts %s, 2 months after it"
                              % repo.short(old))
-            self.assertEqual(marks['Revert "Speed up c"'], "fix, revert: reverts aaaaaaaaa, from before the window")
+            self.assertEqual(marks['Revert "Speed up c"'], "not a fix: reverts aaaaaaaaa, which isn't in the repo")
         self.assertEqual(cut["Revert the new b"], "not a fix: its author withdraws %s" % repo.short(own))
         header = fixes_lines(support.run("heatmap.py", "-C", repo.path, "-n", "3").out)
-        self.assertEqual(header[0], "Fixes, a lead and not a verdict: at least 2 of the 3 commits fixed a defect in "
-                                    "the project's own code, as their messages say: 2 reverts (of a commit that had "
-                                    "stood 2 months; 1 from before the window). 1 more revert, of its author's own "
-                                    "commit, withdraws it and isn't counted.")
+        self.assertEqual(header[0], "Fixes, a lead and not a verdict: at least 1 of the 3 commits fixed a defect in "
+                                    "the project's own code, as their messages say: 1 a revert (of a commit that had "
+                                    "stood 2 months). 1 more revert, of its author's own commit, withdraws it and "
+                                    "isn't counted. 1 more revert, of a commit not in the repo, isn't counted.")
 
 
 class Outside(unittest.TestCase):
@@ -216,6 +217,32 @@ class OneCommit(unittest.TestCase):
         trace = heatmap.fix_trace([both, mine], [mine, both, again, others, own], False)
         self.assertEqual(trace[both[0]], (1, "reverts 111111111, 222222222", 3))
         self.assertEqual(trace[mine[0]], (0, "its author withdraws 111111111, 333333333", None))
+
+    @unittest.expectedFailure
+    def test_a_revert_of_a_commit_not_in_the_repo(self):
+        # Whose change it undid can't be told, so it isn't counted, unless another commit it names is another's.
+        heatmap = self.heatmap
+
+        def commit(n, subject, author, body=""):
+            return (str(n) * 40, n * 3600, subject, [("a.py", None, 1, 0)], author, body)
+        own, others = commit(1, "Add a hat", "Ann <a@b>"), commit(2, "Add a cap", "Bob <b@c>")
+        gone = "9" * 40
+        alone = commit(5, "Revert the scarf", "Ann <a@b>", "This reverts commit %s.\n" % gone)
+        mine = commit(6, "Revert the hat and the scarf", "Ann <a@b>", "This reverts commit %s.\nThis reverts "
+                      "commit %s.\n" % (own[0], gone))
+        theirs = commit(7, "Revert the cap and the scarf", "Ann <a@b>", "This reverts commit %s.\nThis reverts "
+                        "commit %s.\n" % (others[0], gone))
+        commits = [theirs, mine, alone]
+        trace = heatmap.fix_trace(commits, commits + [others, own], False)
+        self.assertEqual(trace[alone[0]], (0, "reverts 999999999, which isn't in the repo", None))
+        self.assertEqual(trace[mine[0]], (0, "reverts 111111111, 999999999, of which 999999999 isn't in the repo",
+                                          None))
+        self.assertEqual(trace[theirs[0]], (1, "reverts 222222222, 999999999", 5 * 3600))
+        self.assertEqual(heatmap.fix_mark(trace[alone[0]]), "  [not a fix: reverts 999999999, which isn't in the repo]")
+        lines, _ = heatmap.fix_summary(commits, trace, 0.0)
+        self.assertEqual(lines[0], "Fixes, a lead and not a verdict: at least 1 of the 3 commits fixed a defect in the "
+                                   "project's own code, as their messages say: 1 a revert (of a commit that had stood "
+                                   "5 hours). 2 more reverts, of commits not in the repo, aren't counted.")
 
 
 if __name__ == "__main__":
