@@ -122,7 +122,6 @@ class Reverts(unittest.TestCase):
         marks = marks_of(support.run("heatmap.py", "-C", repo.path, "--show", "a.py").out)
         self.assertEqual(marks['Revert "Speed up a"'], "not a fix: its author withdraws %s" % repo.short(mine))
 
-    @unittest.expectedFailure
     def test_a_revert_of_a_commit_before_the_window(self):
         # Read from the repo, where the window doesn't reach it: who made it and when. One the repo hasn't, as a
         # shallow clone's, can't say whose change it undid, nor when, and isn't counted.
@@ -218,7 +217,6 @@ class OneCommit(unittest.TestCase):
         self.assertEqual(trace[both[0]], (1, "reverts 111111111, 222222222", 3))
         self.assertEqual(trace[mine[0]], (0, "its author withdraws 111111111, 333333333", None))
 
-    @unittest.expectedFailure
     def test_a_revert_of_a_commit_not_in_the_repo(self):
         # Whose change it undid can't be told, so it isn't counted, unless another commit it names is another's.
         heatmap = self.heatmap

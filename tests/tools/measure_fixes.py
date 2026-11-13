@@ -58,7 +58,9 @@ class Repo(object):
 # 2026-11-12 from that day's numbers, two points under them; the tagged set's on 2026-11-13, django's dev recall
 # then, when code in a docs folder became code, and the revert set's of gin, pinia and hutool, when a re-landing
 # came to read as nothing and a revert without git's line by its own words; gin's revert set's again when the
-# commits reverts name from outside the window came to be read, as the heatmap reads them.
+# commits reverts name from outside the window came to be read, as the heatmap reads them, and django's when a
+# revert of a commit not in the repo came not to be counted: its clone is 800 commits deep, and one revert names
+# a commit 960 back.
 REPOS = [
     Repo("flask", "https://github.com/pallets/flask", "49943b5a94413a530761350f04e896f76e8d620e", 4000,
          {"dev": (83, 48), "revert": (48, 18), "word": (78, 73)}),
@@ -67,7 +69,7 @@ REPOS = [
     Repo("pinia", "https://github.com/vuejs/pinia", "4817135a25431172d363bd928476db7cdbf875c4", 3000,
          {"dev": (98, 90), "revert": (98, 73)}),
     Repo("django", "https://github.com/django/django", "a0f2e29e0a98ee14aa808ebe38ec5fb79c8af71f", 800,
-         {"dev": (91, 58), "revert": (98, 64), "word": (91, 91)}),
+         {"dev": (91, 58), "revert": (98, 31), "word": (91, 91)}),
     Repo("lua", "https://github.com/lua/lua", "8cb93bada561977eb370819e39d7d644e5fd0a3f", 4000,
          {"dev": (92, 56), "word": (73, 73)}),
     Repo("ripgrep", "https://github.com/BurntSushi/ripgrep", "178cc027e283fd965cb72d0a7395b219eada170c", 2500,

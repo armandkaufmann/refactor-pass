@@ -844,6 +844,9 @@ def outside_window(repo, commits, window):
     return dict((n, find_commit(read, n)) for n in names if find_commit(read, n))
 
 
+NOT_IN_REPO = ("isn't in the repo", "aren't in the repo")  # A revert's commits, as fix_trace says them.
+
+
 def fix_trace(commits, window, typed, is_test=None, outside=None, tops=None):
     """Per commit, how it reads: (tier, what said so, the seconds a reverted commit stood or None). Tier 1 is a
     revert, 2 a fix by its type, 3 by its words; 0 not a fix, with why not, or "" when nothing said either way.
@@ -888,8 +891,13 @@ def fix_trace(commits, window, typed, is_test=None, outside=None, tops=None):
         typed_said = CONVENTIONAL.match(said)
         if says(said)[1] or (typed_said and (typed_said.group("type") or "").lower() in CHORE_TYPES):
             return 0, "reverts a change that isn't to the code", None
+        named = ", ".join(t[:9] for t in targets)
         other = next((b for b in befores if b is not None and not same_person(b[4], author)), None)
-        return 1, "reverts %s" % ", ".join(t[:9] for t in targets), (stamp - other[1]) if other else None
+        if other is None:  # One it names isn't in the repo, as a shallow clone's: whose change it undid is unknown.
+            missing = [t[:9] for t, before in zip(targets, befores) if before is None]
+            return 0, "reverts %s, %s %s" % (named, "which" if len(missing) == len(targets) else
+                                             "of which %s" % ", ".join(missing), NOT_IN_REPO[len(missing) > 1]), None
+        return 1, "reverts %s" % named, stamp - other[1]
 
     return dict((c[0], read(c)) for c in commits)
 
@@ -922,8 +930,6 @@ def fix_mark(found, files=None):
     tier, what, stood = found
     if tier == 1 and stood is not None:
         what += ", %s after it" % how_long(stood)
-    elif tier == 1:
-        what += ", from before the window"
     if tier and files:
         what += "; not counted by file: it changed %d files" % files
     return "  [%s: %s]" % (("fix, " + {1: "revert", 2: "type", 3: "words"}[tier]) if tier else "not a fix",
@@ -939,7 +945,8 @@ NEARLY_ALL = 0.9
 
 def fix_summary(commits, fixes, typed):
     """The header's two lines on the fixes trace, and its facts for the page. The first: how many commits read
-    as fixes and how, at least, since many fixes don't say so. The second: where the subjects can't tell a fix
+    as fixes and how, at least, since many fixes don't say so, and the reverts not counted, an author's
+    withdrawals and those of a commit not in the repo. The second: where the subjects can't tell a fix
     from anything else, that; the share of subjects with a type, and so how near complete the count is; and how
     many more commits close an issue without saying what kind of change."""
     tiers = Counter(found[0] for found in fixes.values())
@@ -952,9 +959,9 @@ def fix_summary(commits, fixes, typed):
         reverts += " (of commits that had stood %s" % (and_list([how_long(t) for t in known]) if len(known) <= 3
                                                        else "a median %s" % how_long(known[len(known) // 2]))
     if known:
-        reverts += "%s)" % ("; %d from before the window" % (len(stood) - len(known)) if len(known) < len(stood)
-                            else "")
+        reverts += ")"
     withdrawn = sum(1 for found in fixes.values() if found[1].startswith("its author withdraws"))
+    missing = sum(1 for found in fixes.values() if not found[0] and found[1].endswith(NOT_IN_REPO))
     ways = [way for count, way in ((tiers[1], reverts), (tiers[2], "%d by their type" % tiers[2]),
                                    (tiers[3], "%d by their words" % tiers[3])) if count]
     counted = sum(tiers[t] for t in (1, 2, 3))
@@ -968,6 +975,10 @@ def fix_summary(commits, fixes, typed):
             "1 more revert" if withdrawn == 1 else "%d more reverts" % withdrawn, "its" if withdrawn == 1 else
             "their", "" if withdrawn == 1 else "s", "withdraws it and isn't counted" if withdrawn == 1 else
             "withdraw them and aren't counted")
+    if missing:
+        first += " %s, of %s not in the repo, %s counted." % (
+            "1 more revert" if missing == 1 else "%d more reverts" % missing, "a commit" if missing == 1 else
+            "commits", "isn't" if missing == 1 else "aren't")
     labelled = typed >= LABELLED
     complete = labelled and typed >= NEARLY_ALL
     # Commits that close an issue and say nothing else either way: not one read as no fix for a reason.
