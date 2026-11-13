@@ -664,10 +664,12 @@ NOT_FIX_CHINESE = ["注释", "文档"]
 # Documentation by its name: a changelog, a readme, a licence, release notes and the like, with a documentation
 # extension or one in capitals (COPYING.LESSER), as against src/history.ts or news.py, or with none, where
 # anything after the word needs the word in capitals (LICENSE-MIT, as against bin/license-checker); or Markdown
-# and the like.
+# and the like. Release notes and the words after them need capitals with no extension, as convention writes
+# them: bin/todo is a program.
 DOC_NAMES = re.compile(r"(?P<word>changelog|changes|history|news|authors|contributors|readme|license|copying|"
                        r"contributing|code_of_conduct|release[-_]?notes|notice|thanks|credits|maintainers|todo)"
                        r"(?P<more>[._-][\w.-]*)?$", re.I)
+CAPITALS = re.compile(r"release[-_]?notes|notice|thanks|credits|maintainers|todo", re.I)
 DOC_EXTENSIONS = {"md", "markdown", "rst", "txt", "text", "adoc", "asciidoc", "rdoc", "org", "pod"}
 DOC_FILES = re.compile(r".*\.(?:md|markdown|rst|adoc|asciidoc|rdoc)$", re.I)
 
@@ -704,8 +706,9 @@ def is_doc(path):
     name = path.split("/")[-1]
     _, dot, extension = name.rpartition(".")
     found = DOC_NAMES.match(name)
+    word = found.group("word") if found else ""
     named = found and (extension.lower() in DOC_EXTENSIONS or extension.isupper() if dot else
-                       not found.group("more") or found.group("word").isupper())
+                       word.isupper() or not (found.group("more") or CAPITALS.fullmatch(word)))
     in_docs = set(path.lower().split("/")[:-1]) & {"doc", "docs", "documentation"}
     return bool(named or DOC_FILES.match(name) or in_docs and not (dot and "." + extension.lower() in CODE_EXTENSIONS))
 
