@@ -413,5 +413,65 @@ class InTime(unittest.TestCase):
                 support.stamp(scope_newest)))
 
 
+
+class NewestWork(unittest.TestCase):
+    """The newest work the table leaves out: the files past its top that 2 or more of the window's newest
+    commits changed, those of its last 60 days and no more than its newer half; documentation, tests, CI,
+    build and dependency files, a dist folder's build output, a rename alone and commits of more than
+    --max-files files aside."""
+
+    @classmethod
+    def setUpClass(cls):
+        repo = cls.repo = support.Repo("newest")
+        repo.commit("2026-01-01", "Start", {"big.py": lines(100), "old.py": lines(5), "docs/guide.md": lines(2),
+                                           "tests/test_a.py": lines(2), "dist/bundle.js": lines(1), "moved.py": "m\n"})
+        for day in range(2, 22):  # Busy long ago: big.py, and old.py, which isn't new work.
+            repo.commit("2026-01-%02d" % day, "Grow big on day %d" % day, {"big.py": lines(100 + day),
+                                                                       "old.py": lines(5 + day % 3)})
+        repo.commit("2026-05-01", "Add feature a", {"feature/a.py": lines(10)})
+        repo.commit("2026-05-02", "Add feature b", {"feature/b.py": lines(2)}, rename={"moved.py": "here.py"})
+        for day, files in ((3, ["feature/a.py", "docs/guide.md", "tests/test_a.py"]), (4, ["feature/b.py", "here.py"]),
+                           (5, ["feature/a.py", "docs/guide.md", "tests/test_a.py", "dist/bundle.js"]),
+                           (6, ["dist/bundle.js", "once.py"])):
+            repo.commit("2026-05-%02d" % day, "Work on day %d" % day, dict((f, lines(day)) for f in files))
+        for day in (7, 8):  # Too many files to say which the work was on.
+            repo.commit("2026-05-%02d" % day, "Rename a word everywhere", dict(("wide/%d.py" % n, lines(day))
+                                                                             for n in range(30)))
+        repo.done()
+
+    def listed(self, *args):
+        out = support.run("heatmap.py", "-C", self.repo.path, "--top", "1", *args).out.split("\n")
+        start = [i for i, line in enumerate(out) if line.startswith("Newest work outside the table")]
+        self.assertEqual(len(start), 1, "\n".join(out))
+        return out[start[0]:out.index("", start[0])]
+
+    @unittest.expectedFailure
+    def test_the_newest_work_past_the_top(self):
+        self.assertEqual(self.listed(), [
+            "Newest work outside the table: files past its top 1 that 2 or more of the window's newest 8 commits "
+            "changed (those of its last 60 days, from %s); documentation, tests, and CI, build and dependency files "
+            "aside:" % support.local_day(support.stamp("2026-05-01")),
+            "commits    size  growth  file", "      3       5      +5  feature/a.py",
+            "      2       4      +4  feature/b.py"])
+
+    @unittest.expectedFailure
+    def test_no_more_than_the_newer_half(self):
+        self.assertEqual(self.listed("-n", "4")[0], "Newest work outside the table: files past its top 1 that 2 or "
+                         "more of the window's newest 2 commits changed (its newer half, from %s); documentation, "
+                         "tests, and CI, build and dependency files aside: none." % support.local_day(
+                             support.stamp("2026-05-07")))
+
+    @unittest.expectedFailure
+    def test_ten_at_most(self):
+        repo = support.Repo("newest-many")
+        repo.commit("2026-01-01", "Start", {"big.py": lines(100)})
+        for day in (2, 3):
+            repo.commit("2026-01-%02d" % day, "Change twelve", dict(("f%02d.py" % n, lines(day)) for n in range(12)))
+        repo.done()
+        out = support.run("heatmap.py", "-C", repo.path, "--top", "1").out
+        self.assertEqual(len(re.findall(r"(?m)^      2 .* f\d\d\.py$", out)), 10)
+        self.assertIn("\n  ... 2 more\n", out)
+
+
 if __name__ == "__main__":
     unittest.main()
