@@ -116,15 +116,33 @@ class Shop(unittest.TestCase):
             "a type typically say so for a third to a half of the fixes, and the rest are among the commits --show "
             "leaves unmarked. 1 more commit closes an issue without saying what kind of change."])
 
-    def test_fixes_by_file_at_least(self):
+    @unittest.expectedFailure
+    def test_fixes_by_file(self):
         # util.py: the negative total and the Chinese fix, older, and the revert, in the newer half (the 9
         # newest). app.py: the crash, older, and the rounding. package.json had the rounding too, but it's a
         # dependency file, set aside like documentation and tests.
         self.assertEqual(fix_rows(self.result.out), {"util.py": (3, 1, 1, 0, 2), "app.py": (2, 1, 0, 0, 2)})
-        self.assertIn("Fixes by file, at least: of each file's commits, those whose messages say they fixed a "
-                      "defect in it, and how many of those were in the newer half; documentation, tests, and CI, "
-                      "build and dependency files aside. A floor, not a count: --show FILE --messages gives each "
-                      "commit's message, to read the ones left unmarked.\n", self.result.out)
+        # Neither a floor nor a count of each file's fixes: the commits that say they fixed something, by file.
+        self.assertIn("Fixes by file: of each file's commits, those whose messages say they fixed a defect, and how "
+                      "many of those were in the newer half; documentation, tests, and CI, build and dependency "
+                      "files aside, and commits of more than 25 files, as in the pairs. A lead, not a count of each "
+                      "file's fixes: a fix elsewhere can touch a file in passing, and many fixes don't say so. --show "
+                      "FILE --messages gives each commit's message, to judge.\n", self.result.out)
+
+    @unittest.expectedFailure
+    def test_a_commit_of_more_files_than_max_files_adds_to_no_files_number(self):
+        # As it adds to no pair: one fix that renames an import in 29 other files isn't a fix of each.
+        repo = support.Repo("sweep")
+        files = dict(("src/m%02d.py" % n, lines(3, "m%d" % n)) for n in range(30))
+        repo.commit("2026-01-01", "Start", files)
+        repo.commit("2026-01-02", "Fix the crash on startup", dict((p, lines(4, p)) for p in files))
+        repo.commit("2026-01-03", "Fix the wrong total", {"src/m00.py": lines(5, "m0")})
+        repo.done()
+        out = support.run("heatmap.py", "-C", repo.path).out
+        self.assertIn("at least 2 of the 3 commits fixed a defect", out)
+        self.assertEqual(fix_rows(out), {"src/m00.py": (1, 1, 0, 0, 1)})
+        wide = support.run("heatmap.py", "-C", repo.path, "--max-files", "40", "--top", "40").out
+        self.assertEqual((len(fix_rows(wide)), fix_rows(wide)["src/m00.py"]), (30, (2, 2, 0, 0, 2)))
 
     def test_the_table_of_files_is_as_it_was(self):
         rows = support.heatmap_rows(self.result.out)
