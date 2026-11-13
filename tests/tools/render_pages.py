@@ -4,8 +4,8 @@ default run, since it needs a browser.
 A page fails if its error box shows, or if it shows a different number of items than its pass block holds,
 of file rows than its heatmap block's files, of pair and group rows than its pairs and groups, or of tests
 than its tests; or, in today's template, of fix cells than its file rows where the heatmap counts fixes (and
-any where it doesn't), of items' cited fixes than its items with fixes, or of newer halves they cite than
-their entries give. The pages: one heatmap.py makes in
+any where it doesn't), of items' cited fixes than its items with fixes, or of newer halves or notes they
+cite than their entries give. The pages: one heatmap.py makes in
 a small repo, as made and with a pass written that cites fixes, and that one in the templates of v1.0.0 and
 v1.0.1, as a checklist made by them keeps, taken from their tags; the suite's fixture checklists, their data
 in today's template; a page whose heatmap is in an older format, with no last dates, no bots, no dates on
@@ -103,6 +103,10 @@ def problems(dom, text):
                      if f.get("newer") is not None and (f.get("marked") or f.get("found")))
         if "".join(cited).count("in the newer half") != halves:
             found.append("%d newer halves cited, %d given" % ("".join(cited).count("in the newer half"), halves))
+        notes = [f["note"] for i in data.get("items") or [] for f in i.get("fixes") or [] if f.get("note")]
+        if sum(1 for n in notes if n in "".join(cited)) != len(notes):
+            found.append("%d notes on cited fixes shown, %d given" % (
+                sum(1 for n in notes if n in "".join(cited)), len(notes)))
     title = re.search(r"<title>(.*?)</title>", dom)
     if data.get("project") and (not title or data["project"] not in title.group(1)):
         found.append("the title doesn't name the project")
@@ -135,7 +139,7 @@ def made_pages(folder):
          "cost": {"today": "2", "after": "1"}, "plan": ["Extract Function"], "files": ["src/a.py"], "size": "S",
          "risk": "Low", "verify": "the tests", "commits": [], "outcome": "",
          "fixes": [{"file": "src/a.py", "read": 5, "newer": 1, "marked": ["a1b2c3d"], "found": ["b2c3d4e"],
-                    "dropped": ["c3d4e5f"]},
+                    "dropped": ["c3d4e5f"], "note": "c3d4e5f renamed a call in passing."},
                    {"file": "src/b.py", "read": 5, "newer": None, "marked": [], "found": ["d4e5f6a"], "dropped": []}]},
         {"id": "F1", "status": "done", "title": "Fix it", "note": "x", "commits": ["a1b2c3d"], "outcome": "Done."},
         {"id": "D1", "status": "waiting", "title": "Your call", "note": "x", "commits": [], "outcome": "",

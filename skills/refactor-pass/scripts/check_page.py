@@ -14,7 +14,8 @@ is S, M or L and its risk Low, Medium or High, as the page shows them. An
 item that cites fixes has them per file: how many of its newest commits
 were read (the sample), how many of its fixes are in the newer half (or
 null), the fixes counted that the heatmap marked, those it didn't, and those
-it marked that were left out, each a hash once, no more than were read. The
+it marked that were left out, each a hash once, no more than were read, and
+a note that says why where any were left out. The
 heatmap block is heatmap.py's to write; where it counts fixes (a heatmap
 from before it did has none), those counts are checked too.
 
@@ -59,7 +60,8 @@ EARLIER = {"checklist": str, "results": list}
 RESULT = {"id": str, "title": str, "eases": str, "cost": dict, "change": str, "actual": str, "note": str}
 # An item's fixes, per file: how many of its newest commits were read (the sample), how many of its fixes are in
 # the window's newer half (null where nearly all the sample is), the fixes counted that the heatmap marked, those
-# it didn't (found by reading), and those it marked that weren't fixes of the file.
+# it didn't (found by reading), and those it marked that weren't fixes of the file; and, optional, a note: why
+# those were dropped, how the item's other files ran.
 FIXES = {"file": str, "read": int, "newer": (int, type(None)), "marked": list, "found": list, "dropped": list}
 # The fixes trace's facts in the heatmap block's window, as heatmap.py writes them.
 FIX_FACTS = {"fixes": int, "revert": int, "type": int, "words": int, "typed": (int, float), "labels": bool,
@@ -152,9 +154,9 @@ def is_hash(value):
     return isinstance(value, str) and bool(re.fullmatch(r"[0-9a-f]{7,40}", value))
 
 
-def check_fixes(ident, entries, errors):
+def check_fixes(ident, entries, errors, warnings):
     """An item's fixes: a list with an entry per file, each of the right fields, each commit once, at whatever
-    length, and no more commits listed than were read."""
+    length, and no more commits listed than were read; and a note that says why, where it drops one."""
     if not isinstance(entries, list):
         errors.append("%s's fixes should be a list, an entry per file." % ident)
         return
@@ -163,8 +165,13 @@ def check_fixes(ident, entries, errors):
         errors.append("%s's fixes have %s twice: an entry per file." % (ident, name))
     for i, entry in enumerate(entries):
         where = "%s.fixes[%d]" % (ident, i)
-        if not fields(where, entry, FIXES, errors):
+        if not fields(where, entry, FIXES, errors, optional=("note",)):
             continue
+        if "note" in entry and not isinstance(entry["note"], str):
+            errors.append("%s: 'note' should be text." % where)
+        dropped = [c for c in entry["dropped"] if isinstance(c, str)] if isinstance(entry.get("dropped"), list) else []
+        if dropped and not filled(entry.get("note")):
+            warnings.append("%s drops %s with no note: say why in it." % (where, ", ".join(dropped)))
         if isinstance(entry.get("file"), str) and not entry["file"].strip():
             errors.append("%s: 'file' should name the file." % where)
         cited = [c for key in ("marked", "found", "dropped") if isinstance(entry.get(key), list) for c in entry[key]]
@@ -201,7 +208,7 @@ def check_item(item, page, seen, errors, warnings, spread):
     if "from" in item:
         date("%s's from" % ident, item["from"], errors)
     if "fixes" in item:
-        check_fixes(ident, item["fixes"], errors)
+        check_fixes(ident, item["fixes"], errors, warnings)
     if item.get("fixes") == []:  # The page shows nothing for it.
         warnings.append("%s's fixes cite nothing: leave the field out where an item cites no fixes." % ident)
     if ident[0] == "R":

@@ -81,7 +81,6 @@ class Good(unittest.TestCase):
         self.assertEqual(result.out, "refactors: 2 (1 todo, 1 done)\nsmall fixes: 1 (1 todo)\nlater: 1 (1 todo)\n"
                                      "your call: 1 (1 waiting)\nOK\n")
 
-    @unittest.expectedFailure
     def test_a_note_on_cited_fixes(self):
         # Why a mark was dropped, or how the item's other files ran: text the page shows after its sentence.
         fixes = [dict(item(good(), "R2")["fixes"][0], dropped=["c3d4e5f6a"], note="c3d4e5f6a renamed a call.")]
@@ -186,7 +185,6 @@ class Errors(unittest.TestCase):
                          "R2: commits are hashes of 7 to 40 hex digits, one per commit; not 'abc', 'ABCDEF1', "
                          "'a1b2 c3d'.")
 
-    @unittest.expectedFailure
     def test_a_note_on_cited_fixes_is_text(self):
         fixes = [dict(item(good(), "R2")["fixes"][0], note=["why"])]
         self.assertError(changed(lambda d: item(d, "R2").update(fixes=fixes)), "R2.fixes[0]: 'note' should be text.")
@@ -350,7 +348,6 @@ class Warnings(unittest.TestCase):
         found = [w for w in warnings if all(word in w for word in words)]
         self.assertEqual(len(found), 1, "no single warning with %r in %r" % (words, warnings))
 
-    @unittest.expectedFailure
     def test_a_dropped_mark_with_no_note(self):
         # Step 4 asks why a mark was dropped: the entry's note says it.
         for note in ({}, {"note": " "}):

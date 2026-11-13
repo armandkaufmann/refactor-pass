@@ -416,7 +416,7 @@ function outcome(item) {
 
 // The fixes an item cites as evidence, per file: in a sample of its newest commits, how many fixed a defect in
 // it and how many of those are in the newer half (not said where nearly all the sample is); the fixes the
-// heatmap marked, those found by reading, and those it marked that weren't fixes of the file.
+// heatmap marked, those found by reading, and those it marked that weren't fixes of the file; then its note.
 function cited(item) {
   return list(item.fixes).map(f => {
     const marked = list(f.marked), found = list(f.found), dropped = list(f.dropped);
@@ -425,6 +425,7 @@ function cited(item) {
     const n = marked.length + found.length;
     let text = `${path(f.file)}: ${n || "none"} of its newest ${number(f.read)} commits fixed a defect in it${n && f.newer != null ? `, ${number(f.newer)} of them in the newer half` : ""}${parts.length ? `: ${parts.join(", ")}` : ""}.`;
     if (dropped.length) text += ` ${dropped.length} the heatmap marked ${dropped.length === 1 ? "wasn't a fix" : "weren't fixes"} of it (${shas(dropped)}).`;
+    if (f.note) text += ` ${rich(f.note)}`;
     return text;
   }).join("<br>");
 }
@@ -652,7 +653,8 @@ document.addEventListener("DOMContentLoaded", () => {
         "size": "M", "risk": "Medium",
         "verify": "`make test`; the checkout snapshots",
         "fixes": [{"file": "src/checkout.py", "read": 12, "newer": 2,
-                   "marked": ["a1b2c3d"], "found": ["b2c3d4e", "c3d4e5f"], "dropped": []}],
+                   "marked": ["a1b2c3d"], "found": ["b2c3d4e", "c3d4e5f"], "dropped": ["d4e5f6a"],
+                   "note": "d4e5f6a renamed a call in passing. src/payment.py ran 1 of 12."}],
         "commits": [], "outcome": ""}
        {"id": "Fn", "status": "todo", "title": "…",
         "note": "…",
@@ -664,7 +666,9 @@ document.addEventListener("DOMContentLoaded", () => {
      its fixes are in the newer half (null where nearly all the sample is),
      the fixes counted that the heatmap marked, those it didn't (found by
      reading), and those it marked that weren't fixes of the file, as short
-     hashes; leave it out otherwise.
+     hashes, and a "note" saying why for those and how the item's other
+     files ran, if they differ much; leave it out otherwise. The page words
+     the counts, so the item's other fields don't repeat them.
      After an earlier pass, "earlier" says what came of its refactors:
        {"checklist": ".refactor-pass/2026-11-03.html", "results": [
         {"id": "Rn", "title": "…", "eases": "…", "cost": {"today": "…", "after": "…"},
