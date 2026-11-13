@@ -857,13 +857,13 @@ NOT_IN_REPO = ("isn't in the repo", "aren't in the repo")  # A revert's commits,
 
 
 def fix_trace(commits, window, typed, is_test=None, outside=None, tops=None):
-    """Per commit, how it reads: (tier, what said so, the seconds a reverted commit stood or None). Tier 1 is a
-    revert of another's commit, 2 a fix by its type, 3 by its words; 0 not a fix, with why not, or "" when
-    nothing said either way. A revert of its author's own commits is a withdrawal, not a fix, and one of a commit
-    not in the repo isn't counted, unless its type, where types are read, says fix.
-    window is every commit read, newest first, where a reverted commit is looked for, and outside those named
-    from outside it (outside_window); is_test tells a test, and tops (package_tops) a setup.py that's a
-    manifest."""
+    """Per commit, how it reads: (tier, what said so, the seconds a reverted commit stood, or None where it's not
+    a revert or that commit is dated after it). Tier 1 is a revert of another's commit, 2 a fix by its type, 3 by
+    its words; 0 not a fix, with why not, or "" when nothing said either way. A revert of its author's own
+    commits is a withdrawal, not a fix, and one of a commit not in the repo isn't counted, unless its type, where
+    types are read, says fix. window is every commit read, newest first, where a reverted commit is looked for,
+    and outside those named from outside it (outside_window); is_test tells a test, and tops (package_tops) a
+    setup.py that's a manifest."""
     is_test = is_test or (lambda path: scoping.is_test(path, [], []))
     by_sha = dict((c[0], c) for c in window)
     outside = outside or {}
@@ -911,7 +911,8 @@ def fix_trace(commits, window, typed, is_test=None, outside=None, tops=None):
             missing = [t[:9] for t, before in zip(targets, befores) if before is None]
             which = "which" if len(missing) == len(targets) else "of which " + ", ".join(missing)
             return fix_type or (0, "reverts %s, %s %s" % (named, which, NOT_IN_REPO[len(missing) > 1]), None)
-        return 1, "reverts %s" % named, stamp - other[1]
+        stood = stamp - other[1]
+        return 1, "reverts %s" % named, stood if stood >= 0 else None  # Not said where it's dated after the revert.
 
     return dict((c[0], read(c)) for c in commits)
 

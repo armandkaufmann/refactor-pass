@@ -234,7 +234,6 @@ class OneCommit(unittest.TestCase):
         self.assertEqual(heatmap.fix_trace([back], [back, land], False)[back[0]],
                          (0, "its author withdraws 111111111", None))
 
-    @unittest.expectedFailure
     def test_a_revert_dated_before_the_commit_it_names(self):
         # As a rebase or a clock can date them: how long that commit stood isn't said, nor counted in the header.
         heatmap = self.heatmap
