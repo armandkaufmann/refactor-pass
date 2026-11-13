@@ -234,6 +234,21 @@ class OneCommit(unittest.TestCase):
         self.assertEqual(heatmap.fix_trace([back], [back, land], False)[back[0]],
                          (0, "its author withdraws 111111111", None))
 
+    @unittest.expectedFailure
+    def test_a_fix_type_doesnt_make_a_revert_of_a_chore_a_fix(self):
+        # As another's revert of one isn't: the change it undid wasn't to the code.
+        heatmap = self.heatmap
+
+        def commit(n, subject, author, body=""):
+            return (str(n) * 40, n, subject, [("a.py", None, 1, 0)], author, body)
+        land = commit(1, "docs: tidy the guide", "Ann <a@b>")
+        line = "This reverts commit %s.\n" % land[0]
+        own, others = commit(2, 'fix: revert "docs: tidy the guide"', "Ann <a@b>", line), \
+            commit(3, 'fix: revert "docs: tidy the guide"', "Bob <b@c>", line)
+        trace = heatmap.fix_trace([own, others], [others, own, land], True)
+        self.assertEqual(trace[own[0]], (0, "its author withdraws 111111111", None))
+        self.assertEqual(trace[others[0]], (0, "reverts a change that isn't to the code", None))
+
     def test_a_revert_dated_before_the_commit_it_names(self):
         # As a rebase or a clock can date them: how long that commit stood isn't said, nor counted in the header.
         heatmap = self.heatmap
