@@ -229,7 +229,6 @@ class NothingAboutTheSuite(unittest.TestCase):
                 with self.subTest(document=os.path.basename(path), name=name):
                     self.assertNotIn(name, text)
 
-    @unittest.expectedFailure
     def test_the_scripts(self):
         # An installed copy has the skill alone: a script names nothing of the suite, in a comment either. It
         # can name the record an installed copy holds, which scoping.py looks for.

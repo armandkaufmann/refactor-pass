@@ -583,8 +583,8 @@ def line_counts(repo, wanted):
 
 
 # The fixes trace: which commits fixed a defect in the project's own code, as their messages say. Each rule
-# here was measured on commits labelled fix or not by reading their messages and diffs
-# (tests/tools/measure_fixes.py), and a word or an exclusion stays only where, dropped alone, it took away
+# here was measured on commits of public repos labelled fix or not by reading their messages and diffs, and
+# a word or an exclusion stays only where, dropped alone, it took away
 # more right calls than wrong ones (修复, fix, at one each, shares most commits with 问题).
 #
 # A type at the start of a subject: Conventional Commits' (fix(scope)!: ..., or with a full-width colon), a
