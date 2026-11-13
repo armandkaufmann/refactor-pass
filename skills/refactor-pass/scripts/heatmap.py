@@ -64,91 +64,43 @@ or internal paths is tied to their internals, while a broad test that
 follows features through them, or follows files that already change
 together, isn't.
 
-And the fixes: of the window's counted commits, those that fixed a defect in
-the project's own code, as their messages say, and per file how many of its
-commits did and how many of those were in the newer half, most first. A fix
-here corrects a defect in the project's own code: wrong behaviour, a crash, a
-security hole, a regression; a compile or type error in the code; a guard
-against a failure that could happen as the code stood; something callers
-already relied on that was missing, even where the fix adds something new.
-Code that builds or packages the project is its code; its manifests, CI and
-dependency files aren't. A commit that changed only documentation, tests, or
-CI, build or dependency files never counts, and the table of fixes by file
-sets those files aside. The counts are at least that
-many: many fixes don't say so, and the rest are among the commits --show
-leaves unmarked. It's a lead, not a verdict. A commit counts once, the
-strongest way it reads:
+And the fixes: the commits whose messages say they fixed a defect in the
+project's own code (wrong behaviour, a crash, a security hole, a regression,
+a compile or type error, a guard against a failure that could happen as the
+code stood), and per file how many of its commits did, and how many of those
+in the newer half. One that changed only documentation, tests, or CI, build
+or dependency files never counts, and the table sets those files aside. A
+lead and a floor: many fixes don't say so. Each counts once, as the first of
+these that it reads as:
 
-  revert  its subject says revert, and its body "This reverts commit <hash>"
-          as git writes it, of another author's commit. A revert of a commit
-          by its own author withdraws it and isn't counted; a revert of a
-          revert re-lands a change and reads as that change does; a revert of
-          a change to the docs or of a chore isn't a fix
-  type    its subject's type says fix (fix:, fix(scope)!:, hotfix:, bugfix:,
-          [fix], the bug emoji), read only where at least half the window's
-          subjects carry a type, as with Conventional Commits. There another
-          type (feat:, docs:, [Feature], a gitmoji ...) says it isn't a fix,
-          and so do fix(deps):, fix(ci): and fix(docs):. A tag in brackets
-          that isn't a type ([clang], [SPARK-1], [hotfix]) is passed over, and
-          the subject read without it; an emoji that isn't a gitmoji is no type
+  revert  its subject says revert and its body "This reverts commit <hash>",
+          of another author's commit; a revert of the author's own withdraws
+          it and isn't counted, one of a revert reads as what it re-lands,
+          and one of a change to the docs or of a chore isn't a fix
+  type    its type says fix (fix:, fix(scope)!:, hotfix:, bugfix:, [fix], the
+          bug emoji), read where at least half the subjects carry a type;
+          there another type (feat:, [Feature], a gitmoji ...) or fix(deps):,
+          fix(ci): or fix(docs): says it isn't. A tag that isn't a type
+          ([clang], [SPARK-1], [hotfix]) is passed over
   words   its subject says fix, bug, error, wrong, correct, crash, overflow,
           CVE, prevent, problem or mistake, in any of their forms, or 修复,
-          修正, 漏洞, 问题, 越界 or 空指针; and not typo, formatting, lint,
-          docs, warning, release, error message, 注释 or 文档. An issue closed
-          or named (Fixed #12 --, issue #12) and code (in backticks, or an
-          identifier such as should_ignore_error) say nothing
+          修正, 漏洞, 问题, 越界 or 空指针, and not typo, formatting, lint,
+          docs, warning, release, error message, 注释 or 文档; an issue
+          closed (Fixed #12 --) and code say nothing
 
-The header says how many commits read each way; the share of subjects with a
-type, and so whether the count is close to complete (where 90% or more carry
-one) or a floor; and how many
-more close an issue without saying what kind of change, as Django's Fixed #12
-does. Where most subjects are a word or two, it says the messages can't be
-read for fixes, and lists no files. --no-fixes leaves it all out.
+The header says the share of subjects with a type, and so whether the count
+is close to complete (90% or more carry one) or a floor. On commits labelled
+by hand, about 9 in 10 of those it marks are fixes; it finds nearly all the
+fixes where subjects carry a type, and typically a third to a half where they
+don't (references/smells.md, Counting fixes, has the account).
 
-How far it goes, as measured on commits labelled by reading their message and
-diff: 1,023 commits of ten public repos, labelled by one reader, and 252 of
-nine others, labelled by two readers who agreed on 248. Of the commits it
-reads as fixes, about 9 in 10 are fixes of the project's code (95% of the 490
-the rules were written from, 96% of 180 kept aside, 91% of those that touch
-the code in the nine others). How many of the fixes it finds depends on how a
-repo writes its messages: nearly all where subjects carry a type (88% to 100%
-in four such repos); typically a third to a half where they don't (33% to
-64% in six of seven such repos, 80% in one whose subjects nearly always say
-fix); 35% over the nine others, one of them typed; and none of 14 in one
-whose subjects name the area and the new behaviour, and whose bodies say what
-was wrong. Reading closes most of the gap: in one measurement, an agent given
-those 252 commits and the definition found 72% of the fixes from their
-subjects (43 of its 44 calls right) and 83% from their whole messages (all 50
-calls right), and wanted the diff for 21 commits; reading as SKILL.md's step
-4 does, with the diffs where the messages fell short, it found 56 of the 60
-(56 of its 57 calls right), overruling four of the script's marks, and with
-each file's own changes from --diffs, 55 of the 60 (55 of 56 right), reading
-less than half as much. The labels it was scored against came from the same
-kind of model reading the diffs, which flatters agreement: one measurement,
-not an accuracy. On five of a busy project's files, judging up to 12 commits
-of each (55 in all, 15 of them with their diffs) took about 60,000 tokens and
-two minutes; a file's listing is a few thousand bytes (8,678 for redis's
-src/server.c, whose 99 commits in an 800-commit window take 65,878).
-
---show FILE prints a file's commits in the window instead, newest first, to
-read the reasons it keeps changing: each with its hash as git show takes it,
-its date, newer or older (in the window's newer half or not), its subject
-(cut at 200 characters, saying how many more), and how it reads as a fix, or
-why not where it might have. --messages lists
-the file's newest 12 commits, a sample to judge whole (--newest N for
-another number; the first line says how many more there are), and under each
-what it changed (lines added and removed in the file, and how many other
-files, how many of them tests) and its message without who signed, reviewed
-or co-wrote it, cut at 12 lines, so they can be read without running git
-once each. Facts, not a verdict; on the commits the trace leaves unmarked,
-one that changed a test too was a fix about twice as often as one that
-didn't (45% against 24% in the labelled commits), and one of over 200 lines
-rarely (1 of 20). --diffs SHA,SHA, with one --show, gives just those of the
-commits --messages lists, each with its changes to the file under the name
-it had then, cut at 60 lines, in one call. The file is one git tracks,
-or one a commit in the window changed, as one deleted in it; a name a file
-had before a rename in the window means it as it's named today. Any other is
-an error, as a scope is.
+--show FILE prints a file's commits in the window instead, newest first, each
+with its hash, date, half (newer or older), subject (cut at 200 characters)
+and how it reads as a fix; --messages adds what each changed and its message,
+cut at 12 lines, without who signed, reviewed or co-wrote it. The file is one
+git tracks, or one a commit in the window changed, as one deleted in it; a
+name a file had before a rename in the window means it as it's named today.
+Any other is an error, as a scope is.
 
 History is followed across renames, so a file moved or renamed in the window
 keeps the changes it had under its old name. Merge commits are skipped, and so
@@ -1253,19 +1205,18 @@ def main():
     parser.add_argument("--show", action="append", default=[], metavar="FILE",
                         help="print this file's commits in the window (its name today), instead of the heatmap")
     parser.add_argument("--messages", action="store_true",
-                        help="with --show, each commit's message after its subject too, under its line, to read "
-                             "without running git once per commit, with what it changed in the file and in others")
+                        help="with --show, the file's newest %d commits, each with what it changed and its "
+                             "message" % SAMPLE)
     parser.add_argument("--newest", type=scoping.count(1), metavar="N",
-                        help="with --show, list only the file's newest N commits in the window (with --messages, "
-                             "the newest %d unless given), and with --diffs take only those" % SAMPLE)
+                        help="with --show, the file's newest N commits (with --messages, %d unless given); "
+                             "--diffs takes only those" % SAMPLE)
     parser.add_argument("--diffs", metavar="SHAS",
-                        help="with one --show FILE, only these of its commits (comma-separated hashes, as --show "
-                             "prints them), each with its changes to that file, under the name it had then, cut at "
-                             "%d lines: one call for the commits whose messages don't settle what they were"
+                        help="with one --show FILE, these of the commits it lists (comma-separated hashes), each "
+                             "with its changes to the file, under the name it had then, cut at %d lines, in one call"
                              % DIFF_LINES)
     parser.add_argument("--no-fixes", action="store_true",
-                        help="leave out the fixes trace: the header's count of the commits that read as fixes, the "
-                             "table of fixes by file, and --show's marks")
+                        help="leave out the fixes trace: the header's count, the table of fixes by file and "
+                             "--show's marks")
     parser.add_argument("--checklists", action="store_true",
                         help="list the checklists in every worktree's .refactor-pass/, newest first, with their "
                              "items' statuses, and the name a new one takes, and stop; needs no scope")

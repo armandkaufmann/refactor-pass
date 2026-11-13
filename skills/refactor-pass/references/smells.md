@@ -241,6 +241,36 @@ How to judge a commit's change to a file when counting the file's fixes
   the file, and its last line names the `git show <hash> -- <file>` that
   shows the rest. A count rarely needs it.
 
+**How far the script's marks go**, as measured on commits labelled by
+reading their message and diff: 1,023 commits of ten public repos, labelled
+by one reader, and 252 of nine others, labelled by two readers who agreed on
+248. Of the commits it reads as fixes, about 9 in 10 are fixes of the
+project's code (95% of the 490 the rules were written from, 96% of 180 kept
+aside, 91% of those that touch the code in the nine others). How many of the
+fixes it finds depends on how a repo writes its messages: nearly all where
+subjects carry a type (88% to 100% in four such repos); typically a third to
+a half where they don't (33% to 64% in six of seven such repos, 80% in one
+whose subjects nearly always say fix); 35% over the nine others, one of them
+typed; and none of 14 in one whose subjects name the area and the new
+behaviour, and whose bodies say what was wrong. On the commits it leaves
+unmarked, one that changed a test too was a fix about twice as often as one
+that didn't (45% against 24% in the labelled commits), and one of over 200
+lines rarely (1 of 20).
+
+Reading closes most of the gap: in one measurement, an agent given those 252
+commits and the definition found 72% of the fixes from their subjects (43 of
+its 44 calls right) and 83% from their whole messages (all 50 calls right),
+and wanted the diff for 21 commits; reading as step 4 does, with the diffs
+where the messages fell short, it found 56 of the 60 (56 of its 57 calls
+right), overruling four of the script's marks, and with each file's own
+changes from `--diffs`, 55 of the 60 (55 of 56 right), reading less than
+half as much. The labels it was scored against came from the same kind of
+model reading the diffs, which flatters agreement: one measurement, not an
+accuracy. On five of a busy project's files, judging up to 12 commits of
+each (55 in all, 15 of them with their diffs) took about 60,000 tokens and
+two minutes; a file's listing is a few thousand bytes (8,678 for redis's
+`src/server.c`, whose 99 commits in an 800-commit window take 65,878).
+
 ## Bloaters
 
 ### Long Function
