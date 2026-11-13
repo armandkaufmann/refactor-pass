@@ -574,6 +574,14 @@ class Words(unittest.TestCase):
                            ("AUTHORS.txt", doc), ("README.zh-CN.md", doc), ("Changes", doc)]:
             self.assertEqual(not_code(path, lambda p: False), kind, path)
 
+    @unittest.expectedFailure
+    def test_a_requirements_folder_names_dependencies(self):
+        # As open-mmlab keeps them: requirements/runtime.txt, requirements/tests.txt.
+        chore = "CI, build or dependency files"
+        for path, kind in [("requirements/tests.txt", chore), ("requirements/runtime.in", chore),
+                           ("requirements/check.py", None)]:
+            self.assertEqual(self.heatmap.not_code(path, lambda p: False), kind, path)
+
     def test_open_mmlabs_types_in_brackets(self):
         # As mmengine writes them: [Fix], [Feature], [Enhance], [Improve], [Refactor], [Docs], [Test].
         for word in ("Feature", "Enhance", "Improve", "Refactor", "Docs", "Test"):
