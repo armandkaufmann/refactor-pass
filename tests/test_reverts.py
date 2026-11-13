@@ -234,7 +234,6 @@ class OneCommit(unittest.TestCase):
         self.assertEqual(heatmap.fix_trace([back], [back, land], False)[back[0]],
                          (0, "its author withdraws 111111111", None))
 
-    @unittest.expectedFailure
     def test_a_fix_type_doesnt_make_a_revert_of_a_chore_a_fix(self):
         # As another's revert of one isn't: the change it undid wasn't to the code.
         heatmap = self.heatmap

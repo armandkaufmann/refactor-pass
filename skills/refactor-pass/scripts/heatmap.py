@@ -899,15 +899,17 @@ def fix_trace(commits, window, typed, is_test=None, outside=None, tops=None):
         befores = [find(target, quoted, stamp) for target in targets]
         if any(before is not None and reverted(before) for before in befores):
             return 0, "re-lands a change", None
-        # A fix by the type its author gave it, where the commits it names don't make it a revert of another's.
-        kind = type_of(subject) if typed else None
+        said = quoted or (befores[0][2] if befores[0] else "")
+        typed_said = CONVENTIONAL.match(said)
+        chore = says(said)[1] or (typed_said and (typed_said.group("type") or "").lower() in CHORE_TYPES)
+        # A fix by the type its author gave it, where the commits it names don't make it a revert of another's,
+        # and the change it undid was to the code.
+        kind = type_of(subject) if typed and not chore else None
         fix_type = (2, kind[1], None) if kind and kind[0] == "fix" else None
         # Its author's withdrawal where every commit it names is theirs; a revert where one is another's.
         if all(before is not None and same_person(before[4], author) for before in befores):
             return fix_type or (0, "its author withdraws %s" % ", ".join(before[0][:9] for before in befores), None)
-        said = quoted or (befores[0][2] if befores[0] else "")
-        typed_said = CONVENTIONAL.match(said)
-        if says(said)[1] or (typed_said and (typed_said.group("type") or "").lower() in CHORE_TYPES):
+        if chore:
             return 0, "reverts a change that isn't to the code", None
         named = ", ".join(t[:9] for t in targets)
         other = next((b for b in befores if b is not None and not same_person(b[4], author)), None)
