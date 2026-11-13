@@ -274,7 +274,7 @@ c617b6241 n 0 CI
 35f5df63e n 0 feature: custom delimiters (the
 03a76c00e n 0 vendored dependencies
 049da60f5 n 0 release (the body's reverts are
-fabe3df78 f 3 re-lands logger colours off for
+fabe3df78 f 0 re-lands logger colours off for
 041ca04a4 f 1 backs out the logger change that
 63b5d1c4c f 1 backs out the App Engine patch
 19f271c86 f 1 backs out the logger change that
@@ -375,7 +375,7 @@ d715bda41 n 0 feature: exports piniaSymbol
 @ pinia revert
 dd146d995 n 0 backs out a docs dependency bump
 938d38919 n 0 backs out dependency bumps
-48a2ca380 f 2 re-lands a storeToRefs return
+48a2ca380 f 0 re-lands a storeToRefs return
 f550c6080 f 1 backs out a type change that
 300016120 f 2 backs out a type declaration
 2337130b0 n 0 backs out a dependency bump
@@ -787,12 +787,12 @@ f37644942 f 0 media URLs with query strings got
 76c9f48e8 f 3 randomEle threw on null input in
 
 @ hutool revert
-5dfbdbbd6 f 3 backs out a fix judged wrong
+5dfbdbbd6 f 0 backs out a fix judged wrong
 3fc7937f9 f 0 backs out an optimization that
 dc038f235 n 0 withdraws a feature
 7467a2cb5 n 0 backs out a rename
 8b3f6ba93 n 0 contributor backs out their own
-6b459c94a f 3 backs out a punycode change
+6b459c94a f 0 backs out a punycode change
 2a3686631 n 0 withdraws a feature
 8d2e4c3b4 n 0 withdraws a feature
 ec6eb82a6 n 0 withdraws a feature

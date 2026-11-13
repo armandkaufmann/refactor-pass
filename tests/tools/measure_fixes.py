@@ -55,15 +55,16 @@ class Repo(object):
 
 
 # The floors, in percent: per set, precision and recall of fixes of the project's own code. Recorded on
-# 2026-11-12 from that day's numbers, two points under them; the tagged set's on 2026-11-13, and django's dev
-# recall then, when code in a docs folder became code.
+# 2026-11-12 from that day's numbers, two points under them; the tagged set's on 2026-11-13, django's dev recall
+# then, when code in a docs folder became code, and the revert set's of gin, pinia and hutool, when a re-landing
+# came to read as nothing and a revert without git's line by its own words.
 REPOS = [
     Repo("flask", "https://github.com/pallets/flask", "49943b5a94413a530761350f04e896f76e8d620e", 4000,
          {"dev": (83, 48), "revert": (48, 18), "word": (78, 73)}),
     Repo("gin", "https://github.com/gin-gonic/gin", "0f09c3a9b4626d9fe9979cf4d0521d6ae32ab646", 2500,
-         {"dev": (91, 85), "revert": (88, 98), "word": (98, 98)}),
+         {"dev": (91, 85), "revert": (86, 86), "word": (98, 98)}),
     Repo("pinia", "https://github.com/vuejs/pinia", "4817135a25431172d363bd928476db7cdbf875c4", 3000,
-         {"dev": (98, 90), "revert": (98, 98)}),
+         {"dev": (98, 90), "revert": (98, 73)}),
     Repo("django", "https://github.com/django/django", "a0f2e29e0a98ee14aa808ebe38ec5fb79c8af71f", 800,
          {"dev": (91, 58), "revert": (98, 64), "word": (91, 91)}),
     Repo("lua", "https://github.com/lua/lua", "8cb93bada561977eb370819e39d7d644e5fd0a3f", 4000,
@@ -71,7 +72,7 @@ REPOS = [
     Repo("ripgrep", "https://github.com/BurntSushi/ripgrep", "178cc027e283fd965cb72d0a7395b219eada170c", 2500,
          {"dev": (98, 31), "revert": (98, 48), "word": (98, 98)}),
     Repo("hutool", "https://github.com/chinabugotech/hutool", "87ec11862baae72914df703e25939eb44a8a843c", 4000,
-         {"dev": (94, 78), "revert": (98, 64), "word": (92, 88)}),
+         {"dev": (94, 78), "revert": (98, 0), "word": (92, 88)}),
     Repo("requests", "https://github.com/psf/requests", "3c7baaa05ab4aa49cc819ce3a819d260de19c157", 1000,
          {"aside": (98, 36)}),
     Repo("nest", "https://github.com/nestjs/nest", "afa6e3d3801f58750dc80ad0970c0bc52850ed2a", 1000,
