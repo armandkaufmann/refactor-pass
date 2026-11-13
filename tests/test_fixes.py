@@ -675,7 +675,6 @@ class Words(unittest.TestCase):
                            ("requirements/check.py", None)]:
             self.assertEqual(self.heatmap.not_code(path, lambda p: False), kind, path)
 
-    @unittest.expectedFailure
     def test_a_type_in_brackets_is_a_word_where_types_arent_read(self):
         # [BugFix] reads as [bugfix] does, not as an identifier. [HotFix] is passed over, as Flink's [hotfix] is.
         read_fix = self.heatmap.read_fix
