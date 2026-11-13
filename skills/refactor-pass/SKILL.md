@@ -233,16 +233,18 @@ same `--show`s with `--diffs <hash>,<hash>`.
 
 Within the sample the count is a count, not a floor: evidence that the file
 breaks when it's touched, to weigh with its churn, size and smells, never an
-item on its own. An item that cites it says "7 of its newest 12 commits
-fixed a defect in it, 5 of them in the newer half" ("of its 11 commits in
-the window" where it has fewer), and, where the files differ much, how the
-others ran ("the other four ran 2 to 4 of 12"). It records each file in
-`fixes`: the sample's size (`read`), how many fixes are in the newer half
-(`newer`; null, and not said, where the line under the listing's header says
-so), and, as lists of short hashes, the fixes you count that the script
-marked (`marked`) or didn't (`found`), and those it marked that you don't
-(`dropped`), saying why. Where the header says the messages can't be read,
-say nothing of fixes.
+item on its own. An item that cites it records each file in `fixes`: the
+sample's size (`read`), how many fixes are in the newer half (`newer`; null,
+and not said, where the line under the listing's header says so), and, as
+lists of short hashes, the fixes you count that the script marked
+(`marked`) or didn't (`found`), and those it marked that you don't
+(`dropped`); and a short `note` for what those don't say: why each one was
+dropped, and, where the files differ much, how the others ran ("the other
+four ran 2 to 4 of 12"). The page words the record ("7 of its newest 12
+commits fixed a defect in it, 5 of them in the newer half"), so the item's
+other fields don't repeat it; your report to the user says that sentence
+("of its 11 commits in the window" where it has fewer). Where the header
+says the messages can't be read, say nothing of fixes.
 
 Then apply the restraint. A reviewer asked to find problems will always find
 something, and fixing every finding leaves extra layers and tests for cases
@@ -344,8 +346,8 @@ Then reply with:
 - two or three sentences on the overall state, good parts included;
 - the top three to five hot spots as a small table (file, lines as the
   heatmap's `size` gives them, commits);
-- the R items as a numbered list: title, smells, size, risk, and the next
-  change's cost today and after;
+- the R items as a numbered list: title, smells, the fixes it cites (step
+  4's sentence), size, risk, and the next change's cost today and after;
 - the F and D items in brief;
 - what you left alone and why, in a line or two;
 - the suggested order, and where the checklist is;
