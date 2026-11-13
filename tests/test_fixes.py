@@ -463,18 +463,17 @@ class Diffs(unittest.TestCase):
         self.assertIn("Change it again\n      @@ -1,2 +1,2 @@\n       a\\x00B\n      -c\n      +C\n", result.out)
         self.assertIn("Change it\n      @@ -1,2 +1,2 @@\n      -a\\x00b\n      +a\\x00B\n       c\n", result.out)
 
-    @unittest.expectedFailure
     def test_a_long_subject_is_cut(self):
         # Git's subject is the message's first paragraph, which can run on: each is cut at 200 characters.
         repo = support.Repo("long")
         repo.commit("2026-01-01", "Start " + "x" * 400, {"a.py": lines(3)})
         crash = repo.commit("2026-01-02", "Fix the crash\nwhen the cart\nis empty, " + "y" * 300, {"a.py": lines(4)})
         repo.done()
-        for args in (["--messages"], ["--diffs", repo.short(crash)]):
+        for args in (["--diffs", repo.short(crash)], ["--messages"]):
             out = support.run("heatmap.py", "-C", repo.path, "--show", "a.py", *args).out
             self.assertIn("Fix the crash when the cart is empty, %s... (138 more characters)  [fix, words: fix, crash]"
                           % ("y" * 162), out)
-        self.assertIn("Start %s... (206 more characters)\n" % ("x" * 194), out)
+        self.assertIn("Start %s... (206 more characters)\n" % ("x" * 194), out)  # As --messages lists it.
 
     def test_the_lines_a_file_gives(self):
         # As file_diffs reads git show's output: one call for several commits, each commit's section of the file.

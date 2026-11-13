@@ -132,8 +132,9 @@ src/server.c, whose 99 commits in an 800-commit window take 65,878).
 
 --show FILE prints a file's commits in the window instead, newest first, to
 read the reasons it keeps changing: each with its hash as git show takes it,
-its date, newer or older (in the window's newer half or not), its subject,
-and how it reads as a fix, or why not where it might have. --messages lists
+its date, newer or older (in the window's newer half or not), its subject
+(cut at 200 characters, saying how many more), and how it reads as a fix, or
+why not where it might have. --messages lists
 the file's newest 12 commits, a sample to judge whole (--newest N for
 another number; the first line says how many more there are), and under each
 what it changed (lines added and removed in the file, and how many other
@@ -1071,6 +1072,16 @@ def file_diffs(repo, wanted, most=60):
     return result
 
 
+SUBJECT_CHARS = 200  # --show's subjects: git's is a message's first paragraph, which can run on.
+
+
+def subject_line(subject):
+    """A subject as --show lists it: cut at SUBJECT_CHARS characters, saying how many more there are."""
+    if len(subject) > SUBJECT_CHARS:
+        subject = "%s... (%d more characters)" % (subject[:SUBJECT_CHARS], len(subject) - SUBJECT_CHARS)
+    return printable(subject)
+
+
 def half_of(commit, newer):
     """Whether a commit is in the window's newer half, as --show says it, the same width either way."""
     return "newer" if commit[0] in newer else "older"
@@ -1096,7 +1107,7 @@ def show_diffs(repo, show, given, listed, changed_as, fixes, newer):
     print("%s: its changes in %d of its commits, each cut at %d lines" % (title, len(chosen), DIFF_LINES))
     for commit in chosen:
         info = describe(commit)
-        print("  %s %s %s  %s%s" % (info["sha"], info["date"], half_of(commit, newer), printable(info["subject"]),
+        print("  %s %s %s  %s%s" % (info["sha"], info["date"], half_of(commit, newer), subject_line(info["subject"]),
                                     fix_mark(fixes.get(commit[0]))))
         print("\n".join("      " + line for line in diffs[(commit[0], changed_as[(commit[0], path)][0])]))
     print()
@@ -1599,7 +1610,7 @@ def main():
             for commit in listed:
                 info = describe(commit)
                 print("  %s %s %s  %s%s" % (info["sha"], info["date"], half_of(commit, newer),
-                                            printable(info["subject"]), fix_mark(fixes.get(commit[0]))))
+                                            subject_line(info["subject"]), fix_mark(fixes.get(commit[0]))))
                 if args.messages:
                     print(change_hint(commit, changed_as[(commit[0], path)], is_test))
                     if message_lines(commit[5]):
