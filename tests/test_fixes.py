@@ -570,7 +570,6 @@ class Words(unittest.TestCase):
                            ("requirements/check.py", None)]:
             self.assertEqual(self.heatmap.not_code(path, lambda p: False), kind, path)
 
-    @unittest.expectedFailure
     def test_a_fix_type_before_an_issue_number(self):
         # fix: #482 says fix by its type's word; Fix #482:, Fixes #12, Fixes: #12 and Django's Fixed #12 -- close an
         # issue and say nothing else.
