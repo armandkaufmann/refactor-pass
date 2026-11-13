@@ -595,7 +595,7 @@ CONVENTIONAL = re.compile(r"\s*(?P<type>[A-Za-z]+)(?:\((?P<scope>[^)]*)\))?!?\s*
 TAG = re.compile(r"\s*\[(?P<tag>[^\]]*)\]")
 TYPES = {"feat", "feature", "fix", "docs", "doc", "chore", "refactor", "perf", "test", "tests", "style", "build",
          "ci", "revert", "release", "deps", "hotfix", "bugfix", "bug", "wip", "i18n", "types"}
-BRACKET_TYPES = TYPES - {"hotfix"} | {"enhance", "enhancement", "improvement"}
+BRACKET_TYPES = TYPES - {"hotfix"} | {"enhance", "enhancement", "improve", "improvement"}
 FIX_TYPES = {"fix", "hotfix", "bugfix", "bug"}
 # Gitmoji's emoji, as gitmoji.dev lists them, without the variation selector some are written with, and their
 # codes; any other emoji isn't a type.
