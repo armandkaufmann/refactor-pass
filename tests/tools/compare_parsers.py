@@ -178,7 +178,7 @@ def clone(one, repos_dirs, cache, fetch, depth=1, need=None):
     if not fetch:
         return None, "no clone at %s, and fetching is off" % one.sha[:12]
     if os.path.isdir(path):
-        shutil.rmtree(path)
+        support.remove(path)  # Git's objects are read-only, which Windows won't delete as they are.
     os.makedirs(path)
     for command in (["git", "init", "-q", path],
                     ["git", "-C", path, "fetch", "-q", "--depth", str(depth), one.url, one.sha],

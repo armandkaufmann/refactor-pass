@@ -281,7 +281,7 @@ def main():
     finally:
         shutil.rmtree(profile, ignore_errors=True)
         if not args.keep:
-            shutil.rmtree(folder, ignore_errors=True)
+            support.remove(folder)  # Its repos' objects too, read-only as git makes them.
     print("%d of the pages failed." % failed if failed else "Every page rendered as its data says.")
     sys.exit(1 if failed else 0)
 
