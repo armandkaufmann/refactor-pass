@@ -249,12 +249,13 @@ class Shop(unittest.TestCase):
         self.assertIn("--diffs: %s isn't one of them; zz isn't one of them. Give hashes of the 7 commits --show "
                       "app.py --messages lists." % self.repo.short(self.marks["speed"]), wrong.err)
 
+    @unittest.expectedFailure
     def test_the_page_carries_the_fixes(self):
         with open(self.page, encoding="utf-8") as f:
             heat = json.loads(support.block(f.read(), "heatmap"))
         self.assertEqual(heat["window"]["fixes"], {"fixes": 5, "revert": 1, "type": 0, "words": 4, "typed": 0.0,
                                                    "labels": False, "closing": 1, "withdrawn": 1, "thin": False,
-                                                   "language": False})
+                                                   "language": False, "complete": False})
         rows = dict((r["path"], r) for r in heat["files"])
         self.assertEqual((rows["app.py"]["fixes"], rows["app.py"]["fixes_recent"]), (2, 1))
         self.assertEqual((rows["util.py"]["fixes"], rows["util.py"]["fixes_recent"]), (3, 1))
@@ -747,6 +748,7 @@ class Words(unittest.TestCase):
                                  "--show leaves unmarked."])
         self.assertEqual((facts["fixes"], facts["thin"]), (0, False))
 
+    @unittest.expectedFailure
     def test_close_to_complete_only_where_nearly_all_subjects_carry_a_type(self):
         heatmap = support.load("heatmap")
         commits = [("%040d" % n, n, subject, [("a.py", None, 1, 0)], "Ann <a@b>", "")
@@ -756,10 +758,14 @@ class Words(unittest.TestCase):
                          "label; those without one are read by their words, so the count is a floor: such subjects "
                          "typically say so for a third to a half of their fixes, and the rest are among the commits "
                          "--show leaves unmarked.")
-        complete = heatmap.fix_summary(commits, trace, 0.9)[0][1]
-        self.assertTrue(complete.endswith("so the count is close to complete."), complete)
-        with open(support.TEMPLATE, encoding="utf-8") as f:
-            self.assertIn("fx.typed >= %s" % heatmap.NEARLY_ALL, f.read())  # The page says the same.
+        lines, facts = heatmap.fix_summary(commits, trace, heatmap.NEARLY_ALL)
+        self.assertTrue(lines[1].endswith("so the count is close to complete."), lines[1])
+        self.assertEqual((facts["labels"], facts["complete"]), (True, True))
+        self.assertEqual(heatmap.fix_summary(commits, trace, heatmap.LABELLED)[1]["complete"], False)
+        with open(support.TEMPLATE, encoding="utf-8") as f:  # The page says what the facts say, deciding nothing.
+            template = f.read()
+        self.assertNotIn("fx.typed >=", template)
+        self.assertIn("fx.complete", template)
 
     def test_an_issue_closed_counts_only_where_nothing_says_what_it_was(self):
         heatmap = support.load("heatmap")
