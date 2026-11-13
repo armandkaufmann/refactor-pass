@@ -854,7 +854,6 @@ class Words(unittest.TestCase):
         commits = [("%040d" % 1, 1, "Empty fix for crash", [], "Ann <a@b>", "")]
         self.assertEqual(heatmap.fix_trace(commits, commits, False)[commits[0][0]], (0, "changes no file", None))
 
-    @unittest.expectedFailure
     def test_a_revert_says_so_at_its_subjects_start(self):
         # A squash merge of a feature about reverting, whose body carries a branch commit's revert line, isn't one.
         heatmap = self.heatmap

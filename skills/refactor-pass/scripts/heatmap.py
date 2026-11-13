@@ -75,7 +75,7 @@ many of those in the newer half (those files, and commits of more than
 as a fix elsewhere can touch a file in passing. Each commit counts once, as
 the first of these that it reads as:
 
-  revert  its subject says revert and its body "This reverts commit <hash>",
+  revert  its subject starts Revert and its body "This reverts commit <hash>",
           of another author's commit; one of the author's own withdraws it
           and isn't counted, one of a change to the docs or of a chore isn't
           a fix, and a re-landing (Reapply "X", a revert of a revert) is
@@ -631,10 +631,9 @@ CHORE_TYPES = {"docs", "doc", "chore", "ci", "build", "style", "test", "tests", 
 # A revert, as git writes one: its subject says revert, and its body names the commit. Squash merges carry
 # their branch's reverts in their bodies, so the subject has to say it too.
 REVERT_LINE = re.compile(r"(?m)^\s*This reverts commit ([0-9a-fA-F]{7,64})")
-REVERT_WORD = re.compile(r"\brevert(?:s|ed|ing)?\b", re.I)
 QUOTED = re.compile(r'\brevert(?:s|ed)?\s*"(.*)"', re.I)
-# A subject that says it's a revert or a re-landing, after a type if it has one; and one that re-lands.
-REVERT_OF = re.compile(r"\s*(?:[A-Za-z]+(?:\([^)]*\))?!?:\s*)?(?:revert|reapply)", re.I)
+# A subject that says it's a revert, at its start, after a type if it has one; and one that re-lands.
+REVERT_OF = re.compile(r"\s*(?:[A-Za-z]+(?:\([^)]*\))?!?:\s*)?revert(?:s|ed|ing)?\b", re.I)
 RELANDS = re.compile(r'\s*(?:[A-Za-z]+(?:\([^)]*\))?!?:\s*)?(?:reapply\b|revert\s*"(?:[A-Za-z]+(?:\([^)]*\))?!?:\s*)?'
                      r'revert\b)', re.I)
 # Issue references, whose words name the tracker, not the change: "Fixed #12 --" closes an issue of any kind.
@@ -815,9 +814,10 @@ def read_fix(subject, typed):
 
 
 def reverted(commit):
-    """The hash a revert names, if the commit is one: its subject says revert and its body names the commit."""
+    """The hash a revert names, if the commit is one: its subject says revert at its start, and its body names the
+    commit."""
     line = REVERT_LINE.search(commit[5])
-    return line.group(1) if line and REVERT_WORD.search(commit[2]) else None
+    return line.group(1) if line and REVERT_OF.match(commit[2]) else None
 
 
 def find_commit(commits, prefix):
