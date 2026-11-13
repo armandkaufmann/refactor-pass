@@ -522,7 +522,6 @@ class GitSettings(unittest.TestCase):
         support.git(repo.path, "config", "gpg.program", "git")  # Prints its usage, as gpg would its verdict.
         self.assertEqual(outputs(repo), self.plain)
 
-    @unittest.expectedFailure
     def test_the_root_commits_changes_whatever_log_showroot_says(self):
         found = outputs(build_settings(), {"GIT_CONFIG_GLOBAL": user_config("[log]\n\tshowRoot = false\n")})
         self.assertEqual(support.heatmap_rows(found[0][1])["a.py"], support.heatmap_rows(self.plain[0][1])["a.py"])
@@ -557,7 +556,6 @@ class GitSettings(unittest.TestCase):
         self.assertIn("Git's attributes mark 1 file that changed in the window as binary, though it's text at HEAD, "
                       "so it's left out: a.py.\n", mine.out)
 
-    @unittest.expectedFailure
     def test_no_setting_or_variable_changes_the_output(self):
         repo = build_settings()
         home = support.new_folder("home")
