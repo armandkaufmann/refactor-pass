@@ -1674,9 +1674,9 @@ def main():
 
     def person(author):
         return args.keep_bots or not (HOUSEKEEPING.search(author) or any(n in author.lower() for n in bot_words))
-    more_lines, quiet, behind, elsewhere = work_lacked(
+    more_lines, quiet, behind, elsewhere = ([], quiet, None, None) if args.show else work_lacked(
         repo, clock, quiet, person, (lambda p: scoping.in_scope(p, args.scope) and not scoping.ignored(p, patterns))
-        if args.scope else None)
+        if args.scope else None)  # Only the heatmap's header says it, so --show reads no more of git for it.
     there = (" in the scope", " there") if scoped is not None and scoped is not commits[0] else ("", "")
     gone = "Nothing has landed%s for over three months: the work it counts%s has gone quiet." % there
     time_lines = [time_line] + more_lines + [gone] * quiet
