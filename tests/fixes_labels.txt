@@ -95,7 +95,7 @@ d8c39f4b3 n 0 backs out a docs example edit
 128bc76af n 0 backs out a docstring example edit
 1577e1386 f 0 backs out a test change
 d4fec1454 n 0 re-lands a feature
-2aa26fff0 n 1 an accidental revert of a
+2aa26fff0 n 0 an accidental revert of a
 b89af6634 n 0 backs out a README change
 1e39871d6 f 0 find_module lost its path
 
@@ -276,7 +276,7 @@ c617b6241 n 0 CI
 049da60f5 n 0 release (the body's reverts are
 fabe3df78 f 0 re-lands logger colours off for
 041ca04a4 f 1 backs out the logger change that
-63b5d1c4c f 1 backs out the App Engine patch
+63b5d1c4c f 0 backs out the App Engine patch
 19f271c86 f 1 backs out the logger change that
 
 @ gin word

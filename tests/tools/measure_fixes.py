@@ -57,12 +57,13 @@ class Repo(object):
 # The floors, in percent: per set, precision and recall of fixes of the project's own code. Recorded on
 # 2026-11-12 from that day's numbers, two points under them; the tagged set's on 2026-11-13, django's dev recall
 # then, when code in a docs folder became code, and the revert set's of gin, pinia and hutool, when a re-landing
-# came to read as nothing and a revert without git's line by its own words.
+# came to read as nothing and a revert without git's line by its own words; gin's revert set's again when the
+# commits reverts name from outside the window came to be read, as the heatmap reads them.
 REPOS = [
     Repo("flask", "https://github.com/pallets/flask", "49943b5a94413a530761350f04e896f76e8d620e", 4000,
          {"dev": (83, 48), "revert": (48, 18), "word": (78, 73)}),
     Repo("gin", "https://github.com/gin-gonic/gin", "0f09c3a9b4626d9fe9979cf4d0521d6ae32ab646", 2500,
-         {"dev": (91, 85), "revert": (86, 86), "word": (98, 98)}),
+         {"dev": (91, 85), "revert": (85, 75), "word": (98, 98)}),
     Repo("pinia", "https://github.com/vuejs/pinia", "4817135a25431172d363bd928476db7cdbf875c4", 3000,
          {"dev": (98, 90), "revert": (98, 73)}),
     Repo("django", "https://github.com/django/django", "a0f2e29e0a98ee14aa808ebe38ec5fb79c8af71f", 800,
@@ -120,8 +121,9 @@ def record_tiers(now, path=LABELS):
 
 
 def load(heatmap, one, path, labelled):
-    """The repo's window as the heatmap reads it, whether its types read as labels, its labelled commits, and per
-    labelled short hash whether it changed a file of the project's own code."""
+    """The repo's window as the heatmap reads it, whether its types read as labels, its labelled commits, per
+    labelled short hash whether it changed a file of the project's own code, the folders where a setup.py is a
+    manifest, and the commits their reverts name from outside the window, as the heatmap reads them."""
     window = heatmap.read_log(path, ["-n", str(one.window), "HEAD"])
     people = [c for c in window if not heatmap.HOUSEKEEPING.search(c[4])]
     typed = heatmap.typed_share(people[:200]) >= heatmap.LABELLED
@@ -137,14 +139,15 @@ def load(heatmap, one, path, labelled):
 
     tops = heatmap.package_tops(heatmap.scoping.tracked_files(path, "HEAD"))
     code = dict((c[0][:9], any(not heatmap.not_code(change[0], is_test, tops) for change in c[3])) for c in chosen)
-    return window, typed, chosen, code, tops
+    return window, typed, chosen, code, tops, heatmap.outside_window(path, chosen, window)
 
 
 def read_repo(heatmap, loaded):
     """Per labelled short hash, how the heatmap reads it: (tier, what said so, whether it changed the project's
     own code)."""
-    window, typed, chosen, code, tops = loaded
-    trace = heatmap.fix_trace(chosen, window, typed, lambda path: heatmap.scoping.is_test(path, [], []), tops=tops)
+    window, typed, chosen, code, tops, outside = loaded
+    trace = heatmap.fix_trace(chosen, window, typed, lambda path: heatmap.scoping.is_test(path, [], []), outside,
+                              tops)
     return dict((c[0][:9], trace[c[0]][:2] + (code[c[0][:9]],)) for c in chosen)
 
 
