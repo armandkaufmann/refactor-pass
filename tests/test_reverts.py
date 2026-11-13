@@ -234,6 +234,24 @@ class OneCommit(unittest.TestCase):
         self.assertEqual(heatmap.fix_trace([back], [back, land], False)[back[0]],
                          (0, "its author withdraws 111111111", None))
 
+    @unittest.expectedFailure
+    def test_a_revert_dated_before_the_commit_it_names(self):
+        # As a rebase or a clock can date them: how long that commit stood isn't said, nor counted in the header.
+        heatmap = self.heatmap
+
+        def commit(n, stamp, subject, author, body=""):
+            return (str(n) * 40, stamp, subject, [("a.py", None, 1, 0)], author, body)
+        hat, cap = commit(1, 4000, "Add a hat", "Bob <b@c>"), commit(2, 0, "Add a cap", "Bob <b@c>")
+        early = commit(3, 3600, 'Revert "Add a hat"', "Ann <a@b>", "This reverts commit %s.\n" % hat[0])
+        later = commit(4, 7200, 'Revert "Add a cap"', "Ann <a@b>", "This reverts commit %s.\n" % cap[0])
+        trace = heatmap.fix_trace([later, early], [later, hat, early, cap], False)
+        self.assertEqual(trace[early[0]], (1, "reverts 111111111", None))
+        self.assertEqual(heatmap.fix_mark(trace[early[0]]), "  [fix, revert: reverts 111111111]")
+        lines, _ = heatmap.fix_summary([later, early], trace, 0.0)
+        self.assertEqual(lines[0], "Fixes, a lead and not a verdict: at least 2 of the 2 commits fixed a defect in the "
+                                   "project's own code, as their messages say: 2 reverts (of a commit that had stood "
+                                   "2 hours).")
+
     def test_a_revert_of_a_commit_not_in_the_repo(self):
         # Whose change it undid can't be told, so it isn't counted, unless another commit it names is another's.
         heatmap = self.heatmap
