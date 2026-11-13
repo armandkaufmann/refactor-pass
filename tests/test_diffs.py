@@ -47,6 +47,21 @@ class Diffs(unittest.TestCase):
         binary = support.run("heatmap.py", "-C", repo.path, "--show", "img.png", "--diffs", shas[0])
         self.assertIn("      (Binary files a/img.png and b/img.png differ)\n", binary.out)
 
+    @unittest.expectedFailure
+    def test_a_file_of_one_commit_or_none(self):
+        # One commit listed: its hash, said once. None: nothing to give.
+        repo = support.Repo("one-commit")
+        start = repo.commit("2026-01-01", "Start", {"a.py": lines(3, "a"), "b.py": lines(3, "b")})
+        repo.commit("2026-01-02", "Change b", {"b.py": lines(4, "b")})
+        repo.done()
+        for given, err in (("zzzz", "--diffs: zzzz isn't the one commit --show a.py --messages lists, %s.\n"),
+                           (",", "--diffs: no commit given. The one commit --show a.py --messages lists is %s.\n")):
+            result = support.run("heatmap.py", "-C", repo.path, "--show", "a.py", "--diffs", given)
+            self.assertEqual((result.code, result.err), (1, err % repo.short(start)))
+        none = support.run("heatmap.py", "-C", repo.path, "-n", "1", "--show", "a.py", "--diffs", "zzzz")
+        self.assertEqual((none.code, none.err), (1, "--diffs: a.py has no commit in the window, so there's no change "
+                                                    "to show.\n"))
+
     @unittest.skipIf(support.WINDOWS, "a file's name can't start with a colon on Windows")
     def test_a_name_git_would_read_as_pathspec_magic(self):
         repo = support.Repo("colon")
