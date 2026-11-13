@@ -399,6 +399,45 @@ class Reverts(unittest.TestCase):
         self.assertEqual(marks['Revert "docs: say more"'], "not a fix: reverts a change that isn't to the code")
         self.assertEqual(marks['Revert "Reword the readme"'], "not a fix: reverts a change that isn't to the code")
 
+    @unittest.expectedFailure
+    def test_each_revert_in_a_chain_is_read_against_the_commit_it_reverts(self):
+        # Reverting a revert re-lands a change; reverting that re-landing is a revert again, of the re-landing:
+        # another author's counts, with the time it stood, and its own author's withdraws it.
+        repo = support.Repo("chain")
+        repo.commit("2026-01-01", "Start", {"a.py": lines(3, "a"), "b.py": lines(3, "b")})
+        land = repo.commit("2026-01-02", "Speed up the cart", {"a.py": lines(4, "a")}, author=support.BOB)
+        other = repo.commit("2026-01-02", "Speed up b", {"b.py": lines(4, "b")})
+        repo.done()
+        quoted = "Speed up the cart"
+        marks = {}
+        for day, author, target in (("03", support.ANN, land), ("04", support.BOB, None), ("05", support.ANN, None),
+                                    ("06", support.ANN, None)):
+            quoted = 'Revert "%s"' % quoted
+            marks[day] = repo.commit("2026-01-%s" % day, "%s\n\nThis reverts commit %s.\n" % (
+                quoted, repo.sha(target or marks[str(int(day) - 1).zfill(2)])), {"a.py": lines(int(day), "a")},
+                author=author)
+            repo.done()
+        quoted = "Speed up b"
+        for day, author in (("07", support.BOB), ("08", support.ANN), ("09", support.ANN)):
+            quoted = 'Revert "%s"' % quoted
+            marks[day] = repo.commit("2026-01-%s" % day, "%s\n\nThis reverts commit %s.\n" % (
+                quoted, repo.sha(marks.get(str(int(day) - 1).zfill(2)) or other)), {"b.py": lines(int(day), "b")},
+                author=author)
+            repo.done()
+        shown = marks_of(support.run("heatmap.py", "-C", repo.path, "--show", "a.py", "--show", "b.py").out)
+        revert = 'Revert "%s"'
+        cart, b = "Speed up the cart", "Speed up b"
+        self.assertEqual(shown[revert % cart], "fix, revert: reverts %s, 1 day after it" % repo.short(land))
+        self.assertEqual(shown[revert % (revert % cart)], "not a fix: re-lands a change that wasn't a fix")
+        self.assertEqual(shown[revert % (revert % (revert % cart))], "fix, revert: reverts %s, 1 day after it"
+                         % repo.short(marks["04"]))
+        self.assertEqual(shown[revert % (revert % (revert % (revert % cart)))],
+                         "not a fix: re-lands a change that wasn't a fix")
+        self.assertEqual(shown[revert % (revert % (revert % b))], "not a fix: its author withdraws %s"
+                         % repo.short(marks["08"]))
+        header = fixes_lines(support.run("heatmap.py", "-C", repo.path).out)[0]
+        self.assertIn("3 reverts (of commits that had stood 1 day, 1 day and 5 days). 1 more revert", header)
+
     def test_a_revert_of_a_commit_before_the_window(self):
         # Read from the repo, where the window doesn't reach it: who made it and when. Only one the repo hasn't,
         # as a shallow clone's, is from before the window.
