@@ -364,7 +364,6 @@ class LastLineOfDefence(unittest.TestCase):
         self.assertEqual(code, 3)
         self.assertRegex(err, BUG % "RuntimeError: boom")
 
-    @unittest.expectedFailure
     def test_a_bug_is_one_line_though_the_output_fails_otherwise(self):
         # An output on a full disk: the flush fails with ENOSPC, not as a reader gone, and the line still comes.
         code = GONE_ON_WINDOWS.replace('errno.EINVAL, "Invalid argument"', 'errno.ENOSPC, "No space left"').split(

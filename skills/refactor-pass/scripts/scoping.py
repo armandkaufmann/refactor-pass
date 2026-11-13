@@ -122,7 +122,10 @@ def guard(main):
             out.flush()  # What it wrote, as argparse's --help before it stops.
     except Exception as e:
         if not (isinstance(e, OSError) and e.errno in GONE and out.gone()):  # A bug, not a reader gone.
-            settle(out)
+            try:
+                settle(out)
+            except OSError:  # The output can't take the rest, as on a full disk: the line comes out anyway.
+                os.dup2(os.open(os.devnull, os.O_WRONLY), out.fileno())
             here = os.path.dirname(os.path.abspath(__file__))
             frames = traceback.extract_tb(e.__traceback__)
             where = ([f for f in frames if os.path.dirname(os.path.abspath(f.filename)) == here] or frames)[-1]
