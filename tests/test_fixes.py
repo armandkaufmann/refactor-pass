@@ -380,7 +380,6 @@ class Reverts(unittest.TestCase):
         self.assertEqual(marks['Revert "docs: say more"'], "not a fix: reverts a change that isn't to the code")
         self.assertEqual(marks['Revert "Reword the readme"'], "not a fix: reverts a change that isn't to the code")
 
-    @unittest.expectedFailure
     def test_a_revert_of_a_commit_before_the_window(self):
         # Read from the repo, where the window doesn't reach it: who made it and when. Only one the repo hasn't,
         # as a shallow clone's, is from before the window.

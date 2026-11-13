@@ -264,11 +264,11 @@ COMMIT = re.compile(r"[0-9a-f]{40}(?:[0-9a-f]{24})?\Z")  # A full hash, of SHA-1
 NUMSTAT = re.compile(r"(\d+|-)\t(\d+|-)\t")
 
 
-def read_log(repo, revs):
+def read_log(repo, revs, merges=False):
     """The commits in revs, newest first: (sha, time, subject, [(path, old_path, added, removed)], author, body).
     old_path is the name before a rename, else None; added and removed are None for a binary file. Read by
-    position, so a message or an author can hold any character."""
-    tokens = git(repo, *(LOG + revs)).split("\0")
+    position, so a message or an author can hold any character. Merges are left out unless merges is true."""
+    tokens = git(repo, *([a for a in LOG if not merges or a != "--no-merges"] + revs)).split("\0")
     commits = []
     i = 0
     while i < len(tokens):
@@ -826,22 +826,40 @@ def read_fix(subject, typed):
     return 0, ("says " + ", ".join(nots)) if fixes else ""
 
 
-def fix_trace(commits, window, typed, is_test=None):
+def reverted(commit):
+    """The hash a revert names, if the commit is one: its subject says revert and its body names the commit."""
+    line = REVERT_LINE.search(commit[5])
+    return line.group(1) if line and REVERT_WORD.search(commit[2]) else None
+
+
+def find_commit(commits, prefix):
+    """The one commit of commits whose hash starts with prefix, or None."""
+    prefix = prefix.lower()
+    found = [c for c in commits if c[0].startswith(prefix)]
+    return found[0] if len(found) == 1 else None
+
+
+def outside_window(repo, commits, window):
+    """The commits the reverts in commits name that the window doesn't hold, read from the repo in one git
+    call, as read_log reads them, merges too; by the name the revert gives. One the repo hasn't, as a shallow
+    clone's, is left out."""
+    names = sorted(set(n for n in (reverted(c) for c in commits) if n and not find_commit(window, n)))
+    read = read_log(repo, ["--no-walk=unsorted", "--ignore-missing"] + names, merges=True) if names else []
+    return dict((n, find_commit(read, n)) for n in names if find_commit(read, n))
+
+
+def fix_trace(commits, window, typed, is_test=None, outside=None):
     """Per commit, how it reads: (tier, what said so, the seconds a reverted commit stood or None). Tier 1 is a
     revert, 2 a fix by its type, 3 by its words; 0 not a fix, with why not, or "" when nothing said either way.
-    window is every commit read, newest first, where a reverted commit is looked for; is_test tells a test."""
+    window is every commit read, newest first, where a reverted commit is looked for, and outside those named
+    from outside it (outside_window); is_test tells a test."""
     is_test = is_test or (lambda path: scoping.is_test(path, [], []))
     by_sha = dict((c[0], c) for c in window)
+    outside = outside or {}
 
     def find(prefix):
-        prefix = prefix.lower()
-        found = by_sha.get(prefix) or [c for sha, c in by_sha.items() if sha.startswith(prefix)]
-        return found if isinstance(found, tuple) else (found[0] if len(found) == 1 else None)
-
-    def reverted(commit):
-        """The hash a revert names, if the commit is one."""
-        line = REVERT_LINE.search(commit[5])
-        return line.group(1) if line and REVERT_WORD.search(commit[2]) else None
+        found = by_sha.get(prefix.lower()) or find_commit(window, prefix)
+        return found or outside.get(prefix)
 
     def read(commit, depth=0):
         """How a commit reads; but one that changed none of the project's own code isn't a fix of it."""
@@ -858,7 +876,7 @@ def fix_trace(commits, window, typed, is_test=None):
             return read_fix(subject, typed) + (None,)
         before = find(target)
         quoted = QUOTED.search(subject)
-        inner = quoted.group(1) if quoted else ""
+        inner = quoted.group(1) if quoted else (before[2] if before else "")
         # A revert of a revert re-lands a change, and reads as that change did.
         if (before and reverted(before)) or re.match(r"(?:[A-Za-z]+(?:\([^)]*\))?!?:\s*)?revert", inner, re.I):
             original = find(reverted(before)) if before and reverted(before) else None
@@ -909,12 +927,13 @@ def fix_summary(commits, fixes, typed):
     known = sorted(t for t in stood if t is not None)
     reverts = "1 a revert" if tiers[1] == 1 else "%d reverts" % tiers[1]
     if len(known) == 1:
-        reverts += " (of a commit that had stood %s)" % how_long(known[0])
+        reverts += " (of a commit that had stood %s" % how_long(known[0])
     elif known:
-        reverts += " (of commits that had stood %s%s)" % (
-            and_list([how_long(t) for t in known]) if len(known) <= 3 else "a median %s" % how_long(
-                known[len(known) // 2]), "; %d from before the window" % (len(stood) - len(known))
-            if len(known) < len(stood) else "")
+        reverts += " (of commits that had stood %s" % (and_list([how_long(t) for t in known]) if len(known) <= 3
+                                                       else "a median %s" % how_long(known[len(known) // 2]))
+    if known:
+        reverts += "%s)" % ("; %d from before the window" % (len(stood) - len(known)) if len(known) < len(stood)
+                            else "")
     withdrawn = sum(1 for found in fixes.values() if found[1].startswith("its author withdraws"))
     ways = [way for count, way in ((tiers[1], reverts), (tiers[2], "%d by their type" % tiers[2]),
                                    (tiers[3], "%d by their words" % tiers[3])) if count]
@@ -1335,7 +1354,8 @@ def main():
     def is_test(path):
         return scoping.is_test(path, args.test, args.not_test)
 
-    fixes = {} if args.no_fixes else fix_trace(commits, everything, typed >= 0.5, is_test)
+    fixes = {} if args.no_fixes else fix_trace(commits, everything, typed >= 0.5, is_test,
+                                                 outside_window(repo, commits, everything))
     fix_lines, fix_facts = fix_summary(commits, fixes, typed) if fixes else ([], None)
     # Just before the window: --since's revision, or the oldest commit's parent (none at the root).
     base = since_rev or git(repo, "rev-list", "--parents", "-n", "1", everything[-1][0]).split()[1:2]
