@@ -147,25 +147,37 @@ def one_of(where, value, allowed, errors):
         errors.append("%s should be %s or %s, not %r." % (where, ", ".join(allowed[:-1]), allowed[-1], value))
 
 
+def is_hash(value):
+    """Whether value is a commit's hash as an item records it: 7 to 40 of its hex digits, in lower case."""
+    return isinstance(value, str) and bool(re.fullmatch(r"[0-9a-f]{7,40}", value))
+
+
 def check_fixes(ident, entries, errors):
-    """An item's fixes: a list with an entry per file, each of the right fields, hashes once each, and no more
-    commits listed than were read."""
+    """An item's fixes: a list with an entry per file, each of the right fields, each commit once, at whatever
+    length, and no more commits listed than were read."""
     if not isinstance(entries, list):
         errors.append("%s's fixes should be a list, an entry per file." % ident)
         return
+    files = [e.get("file") for e in entries if isinstance(e, dict) and isinstance(e.get("file"), str)]
+    for name in sorted(set(f for f in files if f.strip() and files.count(f) > 1)):
+        errors.append("%s's fixes have %s twice: an entry per file." % (ident, name))
     for i, entry in enumerate(entries):
         where = "%s.fixes[%d]" % (ident, i)
         if not fields(where, entry, FIXES, errors):
             continue
+        if isinstance(entry.get("file"), str) and not entry["file"].strip():
+            errors.append("%s: 'file' should name the file." % where)
         cited = [c for key in ("marked", "found", "dropped") if isinstance(entry.get(key), list) for c in entry[key]]
-        bad = [c for c in cited if not (isinstance(c, str) and re.fullmatch(r"[0-9a-f]{7,40}", c))]
+        bad = [c for c in cited if not is_hash(c)]
         if bad:
             errors.append("%s: commits are hashes of 7 to 40 hex digits; not %s."
                           % (where, ", ".join(repr(c) for c in bad)))
-        twice = sorted(set(c for c in cited if isinstance(c, str) and cited.count(c) > 1))
+        hashes = [c for c in cited if is_hash(c)]
+        twice = sorted(set("%s twice" % c if c == d else "one commit twice, as %s and %s" % tuple(sorted((c, d)))
+                           for j, c in enumerate(hashes) for d in hashes[:j] if c.startswith(d) or d.startswith(c)))
         if twice:
-            errors.append("%s lists %s twice: a commit read is one of marked, found or dropped, or none."
-                          % (where, " and ".join(twice)))
+            errors.append("%s lists %s: a commit read is one of marked, found or dropped, or none."
+                          % (where, "; ".join(twice)))
         read, newer = entry.get("read"), entry.get("newer")
         if isinstance(read, int) and not isinstance(read, bool) and read < len(cited):
             errors.append("%s lists %d commits but read %d: read counts every commit read, newest first."
@@ -205,7 +217,7 @@ def check_item(item, page, seen, errors, warnings, spread):
     for key in ("smells", "plan", "files"):
         texts("%s's %s" % (ident, key), item.get(key), errors)
     commits = item.get("commits") if isinstance(item.get("commits"), list) else []
-    bad = [c for c in commits if not (isinstance(c, str) and re.fullmatch(r"[0-9a-f]{7,40}", c))]
+    bad = [c for c in commits if not is_hash(c)]
     if bad:
         errors.append("%s: commits are hashes of 7 to 40 hex digits, one per commit; not %s."
                       % (ident, ", ".join(repr(c) for c in bad)))

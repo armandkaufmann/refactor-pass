@@ -201,7 +201,6 @@ class Errors(unittest.TestCase):
         self.assertError(changed(lambda d: item(d, "R2").update(fixes=entry(newer=True))),
                          "R2.fixes[0]: 'newer' should be a whole number or null.")
 
-    @unittest.expectedFailure
     def test_cited_fixes_name_each_commit_and_each_file_once(self):
         def entry(**change):
             return dict({"file": "src/a.py", "read": 9, "newer": 0, "marked": ["a1b2c3d"], "found": [], "dropped": []},
