@@ -138,7 +138,8 @@ def made_pages(folder):
                     "dropped": ["c3d4e5f"]},
                    {"file": "src/b.py", "read": 5, "newer": None, "marked": [], "found": ["d4e5f6a"], "dropped": []}]},
         {"id": "F1", "status": "done", "title": "Fix it", "note": "x", "commits": ["a1b2c3d"], "outcome": "Done."},
-        {"id": "D1", "status": "waiting", "title": "Your call", "note": "x", "commits": [], "outcome": ""}],
+        {"id": "D1", "status": "waiting", "title": "Your call", "note": "x", "commits": [], "outcome": "",
+         "fixes": []}],
         log=[{"date": "2026-01-11", "text": "Started."}], left_alone=[{"what": "x", "why": "y"}])
     written = os.path.join(folder, "written.html")
     support.write_text(written, support.page_with(data, template=made, heatmap_json=support.block(text, "heatmap")))
