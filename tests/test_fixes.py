@@ -459,6 +459,12 @@ class Words(unittest.TestCase):
         for path in ("LICENSE-MIT", "COPYING.LESSER", "README_zh", "NEWS", "AUTHORS", "CHANGELOG", "changelog"):
             self.assertTrue(is_doc(path), path)
 
+    @unittest.expectedFailure
+    def test_release_notes_and_the_like(self):
+        for path in ("RELEASE-NOTES", "RELEASE_NOTES", "NOTICE", "THANKS", "CREDITS", "MAINTAINERS", "TODO"):
+            self.assertTrue(self.heatmap.is_doc(path), path)
+        self.assertFalse(self.heatmap.is_doc("bin/release-notes-gen"))
+
     def test_code_in_a_docs_folder_and_a_setup_py_at_no_packages_top(self):
         # In a docs folder, only what isn't code by its extension is documentation: cobra's doc/ is a package of
         # the library. setup.py is a manifest at a package's top, where its manifests are: the repo's, or beside
