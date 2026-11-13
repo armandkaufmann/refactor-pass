@@ -675,6 +675,12 @@ class Words(unittest.TestCase):
                            ("requirements/check.py", None)]:
             self.assertEqual(self.heatmap.not_code(path, lambda p: False), kind, path)
 
+    @unittest.expectedFailure
+    def test_gitmojis_lock_is_a_fix(self):
+        # Gitmoji's "fix security or privacy issues".
+        for subject in ("\U0001F512 fix xss in the comment form", "\U0001F512\ufe0f x", ":lock: x"):
+            self.assertEqual(self.heatmap.type_of(subject)[0], "fix", subject)
+
     def test_open_mmlabs_types_in_brackets(self):
         # As mmengine writes them: [Fix], [Feature], [Enhance], [Improve], [Refactor], [Docs], [Test].
         for word in ("Feature", "Enhance", "Improve", "Refactor", "Docs", "Test"):
