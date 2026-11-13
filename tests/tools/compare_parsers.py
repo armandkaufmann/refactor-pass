@@ -162,16 +162,18 @@ def deep_enough(path, depth):
     return not shallow or int(run(["git", "-C", path, "rev-list", "--count", "HEAD"]).stdout or 0) >= depth
 
 
-def clone(one, repos_dirs, cache, fetch, depth=1):
+def clone(one, repos_dirs, cache, fetch, depth=1, need=None):
     """The folder holding the set's files at its pinned commit, with depth commits of history where it's fetched,
-    and how it was found; or None and why not. one has a name, a url and a sha, and may have a folder."""
+    and need (depth unless given) where it's found, and how it was found; or None and why not. one has a name, a
+    url and a sha, and may have a folder."""
+    need = need or depth
     for folder in repos_dirs:
         for name in dict.fromkeys([getattr(one, "folder", one.name), one.name]):
             path = os.path.join(folder, name)
-            if os.path.isdir(path) and head(path) == one.sha and deep_enough(path, depth):
+            if os.path.isdir(path) and head(path) == one.sha and deep_enough(path, need):
                 return path, "on disk"
     path = os.path.join(cache, "%s-%s" % (one.name, one.sha[:12]))
-    if head(path) == one.sha and deep_enough(path, depth):
+    if head(path) == one.sha and deep_enough(path, need):
         return path, "cached"
     if not fetch:
         return None, "no clone at %s, and fetching is off" % one.sha[:12]

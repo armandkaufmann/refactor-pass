@@ -228,7 +228,7 @@ def main():
     for one in REPOS:
         if args.only and one.name not in args.only:
             continue
-        path, how = clone(one, args.repos_dir, args.cache, not args.no_fetch, one.window + 100)
+        path, how = clone(one, args.repos_dir, args.cache, not args.no_fetch, one.window + 100, one.window)
         if not path:
             skipped.append(one.name)
             print("%s: skipped, %s." % (one.name, how))
