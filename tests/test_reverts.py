@@ -217,7 +217,6 @@ class OneCommit(unittest.TestCase):
         self.assertEqual(trace[both[0]], (1, "reverts 111111111, 222222222", 3))
         self.assertEqual(trace[mine[0]], (0, "its author withdraws 111111111, 333333333", None))
 
-    @unittest.expectedFailure
     def test_a_fix_type_outranks_what_the_reverted_commit_says(self):
         # Its author typed it a fix: so it reads, with git's line or without, though the commit it names is its
         # author's own or isn't in the repo. Where types aren't read as labels, the withdrawal stands.

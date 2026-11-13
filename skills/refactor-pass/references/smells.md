@@ -234,6 +234,11 @@ How to judge a commit's change to a file when counting the file's fixes
 - **A report** the commit answers ("Fixes #12", "Reported-by:", a ticket)
   is evidence of a defect, but an issue can also ask for a feature: read
   what it says was wrong.
+- **A revert** of another author's commit is a fix: the change broke
+  something. One of its author's own commits is a withdrawal, and one of a
+  commit the repo hasn't (as a shallow clone's) can't say whose change it
+  undid: the script counts neither, unless the revert's type says fix
+  (`fix: revert "..."`) where types are read as labels.
 - **One fix, two files**: a commit counts for each file whose change is part
   of the fix, and not for one it touches only in passing (a renamed call,
   an import).

@@ -849,7 +849,9 @@ NOT_IN_REPO = ("isn't in the repo", "aren't in the repo")  # A revert's commits,
 
 def fix_trace(commits, window, typed, is_test=None, outside=None, tops=None):
     """Per commit, how it reads: (tier, what said so, the seconds a reverted commit stood or None). Tier 1 is a
-    revert, 2 a fix by its type, 3 by its words; 0 not a fix, with why not, or "" when nothing said either way.
+    revert of another's commit, 2 a fix by its type, 3 by its words; 0 not a fix, with why not, or "" when
+    nothing said either way. A revert of its author's own commits is a withdrawal, not a fix, and one of a commit
+    not in the repo isn't counted, unless its type, where types are read, says fix.
     window is every commit read, newest first, where a reverted commit is looked for, and outside those named
     from outside it (outside_window); is_test tells a test, and tops (package_tops) a setup.py that's a
     manifest."""
@@ -884,9 +886,12 @@ def fix_trace(commits, window, typed, is_test=None, outside=None, tops=None):
         befores = [find(target, quoted, stamp) for target in targets]
         if any(before is not None and reverted(before) for before in befores):
             return 0, "re-lands a change", None
+        # A fix by the type its author gave it, where the commits it names don't make it a revert of another's.
+        kind = type_of(subject) if typed else None
+        fix_type = (2, kind[1], None) if kind and kind[0] == "fix" else None
         # Its author's withdrawal where every commit it names is theirs; a revert where one is another's.
         if all(before is not None and same_person(before[4], author) for before in befores):
-            return 0, "its author withdraws %s" % ", ".join(before[0][:9] for before in befores), None
+            return fix_type or (0, "its author withdraws %s" % ", ".join(before[0][:9] for before in befores), None)
         said = quoted or (befores[0][2] if befores[0] else "")
         typed_said = CONVENTIONAL.match(said)
         if says(said)[1] or (typed_said and (typed_said.group("type") or "").lower() in CHORE_TYPES):
@@ -895,8 +900,8 @@ def fix_trace(commits, window, typed, is_test=None, outside=None, tops=None):
         other = next((b for b in befores if b is not None and not same_person(b[4], author)), None)
         if other is None:  # One it names isn't in the repo, as a shallow clone's: whose change it undid is unknown.
             missing = [t[:9] for t, before in zip(targets, befores) if before is None]
-            return 0, "reverts %s, %s %s" % (named, "which" if len(missing) == len(targets) else
-                                             "of which %s" % ", ".join(missing), NOT_IN_REPO[len(missing) > 1]), None
+            which = "which" if len(missing) == len(targets) else "of which " + ", ".join(missing)
+            return fix_type or (0, "reverts %s, %s %s" % (named, which, NOT_IN_REPO[len(missing) > 1]), None)
         return 1, "reverts %s" % named, stamp - other[1]
 
     return dict((c[0], read(c)) for c in commits)
