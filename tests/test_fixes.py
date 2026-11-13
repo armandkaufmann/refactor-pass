@@ -569,6 +569,21 @@ class Words(unittest.TestCase):
                                  "--show leaves unmarked."])
         self.assertEqual((facts["fixes"], facts["thin"]), (0, False))
 
+    @unittest.expectedFailure
+    def test_close_to_complete_only_where_nearly_all_subjects_carry_a_type(self):
+        heatmap = support.load("heatmap")
+        commits = [("%040d" % n, n, subject, [("a.py", None, 1, 0)], "Ann <a@b>", "")
+                   for n, subject in enumerate(["fix: the total", "Add the shop's hats"])]
+        trace = heatmap.fix_trace(commits, commits, True)
+        self.assertEqual(heatmap.fix_summary(commits, trace, 0.5)[0][1], "50% of the subjects carry a type, read as a "
+                         "label; those without one are read by their words, so the count is a floor: such subjects "
+                         "typically say so for a third to a half of their fixes, and the rest are among the commits "
+                         "--show leaves unmarked.")
+        complete = heatmap.fix_summary(commits, trace, 0.9)[0][1]
+        self.assertTrue(complete.endswith("so the count is close to complete."), complete)
+        with open(support.TEMPLATE, encoding="utf-8") as f:
+            self.assertIn("fx.typed >= %s" % heatmap.NEARLY_ALL, f.read())  # The page says the same.
+
     def test_how_long(self):
         how_long = self.heatmap.how_long
         self.assertEqual([how_long(s) for s in (30, 600, 7200, 86400, 86400 * 45, 86400 * 400, 86400 * 900)],
