@@ -686,6 +686,19 @@ class Words(unittest.TestCase):
         facts = heatmap.fix_summary(commits, heatmap.fix_trace(commits, commits, False), 0.0)[1]
         self.assertEqual((facts["fixes"], facts["closing"]), (1, 2))
 
+    @unittest.expectedFailure
+    def test_the_share_with_a_type_is_one_number(self):
+        # Printed as the decision is made from it: 99 of 200 is 49%, too few; 179 of 200 is 89%, not nearly all.
+        heatmap = self.heatmap
+        for count, share, said in ((99, 0.49, "49% of the subjects carry a type, too few to read as labels"),
+                                   (179, 0.89, "89% of the subjects carry a type, read as a label; those without")):
+            commits = [("%040d" % n, n, "feat: a hat" if n < count else "Add a hat to the shop",
+                        [("a.py", None, 1, 0)], "Ann <a@b>", "") for n in range(200)]
+            typed = heatmap.typed_share(commits)
+            self.assertEqual(typed, share)
+            line = heatmap.fix_summary(commits, heatmap.fix_trace(commits, commits, typed >= 0.5), typed)[0][1]
+            self.assertTrue(line.startswith(said), line)
+
     def test_how_long(self):
         how_long = self.heatmap.how_long
         self.assertEqual([how_long(s) for s in (30, 600, 7200, 86400, 86400 * 45, 86400 * 400, 86400 * 900)],
