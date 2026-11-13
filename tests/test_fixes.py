@@ -816,6 +816,13 @@ class Words(unittest.TestCase):
             heatmap.not_code = kept
         self.assertEqual(len(told), 1)  # The fix's first file is code: that settles it.
 
+    @unittest.expectedFailure
+    def test_a_commit_that_changed_no_file_fixed_nothing(self):
+        # As git commit --allow-empty -m 'Empty fix for crash' makes.
+        heatmap = self.heatmap
+        commits = [("%040d" % 1, 1, "Empty fix for crash", [], "Ann <a@b>", "")]
+        self.assertEqual(heatmap.fix_trace(commits, commits, False)[commits[0][0]], (0, "changes no file", None))
+
     def test_how_long(self):
         how_long = self.heatmap.how_long
         self.assertEqual([how_long(s) for s in (30, 600, 7200, 86400, 86400 * 45, 86400 * 400, 86400 * 900)],
