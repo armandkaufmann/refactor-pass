@@ -162,7 +162,6 @@ Examples:
 """
 
 import argparse
-import email.utils
 import json
 import os
 import re
@@ -205,12 +204,12 @@ def git(repo, *args):
 # (i18n.logOutputEncoding), git's own size past which a file is read as binary (core.bigFileThreshold), and its
 # own context, at 0 of which git cuts the files' common end before it diffs them (diff.context).
 # No text conversion, external diff, notes or colour either, though git leaves them
-# out of --numstat today. Each commit is its hash, time, author, subject and body (the message after the
-# subject, which says what a revert reverts), each after a NUL, which no message or name can hold; then its
-# numstat lines, each ending with a NUL, a rename's followed by its old and its new name.
+# out of --numstat today. Each commit is its hash, time, author, subject, body (the message after the
+# subject, which says what a revert reverts) and parents, each after a NUL, which no message or name can hold;
+# then its numstat lines, each ending with a NUL, a rename's followed by its old and its new name.
 LOG = ["-c", "core.bigFileThreshold=512m", "-c", "diff.context=3", "log", "--no-merges", "-z", "-M", "-l1000",
        "--numstat", "--root", "--no-show-signature", "--no-textconv", "--no-ext-diff", "--diff-algorithm=myers",
-       "--no-notes", "--no-color", "--encoding=UTF-8", "--format=%x00%H%x00%ct%x00%aN <%aE>%x00%s%x00%b"]
+       "--no-notes", "--no-color", "--encoding=UTF-8", "--format=%x00%H%x00%ct%x00%aN <%aE>%x00%s%x00%b%x00%P"]
 # git show as file_diffs reads it, whatever the config says: each commit's patch of the paths given, after a
 # NUL and its hash, the root commit's too (log.showRoot); git's own diff, context and renames; paths quoted as
 # git does by default, with a/ and b/ whatever diff.noprefix, diff.mnemonicPrefix, diff.srcPrefix and
@@ -227,7 +226,8 @@ NUMSTAT = re.compile(r"(\d+|-)\t(\d+|-)\t")
 
 
 def read_log(repo, revs, merges=False, changes=True):
-    """The commits in revs, newest first: (sha, time, subject, [(path, old_path, added, removed)], author, body).
+    """The commits in revs, newest first: (sha, time, subject, [(path, old_path, added, removed)], author, body,
+    [parents]).
     old_path is the name before a rename, else None; added and removed are None for a binary file. Read by
     position, so a message or an author can hold any character. Merges are left out unless merges is true, and
     the changes are read only where changes is."""
@@ -249,10 +249,10 @@ def read_log(repo, revs, merges=False, changes=True):
                 i += 2
             binary = added == "-"
             commits[-1][3].append((path, old, None if binary else int(added), None if binary else int(removed)))
-        elif COMMIT.match(token) and i + 4 <= len(tokens):
-            stamp, author, subject, body = tokens[i:i + 4]
-            i += 4
-            commits.append((token, int(stamp), subject, [], author, body))
+        elif COMMIT.match(token) and i + 5 <= len(tokens):
+            stamp, author, subject, body, parents = tokens[i:i + 5]
+            i += 5
+            commits.append((token, int(stamp), subject, [], author, body, parents.split()))
         else:
             raise ValueError("git log printed something read_log doesn't read: %r" % token[:80])
     return commits
@@ -288,6 +288,7 @@ def since_date(since):
     from its start, local time, as git would read it at the time of day it is now; or None. Stop if it's
     in such a form but isn't a real date."""
     text = since.strip()
+    import email.utils  # Here, as it takes as long to load as the rest of the script.
     if RELATIVE.match(text) or (RFC_2822.match(text) and email.utils.parsedate_tz(text)):
         return text
     if text.lower() == "today":
@@ -403,7 +404,10 @@ def checklist_places(repo, folders):
     pass out of the main checkout."""
     git_dir, common = folders[:2]
     trees, main = [], None
-    for index, entry in enumerate(git(repo, "worktree", "list", "--porcelain").split("\n\n")):
+    # A repo with no linked worktree, which git keeps a folder of in worktrees/, is its own one: no git to ask.
+    listed = git(repo, "worktree", "list", "--porcelain") if git_dir != common or os.path.isdir(
+        os.path.join(common, "worktrees")) else "worktree %s" % repo
+    for index, entry in enumerate(listed.split("\n\n")):
         lines = entry.strip().split("\n")
         if not lines[0].startswith("worktree ") or "bare" in lines:
             continue
@@ -865,7 +869,7 @@ def fix_trace(commits, window, typed, is_test=None, outside=None, tops=None):
         return found
 
     def reads(commit):
-        sha, stamp, subject, changes, author, body = commit
+        sha, stamp, subject, changes, author, body = commit[:6]
         quoted = QUOTED.search(subject)
         quoted = quoted.group(1) if quoted else ""
         # Lands a change again: Reapply "X", as git writes it, or Revert "Revert ...". Not a fix, nor a revert.
@@ -1462,9 +1466,13 @@ def main():
     # changed in the window that are files at HEAD (not symbolic links or submodules), text both by git's diff
     # and by their content there, and not tests unless kept. A commit of more of them than --max-files pairs
     # nothing and adds to no file's fixes, as such a fix touches most of them in passing.
+    # Read in one batch with the sizes before the window, which only the heatmap needs (not --show): its base is
+    # --since's revision, or the oldest commit's first parent (none at the root).
     at_head = set(tracked)
-    sizes = dict((p, n) for (_, p), n in line_counts(repo, [("HEAD", p) for p in sorted(files)
-                                                             if p in at_head]).items())
+    base = None if args.show else since_rev or (everything[-1][6][:1] or [None])[0]
+    read = line_counts(repo, [("HEAD", p) for p in sorted(files) if p in at_head] + (
+        [(base, None)] + [(base, earliest.get(p, p)) for p in sorted(files)] if base else []))
+    sizes = dict((p, n) for (rev, p), n in read.items() if rev == "HEAD" and p is not None)
     text = set(p for p in sizes if not files[p]["binary"])
     # Tests have their history read like the rest, but stay out of the table and the pairs.
     tests = set() if args.keep_tests else set(p for p in text if scoping.is_test(p, args.test, args.not_test))
@@ -1520,11 +1528,6 @@ def main():
                         print(message_lines(commit[5]))
             print()
         return
-    # Just before the window: --since's revision, or the oldest commit's parent (none at the root).
-    base = since_rev or git(repo, "rev-list", "--parents", "-n", "1", everything[-1][0]).split()[1:2]
-    base = base if isinstance(base, str) else (base[0] if base else None)
-    read = line_counts(repo, ([(base, None)] if base else []) + [(base, earliest.get(p, p)) for p in sorted(text)
-                                                                    if base])
     before = dict((p, read.get((base, earliest.get(p, p)), 0)) for p in text) if base else {}
     base_time = read.get((base, None), 0)
     rows = []
