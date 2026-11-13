@@ -1061,15 +1061,13 @@ def file_diffs(repo, wanted, most=60):
     result = {}
     for sha, path, old in wanted:
         sections = [x for x in re.split(r"(?m)^(?=diff --git )", found.get(sha, "")) if x.strip()]
-        mine = set("%s %s/%s" % (side, prefix, n) for n in (path, old) if n for side, prefix in (("---", "a"),
-                                                                                                  ("+++", "b")))
-        mine |= set("rename %s %s" % (way, n) for n in (path, old) if n for way in ("from", "to"))
-        mine |= {"diff --git a/%s b/%s" % (old or path, path)}  # A binary file's, or a mode's, has only this.
-        # A section is the file's where its header names it. A name git quotes, as one with a tab or past ASCII,
-        # is matched by being the only quoted one.
+        # A section is the file's where its header names it, as git writes the name.
+        mine = set("%s %s" % (side, quoted(prefix + n)) for n in (path, old) if n
+                   for side, prefix in (("---", "a/"), ("+++", "b/")))
+        mine |= set("rename %s %s" % (way, quoted(n)) for n in (path, old) if n for way in ("from", "to"))
+        # A binary file's change, a mode's or a pure rename's has only this.
+        mine.add("diff --git %s %s" % (quoted("a/" + (old or path)), quoted("b/" + path)))
         kept = [x for x in sections if mine & set(x.split("\n")[:8])]
-        quoted = [x for x in sections if re.search(r'(?m)^(?:---|\+\+\+) "', "\n".join(x.split("\n")[:8]))]
-        kept = kept or (quoted if len(quoted) == 1 else [])
         lines = []
         for section in kept:
             body = section.split("\n")
@@ -1100,6 +1098,16 @@ def clip(line):
     if len(line) > LINE_CHARS:
         line = "%s... (%d more characters)" % (line[:LINE_CHARS], len(line) - LINE_CHARS)
     return printable(line)
+
+
+def quoted(name):
+    """A path as git's diff writes it with core.quotePath: in double quotes, C-style, where it holds a quote, a
+    backslash, a control character or anything past ASCII."""
+    raw = name.encode("utf-8")
+    if not any(b < 0x20 or b in (0x22, 0x5c, 0x7f) or b >= 0x80 for b in raw):
+        return name
+    special = {7: "\\a", 8: "\\b", 9: "\\t", 10: "\\n", 11: "\\v", 12: "\\f", 13: "\\r", 0x22: '\\"', 0x5c: "\\\\"}
+    return '"%s"' % "".join(special.get(b) or (chr(b) if 0x20 <= b < 0x7f else "\\%03o" % b) for b in raw)
 
 
 def half_of(commit, newer):

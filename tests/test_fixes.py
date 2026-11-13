@@ -454,7 +454,6 @@ class Diffs(unittest.TestCase):
         self.assertIn("      %s... (49800 more characters)\n" % ("y" * 200), messages)
         self.assertLess(len(messages), 2000)
 
-    @unittest.expectedFailure
     def test_a_quoted_name_with_no_lines_of_change(self):
         # A name git quotes, past ASCII: a pure rename, and a binary file's change, have only its diff --git line.
         repo = support.Repo("quoted")
