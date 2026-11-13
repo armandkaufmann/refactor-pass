@@ -547,6 +547,17 @@ class Words(unittest.TestCase):
                            ("AUTHORS.txt", doc), ("README.zh-CN.md", doc), ("Changes", doc)]:
             self.assertEqual(not_code(path, lambda p: False), kind, path)
 
+    @unittest.expectedFailure
+    def test_a_program_named_for_documentation(self):
+        # Without an extension, a name with more after the documentation word is documentation only where that
+        # word is in capitals, as LICENSE-MIT and README_zh: license-checker is a program.
+        is_doc = self.heatmap.is_doc
+        for path in ("bin/license-checker", "scripts/history-cleanup", "src/changes_tracker", "tools/changelog-gen",
+                     "authors-update"):
+            self.assertFalse(is_doc(path), path)
+        for path in ("LICENSE-MIT", "COPYING.LESSER", "README_zh", "NEWS", "AUTHORS", "CHANGELOG", "changelog"):
+            self.assertTrue(is_doc(path), path)
+
     def test_code_in_a_docs_folder_and_a_setup_py_at_no_packages_top(self):
         # In a docs folder, only what isn't code by its extension is documentation: cobra's doc/ is a package of
         # the library. setup.py is a manifest at a package's top, where its manifests are: the repo's, or beside
