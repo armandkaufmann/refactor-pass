@@ -67,11 +67,13 @@ together, isn't.
 And the fixes: the commits whose messages say they fixed a defect in the
 project's own code (wrong behaviour, a crash, a security hole, a regression,
 a compile or type error, a guard against a failure that could happen as the
-code stood), and per file how many of its commits did, and how many of those
-in the newer half. One that changed only documentation, tests, or CI, build
-or dependency files never counts, and the table sets those files aside. A
-lead and a floor: many fixes don't say so. Each counts once, as the first of
-these that it reads as:
+code stood), at least that many, since many fixes don't say so. One that
+changed only documentation, tests, or CI, build or dependency files never
+counts. Per file, how many of the commits that changed it say so, and how
+many of those in the newer half, those files and commits of more than
+--max-files files aside: a lead to which files to read, not a count of a
+file's fixes, as a fix elsewhere can touch it in passing. Each commit counts
+once, as the first of these that it reads as:
 
   revert  its subject says revert and its body "This reverts commit <hash>",
           of another author's commit; a revert of the author's own withdraws
@@ -1426,9 +1428,18 @@ def main():
     logs = defaultdict(list)  # Per file (in scope or not), the commits that changed it.
     changed_as = {}  # Per commit and file, the file's change in it, under its name in that commit.
     own_left_out = set()
+
+    def sweeping(commit):
+        """Whether a commit changed more files than --max-files, tests aside unless kept: as it pairs nothing, it
+        adds to no file's fixes, since such a fix touches most of them in passing."""
+        return len(set(p for p, _, _, _ in commit[3] if scoping.in_scope(today(p), args.scope) and not
+                       scoping.ignored(today(p), patterns) and (args.keep_tests or not is_test(today(p))))) \
+            > args.max_files
+
     for commit in everything:
         sha, changes = commit[0], commit[3]
         touched = set()
+        tier = 0 if sha not in fixes or sweeping(commit) else fixes[sha][0]
         for path, old, added, removed in changes:
             name = today(path)
             if old is not None:
@@ -1452,7 +1463,6 @@ def main():
             if name not in touched:
                 stats["commits"] += 1
                 stats["recent"] += sha in newer
-                tier = fixes.get(sha, (0,))[0]
                 if tier:  # Counted once, the strongest way it reads as a fix; fixes[0] counts them all.
                     stats["fixes"][tier] += 1
                     stats["fixes"][0] += 1
@@ -1527,8 +1537,8 @@ def main():
                "size_before": before.get(path, 0), "growth": sizes[path] - before.get(path, 0)}
         rows.append(row)
     rows.sort(key=lambda r: (-r["commits"] * r["size"], -r["commits"], -r["churn"], r["path"]))
-    # For the page: each file's fixes, at least, where the trace counts them; documentation, tests, and CI,
-    # build and dependency files aside, as in the table of fixes by file.
+    # For the page: per file, the commits that say they fixed a defect, where the trace counts them;
+    # documentation, tests, and CI, build and dependency files aside, as in the table of fixes by file.
     for row in rows:
         if fix_facts and not fix_facts["thin"] and not not_code(row["path"], is_test, tops):
             row.update(fixes=files[row["path"]]["fixes"][0], fixes_recent=files[row["path"]]["fixes_recent"])
@@ -1731,10 +1741,11 @@ def main():
         place = dict((r["path"], i) for i, r in enumerate(rows))
         fixed = sorted((p for p in place if files[p]["fixes"][0] and not not_code(p, is_test, tops)),
                        key=lambda p: (-files[p]["fixes"][0], -files[p]["fixes_recent"], place[p]))
-        print("Fixes by file, at least: of each file's commits, those whose messages say they fixed a defect in "
-              "it, and how many of those were in the newer half; documentation, tests, and CI, build and "
-              "dependency files aside. A floor, not a count: --show FILE --messages gives each commit's message, "
-              "to read the ones left unmarked.")
+        print("Fixes by file: of each file's commits, those whose messages say they fixed a defect, and how many "
+              "of those were in the newer half; documentation, tests, and CI, build and dependency files aside, and "
+              "commits of more than %d files, as in the pairs. A lead, not a count of each file's fixes: a fix "
+              "elsewhere can touch a file in passing, and many fixes don't say so. --show FILE --messages gives "
+              "each commit's message, to judge." % args.max_files)
         if fixed:
             print("%7s %6s %6s %5s %5s  file" % ("fixes", "recent", "revert", "type", "words"))
         for path in fixed[:args.top]:

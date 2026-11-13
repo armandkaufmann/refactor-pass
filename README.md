@@ -22,8 +22,8 @@ fix.
   together and when they last did, and the tests that change with several
   other files, as leads to check. Housekeeping bots' commits are left out;
   coding agents' commits count. It counts the commits whose messages say
-  they fixed a defect in each file, at least that many, and the agent reads
-  the rest of the commits for the few files it recommends.
+  they fixed a defect, at least that many, and by file which of them changed
+  it; the agent reads each file's commits for the few files it recommends.
 - **The smells**, from a catalogue of the established code smells, each
   with what to count, when it isn't a smell, and its playbook of named
   refactorings.

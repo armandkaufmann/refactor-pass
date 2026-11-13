@@ -116,7 +116,6 @@ class Shop(unittest.TestCase):
             "a type typically say so for a third to a half of the fixes, and the rest are among the commits --show "
             "leaves unmarked. 1 more commit closes an issue without saying what kind of change."])
 
-    @unittest.expectedFailure
     def test_fixes_by_file(self):
         # util.py: the negative total and the Chinese fix, older, and the revert, in the newer half (the 9
         # newest). app.py: the crash, older, and the rounding. package.json had the rounding too, but it's a
@@ -129,7 +128,6 @@ class Shop(unittest.TestCase):
                       "file's fixes: a fix elsewhere can touch a file in passing, and many fixes don't say so. --show "
                       "FILE --messages gives each commit's message, to judge.\n", self.result.out)
 
-    @unittest.expectedFailure
     def test_a_commit_of_more_files_than_max_files_adds_to_no_files_number(self):
         # As it adds to no pair: one fix that renames an import in 29 other files isn't a fix of each.
         repo = support.Repo("sweep")

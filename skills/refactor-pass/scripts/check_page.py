@@ -236,7 +236,7 @@ def check_item(item, page, seen, errors, warnings, spread):
 
 def check_heatmap(heatmap, errors):
     """The fixes counted in a heatmap block, where it counts them: its window's facts, and each file's count,
-    at least, and how many of those were in the newer half."""
+    the commits that say they fixed a defect and changed it, and how many of those were in the newer half."""
     window = heatmap.get("window") if isinstance(heatmap.get("window"), dict) else {}
     if "fixes" in window and fields("The heatmap's window.fixes", window["fixes"], FIX_FACTS, errors):
         facts = window["fixes"]

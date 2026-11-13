@@ -125,9 +125,11 @@ what it said, and go on without it, from `git log` and the code.
   and group them by feature. Many unrelated reasons to change one file is
   Divergent Change, and it shows here more directly than in any count.
 - **Fixes** count the commits whose messages say they fixed a defect in the
-  project's own code, so there are at least that many. Where nearly all
-  subjects carry a type, the count is close to complete; elsewhere it's a
-  floor, and step 4 counts the rest for the files you'll recommend.
+  project's own code: at least that many in the window, close to complete
+  where nearly all subjects carry a type. A file's number is of the commits
+  that say so and changed it, which a fix elsewhere can touch in passing: a
+  lead to which files to read, not a count of their fixes, which step 4
+  makes for the files you'll recommend.
 
 ## 2. What: the smells
 

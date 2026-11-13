@@ -275,7 +275,7 @@ ol.items, ul.items { list-style: none; margin: 0; padding: 0; display: grid; gap
     </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>File</th><th class="num">Lines</th><th class="num">Commits</th><th class="num">Newer half</th><th class="num" id="fixes-head" hidden>Fixes, at least</th><th class="num" id="last-head">Last changed</th><th class="num">Growth</th><th class="bar-col" style="width:30%">Commits, newer half solid</th></tr></thead>
+        <thead><tr><th>File</th><th class="num">Lines</th><th class="num">Commits</th><th class="num">Newer half</th><th class="num" id="fixes-head" hidden>Fix commits</th><th class="num" id="last-head">Last changed</th><th class="num">Growth</th><th class="bar-col" style="width:30%">Commits, newer half solid</th></tr></thead>
         <tbody id="files-top"></tbody>
       </table>
     </div>
@@ -490,7 +490,8 @@ function renderHeatmap(heat) {
   if (leftOut.length) text += ` Left out: ${leftOut.join(", ")}.`;
   if (w.tests_aside) text += ` ${number(w.tests_aside)} test files changed too, and are set aside from the table and the pairs.`;
   if (w.shallow) text += " The clone is shallow, so its history stops just before the oldest commit here.";
-  // The fixes trace: what the commits' messages say they fixed, at least. A heatmap from before it has none.
+  // The fixes trace: what the commits' messages say they fixed, at least that many in the window, and per file
+  // the commits that say so and changed it. A heatmap from before it has none.
   const fx = w.fixes;
   if (fx && fx.thin) text += fx.language ? " Most of the commits' subjects are in a language the fixes trace doesn't read (it reads English and Chinese), so no fixes are counted."
     : " Most of the commits' subjects are a word or two, too little to tell a fix from anything else, so no fixes are counted.";
@@ -507,7 +508,7 @@ function renderHeatmap(heat) {
   $("fixes-head").hidden = !hasFixes;
   // Documentation, tests, and CI, build and dependency files aren't counted: their cell says so.
   const fixCell = f => !hasFixes ? "" : "fixes" in f
-    ? `<td class="num fix" title="at least ${f.fixes} commits fixed a defect in it, ${f.fixes_recent} of them in the newer half">${f.fixes}<span class="muted">, ${f.fixes_recent} newer</span></td>`
+    ? `<td class="num fix" title="${f.fixes} commits that say they fixed a defect changed it, ${f.fixes_recent} of them in the newer half: not all fixes of it">${f.fixes}<span class="muted">, ${f.fixes_recent} newer</span></td>`
     : `<td class="num fix muted" title="documentation, tests, or CI, build or dependency files: not counted">–</td>`;
   const most = Math.max(1, ...heat.files.map(f => f.commits));
   const lastCell = f => hasLast ? `<td class="num">${day(f.last)}</td>` : "";
