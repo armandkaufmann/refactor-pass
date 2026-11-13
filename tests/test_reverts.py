@@ -193,6 +193,15 @@ class OneCommit(unittest.TestCase):
                  "* Revert it\n\nThis reverts commit %s.\n" % land[0])
         self.assertEqual(heatmap.fix_trace([merge], [merge, land], False)[merge[0]], (0, "", None))
 
+    @unittest.expectedFailure
+    def test_a_revert_after_the_issue_it_closes(self):
+        # As Django writes one: Fixed #37 -- Reverted "...".
+        heatmap = self.heatmap
+        land = ("1" * 40, 1, "Fixed #36 -- Added a check", [("a.py", None, 1, 0)], "Bob <b@c>", "")
+        back = ("2" * 40, 2, 'Fixed #37 -- Reverted "Fixed #36 -- Added a check".', [("a.py", None, 1, 0)],
+                "Ann <a@b>", "This reverts commit %s.\n" % land[0])
+        self.assertEqual(heatmap.fix_trace([back], [back, land], False)[back[0]], (1, "reverts 111111111", 1))
+
     def test_a_revert_of_several_commits(self):
         # A withdrawal only where every commit it names is its author's own; another's makes it a revert.
         heatmap = self.heatmap
