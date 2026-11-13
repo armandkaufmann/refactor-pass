@@ -220,6 +220,14 @@ class Errors(unittest.TestCase):
             with self.subTest(error=words):
                 self.assertError(page(heatmap=dict(good, files=[change])), "row for src/a.py: " + words)
 
+    @unittest.expectedFailure
+    def test_a_heatmap_row_whose_commits_arent_a_number(self):
+        row = {"path": "src/a.py", "commits": None, "fixes": 3, "fixes_recent": 1}
+        for commits in (None, "4"):
+            with self.subTest(commits=commits):
+                self.assertError(page(heatmap=dict(HEATMAP, files=[dict(row, commits=commits)])),
+                                 "The heatmap's row for src/a.py: its commits should be a whole number.")
+
     def test_bad_ids_and_items(self):
         text = changed(lambda d: d["items"].extend([{"id": "X1", "status": "todo"}, "R9", {"title": "no id"}]))
         self.assertError(text, "X1: an ID is R, F, L or D and a number, such as R1.")
