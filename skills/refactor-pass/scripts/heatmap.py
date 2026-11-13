@@ -1095,7 +1095,7 @@ def show_diffs(repo, show, given, listed, changed_as, fixes, newer):
     for value in given:
         matches = [c for c in listed if re.match(r"[0-9a-fA-F]{4,}\Z", value) and c[0].startswith(value.lower())]
         if len(matches) == 1:
-            chosen.append(matches[0])
+            chosen += [matches[0]] if matches[0] not in chosen else []  # Given twice, shown once.
         else:
             problems.append("%s %s" % (value, "is more than one of them" if matches else "isn't one of them"))
     if problems or not chosen:
@@ -1272,6 +1272,8 @@ def main():
     args = parser.parse_args()
     if args.messages and not args.show:
         parser.error("--messages goes with --show: --show FILE --messages")
+    if args.newest and not args.show:
+        parser.error("--newest goes with --show: --show FILE --newest N")
     if args.diffs is not None and len(args.show) != 1:
         parser.error("--diffs goes with one --show: --show FILE --diffs SHA,SHA")
 

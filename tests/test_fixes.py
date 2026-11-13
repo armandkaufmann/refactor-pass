@@ -186,7 +186,6 @@ class Shop(unittest.TestCase):
         self.assertEqual(result.code, 2, result)
         self.assertIn("--diffs goes with one --show: --show FILE --diffs SHA,SHA", result.err)
 
-    @unittest.expectedFailure
     def test_newest_goes_with_show_and_a_commit_given_twice_is_shown_once(self):
         result = support.run("heatmap.py", "-C", self.repo.path, "--newest", "3")
         self.assertEqual(result.code, 2, result)
