@@ -574,6 +574,12 @@ class Words(unittest.TestCase):
                            ("AUTHORS.txt", doc), ("README.zh-CN.md", doc), ("Changes", doc)]:
             self.assertEqual(not_code(path, lambda p: False), kind, path)
 
+    @unittest.expectedFailure
+    def test_open_mmlabs_types_in_brackets(self):
+        # As mmengine writes them: [Fix], [Feature], [Enhance], [Improve], [Refactor], [Docs], [Test].
+        for word in ("Feature", "Enhance", "Improve", "Refactor", "Docs", "Test"):
+            self.assertEqual(self.heatmap.type_of("[%s] x" % word), ("other", "[%s]" % word), word)
+
     def test_types(self):
         type_of = self.heatmap.type_of
         self.assertEqual(type_of("fix(router)!: x"), ("fix", "fix(router)!:"))
