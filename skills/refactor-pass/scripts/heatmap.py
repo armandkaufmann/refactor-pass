@@ -687,8 +687,12 @@ NOT_FIX_WORDS = {"typo": "typo typos spelling grammar grammatical wording", "for
                  "warning": "warning warnings", "release": "release"}
 NOT_FIX_PHRASES = {"error message": ("error message", "error messages")}
 NOT_FIX_CHINESE = ["注释", "文档"]
-DOC_FILES = re.compile(r"(?:changelog|changes|history|news|authors|contributors|readme|license|copying|contributing|"
-                       r"code_of_conduct)(?:[._-][\w.-]*)?$|.*\.(?:md|markdown|rst|adoc|asciidoc|rdoc)$", re.I)
+# Documentation by its name: a changelog, a readme, a licence and the like, with no extension, a documentation
+# one or one in capitals (COPYING.LESSER), as against src/history.ts or news.py; or Markdown and the like.
+DOC_NAMES = re.compile(r"(?:changelog|changes|history|news|authors|contributors|readme|license|copying|contributing|"
+                       r"code_of_conduct)(?:[._-][\w.-]*)?$", re.I)
+DOC_EXTENSIONS = {"md", "markdown", "rst", "txt", "text", "adoc", "asciidoc", "rdoc", "org", "pod"}
+DOC_FILES = re.compile(r".*\.(?:md|markdown|rst|adoc|asciidoc|rdoc)$", re.I)
 
 
 # CI, build and dependency files: what a project runs its checks with, builds and packages itself with, and
@@ -712,8 +716,10 @@ CHORE_FILES = re.compile(
 
 def is_doc(path):
     """Whether a file is documentation: in a docs folder, a changelog, a readme, or Markdown and the like."""
-    return bool(DOC_FILES.match(path.split("/")[-1]) or
-                set(path.lower().split("/")[:-1]) & {"doc", "docs", "documentation"})
+    name = path.split("/")[-1]
+    _, dot, extension = name.rpartition(".")
+    named = DOC_NAMES.match(name) and (not dot or extension.lower() in DOC_EXTENSIONS or extension.isupper())
+    return bool(named or DOC_FILES.match(name) or set(path.lower().split("/")[:-1]) & {"doc", "docs", "documentation"})
 
 
 def is_chore(path):
