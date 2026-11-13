@@ -235,9 +235,12 @@ def check_heatmap(heatmap, errors):
             continue
         where = "The heatmap's row for %s" % row.get("path")
         fixes, recent = row.get("fixes"), row.get("fixes_recent")
+        commits = row.get("commits", fixes)
         if not all(isinstance(n, int) and not isinstance(n, bool) and n >= 0 for n in (fixes, recent)):
             errors.append("%s: its fixes and fixes_recent should be whole numbers, 0 or more." % where)
-        elif recent > fixes or fixes > row.get("commits", fixes):
+        elif not isinstance(commits, int) or isinstance(commits, bool):
+            errors.append("%s: its commits should be a whole number." % where)
+        elif recent > fixes or fixes > commits:
             errors.append("%s: its %d fixes, %d in the newer half, don't fit its %s commits."
                           % (where, fixes, recent, row.get("commits")))
 

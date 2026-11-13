@@ -220,7 +220,6 @@ class Errors(unittest.TestCase):
             with self.subTest(error=words):
                 self.assertError(page(heatmap=dict(good, files=[change])), "row for src/a.py: " + words)
 
-    @unittest.expectedFailure
     def test_a_heatmap_row_whose_commits_arent_a_number(self):
         row = {"path": "src/a.py", "commits": None, "fixes": 3, "fixes_recent": 1}
         for commits in (None, "4"):
