@@ -1145,6 +1145,23 @@ def quoted(name):
     return '"%s"' % "".join(special.get(b) or (chr(b) if 0x20 <= b < 0x7f else "\\%03o" % b) for b in raw)
 
 
+# A sample nearly all in the newer half: how many of a file's fixes are there says nothing the count doesn't.
+NEWER_NEARLY_ALL = 0.9
+
+
+def newer_line(count, total):
+    """--show --messages's line on how many of the commits it lists are in the newer half, and, where nearly
+    all are, that the count of the file's fixes there isn't said, as the checklist records it (newer: null)."""
+    nearly = count >= NEWER_NEARLY_ALL * total
+    if total == 1:
+        some = "this one" if count else "not this one"
+    else:
+        some = "all %d" % total if count == total else "%s of these %d%s" % (count or "none", total,
+                                                                            ", nearly all" if nearly else "")
+    return "In the newer half: %s%s." % (some, ", so how many of its fixes are there isn't said (newer: null)"
+                                         if nearly else "")
+
+
 def half_of(commit, newer):
     """Whether a commit is in the window's newer half, as --show says it, the same width either way."""
     return "newer" if commit[0] in newer else "older"
@@ -1566,6 +1583,8 @@ def main():
                 oldest["sha"], oldest["date"], latest["sha"], latest["date"], newer_from,
                 " %d more: --newest %d lists them all." % (len(mine) - len(listed), len(mine))
                 if len(listed) < len(mine) else ""))
+            if args.messages and listed:
+                print(newer_line(sum(1 for c in listed if c[0] in newer), len(listed)))
             for commit in listed:
                 info = describe(commit)
                 print("  %s %s %s  %s%s" % (info["sha"], info["date"], half_of(commit, newer),

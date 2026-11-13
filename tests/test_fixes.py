@@ -327,7 +327,6 @@ class Typed(unittest.TestCase):
             "90% of the subjects carry a type, read as a label, so the count is close to complete."])
         self.assertEqual(fix_rows(heatmap.out), {"app.py": (4, 3, 0, 3, 1)})
 
-    @unittest.expectedFailure
     def test_messages_say_how_much_of_the_sample_is_in_the_newer_half(self):
         # Where nearly all of it is, a count of its fixes there says nothing new: the line says it isn't said.
         repo = support.Repo("halves")
