@@ -1013,7 +1013,9 @@ def file_diffs(repo, wanted, most=60):
             start = next((i for i, line in enumerate(body) if line.startswith("@@")), len(body))
             notes = [line for line in body[1:start] if line.startswith(("rename from", "new file", "deleted file",
                                                                         "Binary files", "old mode"))]
-            lines += ["(%s)" % printable(n) for n in notes] + [printable(line) for line in body[start:]]
+            # A line's carriage return, as a CRLF file's lines end, says nothing a reader needs.
+            lines += ["(%s)" % printable(n) for n in notes] + [printable(line[:-1] if line.endswith("\r") else line)
+                                                                for line in body[start:]]
         while lines and not lines[-1]:
             lines.pop()
         if not lines:  # It's asked only for commits that changed the file: none found is a gap in reading git.

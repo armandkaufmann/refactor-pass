@@ -496,7 +496,6 @@ class Diffs(unittest.TestCase):
                           % ("y" * 162), out)
         self.assertIn("Start %s... (206 more characters)\n" % ("x" * 194), out)  # As --messages lists it.
 
-    @unittest.expectedFailure
     def test_a_files_crlf_line_ends_arent_shown(self):
         # Four characters of noise a line, \x0d, for nothing a reader needs.
         repo = support.Repo("crlf")
