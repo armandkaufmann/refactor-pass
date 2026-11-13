@@ -36,15 +36,13 @@ Examples:
 
 import argparse
 import os
-import shutil
-import subprocess
 import sys
 import tempfile
 from collections import Counter, defaultdict
 
 sys.dont_write_bytecode = True
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import support  # noqa: E402
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from compare_parsers import clone, support  # noqa: E402
 
 LABELS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "fixes_labels.txt")
 
@@ -118,39 +116,6 @@ def record_tiers(now, path=LABELS):
             out.append(line)
     with open(path, "w", encoding="utf-8", newline="\n") as f:
         f.write("".join(out))
-
-
-def run(command, **options):
-    return subprocess.run(command, capture_output=True, **options)
-
-
-def head(repo):
-    result = run(["git", "-C", repo, "rev-parse", "HEAD"])
-    return result.stdout.decode().strip() if result.returncode == 0 else None
-
-
-def clone(one, repos_dirs, cache, fetch):
-    """The folder holding the repo at its pinned commit with enough history, and how it was found; or None and
-    why not."""
-    for folder in repos_dirs:
-        path = os.path.join(folder, one.name)
-        if os.path.isdir(path) and head(path) == one.sha:
-            return path, "on disk"
-    path = os.path.join(cache, "%s-%s" % (one.name, one.sha[:12]))
-    if head(path) == one.sha:
-        return path, "cached"
-    if not fetch:
-        return None, "no clone at %s, and fetching is off" % one.sha[:12]
-    if os.path.isdir(path):
-        shutil.rmtree(path)
-    os.makedirs(path)
-    for command in (["git", "init", "-q", path],
-                    ["git", "-C", path, "fetch", "-q", "--depth", str(one.window + 100), one.url, one.sha],
-                    ["git", "-C", path, "-c", "advice.detachedHead=false", "checkout", "-q", "FETCH_HEAD"]):
-        result = run(command)
-        if result.returncode != 0:
-            return None, "fetching it failed: %s" % result.stderr.decode(errors="replace").strip()
-    return path, "fetched"
 
 
 def load(heatmap, one, path, labelled):
@@ -262,7 +227,7 @@ def main():
     for one in REPOS:
         if args.only and one.name not in args.only:
             continue
-        path, how = clone(one, args.repos_dir, args.cache, not args.no_fetch)
+        path, how = clone(one, args.repos_dir, args.cache, not args.no_fetch, one.window + 100)
         if not path:
             skipped.append(one.name)
             print("%s: skipped, %s." % (one.name, how))

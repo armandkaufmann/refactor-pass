@@ -156,10 +156,11 @@ def head(repo):
     return result.stdout.decode().strip() if result.returncode == 0 else None
 
 
-def clone(one, repos_dirs, cache, fetch):
-    """The folder holding the set's files at its pinned commit, and how it was found; or None and why not."""
+def clone(one, repos_dirs, cache, fetch, depth=1):
+    """The folder holding the set's files at its pinned commit, with depth commits of history where it's fetched,
+    and how it was found; or None and why not. one has a name, a url and a sha, and may have a folder."""
     for folder in repos_dirs:
-        for name in dict.fromkeys([one.folder, one.name]):
+        for name in dict.fromkeys([getattr(one, "folder", one.name), one.name]):
             path = os.path.join(folder, name)
             if os.path.isdir(path):
                 at = head(path)
@@ -174,7 +175,7 @@ def clone(one, repos_dirs, cache, fetch):
         shutil.rmtree(path)
     os.makedirs(path)
     for command in (["git", "init", "-q", path],
-                    ["git", "-C", path, "fetch", "-q", "--depth", "1", one.url, one.sha],
+                    ["git", "-C", path, "fetch", "-q", "--depth", str(depth), one.url, one.sha],
                     ["git", "-C", path, "-c", "advice.detachedHead=false", "checkout", "-q", "FETCH_HEAD"]):
         result = run(command)
         if result.returncode != 0:
