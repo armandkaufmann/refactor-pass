@@ -251,8 +251,9 @@ def check_heatmap(heatmap, errors):
         date("The heatmap's window.today", window["today"], errors)
     if "quiet" in window and not isinstance(window["quiet"], bool):
         errors.append("The heatmap's window.quiet should be true or false.")
-    if "scope_newest" in window and not isinstance(window["scope_newest"], (dict, type(None))):
-        errors.append("The heatmap's window.scope_newest should be an object or null.")
+    for key in ("scope_newest", "behind", "elsewhere"):
+        if key in window and not isinstance(window[key], (dict, type(None))):
+            errors.append("The heatmap's window.%s should be an object or null." % key)
     if "fixes" in window and fields("The heatmap's window.fixes", window["fixes"], FIX_FACTS, errors):
         facts = window["fixes"]
         counts = [facts.get(k) for k in ("revert", "type", "words")]

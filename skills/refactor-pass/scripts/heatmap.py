@@ -849,23 +849,67 @@ def now():
 
 
 def in_time(today, commits, scoped):
-    """The header's lines on where the window sits in time, and whether its work has gone quiet: today, the
-    newest commit's age and the window's span; with scoped, the newest commit to change the scope, where it
-    isn't the newest commit, which the quiet is judged by. The window's commits are newest first."""
+    """The header's line on where the window sits in time, and whether its work has gone quiet by HEAD's
+    history: today, the newest commit's age and the window's span; with scoped, the newest commit to change the
+    scope, where it isn't the newest commit, which the quiet is judged by. The window's commits are newest
+    first."""
     newest, span = commits[0], max(c[1] for c in commits) - min(c[1] for c in commits)
-
-    def age(commit):  # One dated after now, by a clock that's wrong, isn't any age.
-        return "%s old" % how_long(today - commit[1]) if today >= commit[1] else "dated after now"
     judged = scoped or newest
-    lines = ["Today is %s: the newest commit is %s%s%s the window spans %s." % (
-        datetime.fromtimestamp(today).strftime("%Y-%m-%d"), age(newest),
-        ", and the newest to change the scope %s" % age(scoped) if scoped else "", ";" if scoped else ", and",
-        how_long(span) if span >= 60 else "under a minute")]
-    quiet = today - judged[1] > QUIET_DAYS * 86400
+    line = "Today is %s: the newest commit is %s%s%s the window spans %s." % (
+        datetime.fromtimestamp(today).strftime("%Y-%m-%d"), age(today, newest[1]),
+        ", and the newest to change the scope %s" % age(today, scoped[1]) if scoped else "", ";" if scoped else
+        ", and", how_long(span) if span >= 60 else "under a minute")
+    return line, today - judged[1] > QUIET_DAYS * 86400
+
+
+def age(today, stamp):
+    """How old a time is, as the header says it; one after now, by a clock that's wrong, isn't any age."""
+    return "%s old" % how_long(today - stamp) if today >= stamp else "dated after now"
+
+
+LACKED = 200  # The commits HEAD lacks read from another ref, newest first.
+
+
+def work_lacked(repo, today, quiet, person, in_scope):
+    """The header's lines on a person's work HEAD lacks, from the refs the clone holds, and whether the work
+    HEAD's history has gone quiet, as quiet says, is still to be said to have: (lines, quiet, behind,
+    elsewhere). behind is the upstream's work, which the checkout is behind; elsewhere, where quiet, the newest
+    commit of any ref's that's under QUIET_DAYS old, which says the work hasn't gone quiet. in_scope, where a
+    scope is given, tells a path in it: a commit counts for the quiet only where it changed one."""
+    def lacking(revs):
+        read = read_log(repo, ["-n", str(LACKED)] + revs + ["--not", "HEAD"], changes=in_scope is not None)
+        mine = [c for c in read if person(c[4])]
+        return sorted(mine, key=lambda c: -c[1]), len(read) == LACKED
+
+    def recent(found):
+        return [c for c in found if (in_scope is None or any(in_scope(p) for p, _, _, _ in c[3])) and
+                today - c[1] <= QUIET_DAYS * 86400]
+
+    lines, behind, elsewhere = [], None, None
+    up = scoping.git(repo, "rev-parse", "--symbolic-full-name", "@{upstream}")
+    upstream = up.stdout.decode("utf-8", errors="replace").strip() if up.returncode == 0 else ""
+    if upstream:
+        ahead, more = lacking([upstream])
+        if ahead:
+            behind = {"ref": re.sub(r"^refs/(?:heads|remotes)/", "", upstream), "commits": len(ahead),
+                      "date": describe(ahead[0])["date"]}
+            lines.append("This checkout is behind %s by %s%s: the heatmap reads HEAD's history only." % (
+                behind["ref"], "%d or more commits" % len(ahead) if more else "1 commit" if len(ahead) == 1 else
+                "%d commits" % len(ahead), (", " if len(ahead) == 1 else ", the newest ") + age(today, ahead[0][1])))
+            quiet = quiet and not recent(ahead)
     if quiet:
-        lines.append("Nothing has landed%s for over three months: the work it counts%s has gone quiet." % (
-            " in the scope" if scoped else "", " there" if scoped else ""))
-    return lines, quiet
+        found = recent(lacking(["--branches", "--remotes"])[0])
+        if found:
+            holders = git(repo, "for-each-ref", "--contains", found[0][0], "--sort=-committerdate",
+                          "--format=%(symref)%00%(refname:short)", "refs/heads", "refs/remotes").split("\n")
+            ref = next((h.split("\0", 1)[1] for h in holders if h.startswith("\0")), "")
+            elsewhere = {"ref": ref, "date": describe(found[0])["date"]}
+            lines.append("This checkout's history has gone quiet%s, but %s's newest commit%s, which it lacks, is %s: "
+                         "the heatmap reads HEAD's history only." % (" in the scope" if in_scope else "", ref,
+                                                                     " to change it" if in_scope else "",
+                                                                     age(today, found[0][1])))
+            quiet = False
+    return lines, quiet, behind, elsewhere
 
 
 def how_long(seconds):
@@ -1623,7 +1667,19 @@ def main():
     # too, where that's another, which judges whether the work has gone quiet: the scope's.
     clock = now()
     scoped = next((commits[i] for i, touched in enumerate(sets) if touched), None) if args.scope else None
-    time_lines, quiet = in_time(clock, commits, scoped if scoped is not commits[0] else None)
+    time_line, quiet = in_time(clock, commits, scoped if scoped is not commits[0] else None)
+    # A person's work HEAD lacks, on the refs the clone holds: its upstream's, and any's where its history has
+    # gone quiet. Bots' commits aren't work, as in the window.
+    bot_words = [n.lower() for n in args.bot]
+
+    def person(author):
+        return args.keep_bots or not (HOUSEKEEPING.search(author) or any(n in author.lower() for n in bot_words))
+    more_lines, quiet, behind, elsewhere = work_lacked(
+        repo, clock, quiet, person, (lambda p: scoping.in_scope(p, args.scope) and not scoping.ignored(p, patterns))
+        if args.scope else None)
+    there = (" in the scope", " there") if scoped is not None and scoped is not commits[0] else ("", "")
+    gone = "Nothing has landed%s for over three months: the work it counts%s has gone quiet." % there
+    time_lines = [time_line] + more_lines + [gone] * quiet
     if args.show:
         # A file git tracks, or one changed in the window, as a file deleted in it; or a name a file had before
         # it was renamed in the window, read as its name today. Any other is a mistake, as a scope's would be.
@@ -1798,7 +1854,8 @@ def main():
               "excluded_checklists": len(recorded), "excluded_bots": len(bots), "bots": bot_names,
               "too_big_for_pairs": too_big,
               "since": args.since, "tests_aside": None if args.keep_tests else len(tests), "shallow": bool(cut),
-              "today": datetime.fromtimestamp(clock).strftime("%Y-%m-%d"), "quiet": quiet,
+              "today": datetime.fromtimestamp(clock).strftime("%Y-%m-%d"), "quiet": quiet, "behind": behind,
+              "elsewhere": elsewhere,
               "scope_newest": describe(scoped) if scoped is not None and scoped is not commits[0] else None}
     if fix_facts:
         window["fixes"] = fix_facts

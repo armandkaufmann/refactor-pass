@@ -496,6 +496,8 @@ function renderHeatmap(heat) {
     `The newer half of the commits starts ${day(w.newer_half_from)}${hasLast ? "; a file last changed early in it has gone quiet, however many of its commits fall there" : ""}. Files are ordered by commits times lines.`;
   // Where the window sat in time when the heatmap was made; a heatmap from before says nothing of it.
   if (w.today) text += ` On ${day(w.today)}, when it was made, the newest commit was ${span(w.newest.date, w.today)} old${w.scope_newest ? `, and the newest to change the scope ${span(w.scope_newest.date, w.today)} old` : ""}; the window spans ${span(w.oldest.date, w.newest.date)}.` +
+    (w.behind ? ` This checkout was behind ${esc(w.behind.ref)} by ${number(w.behind.commits)} commit${w.behind.commits === 1 ? "" : "s"}, the newest ${span(w.behind.date, w.today)} old; the heatmap read HEAD's history only.` : "") +
+    (w.elsewhere ? ` This checkout's history had gone quiet, but ${esc(w.elsewhere.ref)}'s newest commit, which it lacked, was ${span(w.elsewhere.date, w.today)} old; the heatmap read HEAD's history only.` : "") +
     (w.quiet ? ` Nothing had landed${w.scope_newest ? " in the scope" : ""} for over three months: the work it counts had gone quiet.` : "");
   if (leftOut.length) text += ` Left out: ${leftOut.join(", ")}.`;
   if (w.tests_aside) text += ` ${number(w.tests_aside)} test files changed too, and are set aside from the table and the pairs.`;

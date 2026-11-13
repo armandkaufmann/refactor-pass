@@ -442,12 +442,10 @@ class Elsewhere(unittest.TestCase):
         start = next(i for i, line in enumerate(out) if line.startswith("Today is "))
         return out[start + 1:out.index(next(line for line in out if line.startswith("Newer half")))]
 
-    @unittest.expectedFailure
     def test_a_checkout_behind_its_upstream(self):
         self.assertEqual(self.said("drift"), ["This checkout is behind origin/drift by 1 commit, 8 days old: the "
                                               "heatmap reads HEAD's history only."])
 
-    @unittest.expectedFailure
     def test_work_that_goes_on_off_this_checkouts_history(self):
         self.assertEqual(self.said("old"), ["This checkout's history has gone quiet, but main's newest commit, which "
                                             "it lacks, is 1 day old: the heatmap reads HEAD's history only."])
@@ -456,7 +454,6 @@ class Elsewhere(unittest.TestCase):
             "This checkout's history has gone quiet in the scope, but side's newest commit to change it, which it "
             "lacks, is 2 days old: the heatmap reads HEAD's history only."])
 
-    @unittest.expectedFailure
     def test_the_page_carries_it(self):
         page = os.path.join(support.new_folder("elsewhere"), "p.html")
         found = []
