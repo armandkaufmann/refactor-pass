@@ -621,7 +621,8 @@ GITMOJI_CODES = set(("art zap fire bug ambulance sparkles memo rocket lipstick t
                      "see_no_evil camera_flash alembic mag label seedling triangular_flag_on_post goal_net dizzy "
                      "wastebasket passport_control adhesive_bandage monocle_face coffin test_tube necktie "
                      "stethoscope bricks technologist money_with_wings thread safety_vest airplane t-rex").split())
-FIX_EMOJI = {"\U0001F41B", ":bug:", "\U0001F691", ":ambulance:", "\U0001FA79", ":adhesive_bandage:"}
+FIX_EMOJI = {"\U0001F41B", ":bug:", "\U0001F691", ":ambulance:", "\U0001FA79", ":adhesive_bandage:", "\U0001F512",
+             ":lock:"}  # And the lock: "fix security or privacy issues".
 # Scopes that make a fix type a chore: renovate's fix(deps), and fixes to CI or the docs.
 CHORE_SCOPES = {"deps", "deps-dev", "dev-deps", "ci", "docs", "doc"}
 # The types of a reverted change that isn't the code's, whose revert isn't a fix.

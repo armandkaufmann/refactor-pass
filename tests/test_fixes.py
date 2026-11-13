@@ -675,7 +675,6 @@ class Words(unittest.TestCase):
                            ("requirements/check.py", None)]:
             self.assertEqual(self.heatmap.not_code(path, lambda p: False), kind, path)
 
-    @unittest.expectedFailure
     def test_gitmojis_lock_is_a_fix(self):
         # Gitmoji's "fix security or privacy issues".
         for subject in ("\U0001F512 fix xss in the comment form", "\U0001F512\ufe0f x", ":lock: x"):
