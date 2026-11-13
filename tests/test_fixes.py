@@ -735,6 +735,22 @@ class Words(unittest.TestCase):
             line = heatmap.fix_summary(commits, heatmap.fix_trace(commits, commits, typed >= 0.5), typed)[0][1]
             self.assertTrue(line.startswith(said), line)
 
+    @unittest.expectedFailure
+    def test_subjects_in_a_language_the_trace_doesnt_read(self):
+        heatmap = self.heatmap
+        subjects = ["Исправлена ошибка при сохранении файла", "Добавлена поддержка новых форматов",
+                    "設定ファイルの読み込みを修正しました", "ログの出力形式を変更しました", "파일 저장 시 오류를 수정했습니다",
+                    "Add the cart to the shop"]
+        commits = [("%040d" % n, n, s, [("a.py", None, 1, 0)], "Ann <a@b>", "") for n, s in enumerate(subjects)]
+        lines, facts = heatmap.fix_summary(commits, heatmap.fix_trace(commits, commits, False), 0.0)
+        self.assertEqual(lines[1], "Most subjects here are in a language the trace doesn't read, which reads English "
+                                   "and Chinese (5 of the 6), so the count can't be read and the fixes by file aren't "
+                                   "listed. 0% of the subjects carry a type.")
+        self.assertEqual((facts["thin"], facts["language"]), (True, True))
+        # Words in any script: a run of letters, or a character or two of Chinese or Japanese.
+        self.assertEqual([heatmap.words(s) for s in ("Исправлена ошибка при сохранении", "파일 저장 시 오류를 수정했습니다",
+                                                     "修复价格计算错误", "wip", "v1.2.3", "Update deps")], [4, 5, 4, 1, 1, 2])
+
     def test_how_long(self):
         how_long = self.heatmap.how_long
         self.assertEqual([how_long(s) for s in (30, 600, 7200, 86400, 86400 * 45, 86400 * 400, 86400 * 900)],
