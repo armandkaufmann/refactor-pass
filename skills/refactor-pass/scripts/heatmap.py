@@ -843,9 +843,14 @@ def now():
     if not given:
         return time.time()
     try:
-        return int(given)
-    except ValueError:
-        sys.exit("REFACTOR_PASS_NOW should be a Unix time, a whole number of seconds, not %r." % given)
+        seconds = int(given)
+        datetime.fromtimestamp(seconds)  # One this system can't read as a date fails here, as on Windows before 1970.
+        if seconds < 0:
+            raise ValueError(given)
+        return seconds
+    except (ValueError, OverflowError, OSError):
+        sys.exit("REFACTOR_PASS_NOW should be a Unix time, a whole number of seconds since 1970 this system can read "
+                 "as a date, not %r." % given)
 
 
 def in_time(today, commits, scoped):

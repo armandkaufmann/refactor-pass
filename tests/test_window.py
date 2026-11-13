@@ -400,7 +400,6 @@ class InTime(unittest.TestCase):
         said = self.said(None)[0]
         self.assertIn(said[len("Today is "):len("Today is 2026-11-13")], (before, datetime.now().strftime("%Y-%m-%d")))
 
-    @unittest.expectedFailure
     def test_a_now_that_isnt_a_time_this_system_can_show(self):
         for value in ("99999999999999999999", "-5", "soon"):
             result = support.run("heatmap.py", "-C", self.repo.path, env={"REFACTOR_PASS_NOW": value})
