@@ -93,9 +93,14 @@ what it said, and go on without it, from `git log` and the code.
   runs the code. Where the window spans years, its counts mix code since
   rewritten with today's: weigh `recent` and `last` above `commits`, and say
   so. Where it says this checkout is behind its upstream, or that its
-  history has gone quiet while another ref's work goes on, a pass here would
-  read stale history: tell the user, and ask whether to update the checkout
-  or check out that ref, before going on.
+  history has gone quiet while another ref's work goes on, tell the user
+  what it says. Stop and ask whether to update the checkout or check out
+  that ref only where what it lacks changes the picture: its history has
+  gone quiet while work goes on elsewhere (that line, or the one saying it's
+  behind, with the newest commit here over three months old), or it lacks a
+  quarter of the window or more (50 of the default 200 commits), which
+  would change half the newer half that `recent` counts. Otherwise say it in
+  a sentence and go on.
 - **A hot spot** has many commits and is also big, so the list puts those
   first: it's ordered by commits times size. Many commits on a small file is
   often fine, like a config edited for each feature. A big file nobody

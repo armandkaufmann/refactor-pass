@@ -199,7 +199,7 @@ class Skill(unittest.TestCase):
         text = " ".join(read(os.path.join(SKILL, "SKILL.md")).split())
         self.assertIn("Where it says the work has gone quiet, nothing has landed there for over three months", text)
         self.assertIn("Where it says this checkout is behind its upstream, or that its history has gone quiet while "
-                      "another ref's work goes on, a pass here would read stale history: tell the user, and ask", text)
+                      "another ref's work goes on, tell the user what it says. Stop and ask", text)
         script = read(os.path.join(support.SCRIPTS, "heatmap.py"))
         for said in ("the work it counts%s has gone quiet.", "This checkout is behind %s by",
                      "This checkout's history has gone quiet%s, but %s's newest commit"):
