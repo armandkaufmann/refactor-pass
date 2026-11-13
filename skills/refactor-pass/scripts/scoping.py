@@ -111,6 +111,9 @@ def guard(main):
     says so and where, and exit code 3, so it can't pass for a problem with the repo; a reader that stops
     reading the output, as head does, ends it quietly with exit code 1, as one gone before the script writes a
     line does; and an error the script reports is reported whether the reader has gone or not."""
+    for name in ("stdout", "stderr"):
+        if getattr(sys, name) is None:  # Closed as it started, as by >&-: what it writes there goes nowhere.
+            setattr(sys, name, open(os.devnull, "w", encoding="utf-8"))
     out = sys.stdout = Watched(sys.stdout)
     stopped = None
     try:
