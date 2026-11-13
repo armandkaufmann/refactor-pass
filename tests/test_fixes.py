@@ -243,6 +243,10 @@ TYPED = [("feat: add the cart", "", ""), ("fix(cart)!: the total ignores discoun
          ("\U0001F41B wrong rounding", "fix, type: \U0001F41B", "fix"),
          ("Correct the rounding of totals", "fix, words: correct", "fix"),
          ("refactor: split the cart", "", ""), ("chore: release 1.0", "", ""), ("perf: cache totals", "", "")]
+MOSTLY_TYPED = ["fix: the total ignores discounts", "feat: add the cart", "wip", "fix(cart): empty carts crash",
+                "feat: coupons", "refactor: split the cart", "v1.2.3", "fix: wrong rounding", "docs: the guide",
+                "chore: release 1.0", "fix: coupons apply twice", "perf: cache totals", "Update deps",
+                "test: the cart", "fix: tax on shipping"]
 PLAIN = ["Add the cart", "Add the coupons", "Speed up totals", "Split the cart", "Tidy the totals", "Add a red hat",
          "Add a blue scarf", "Add the shoes", "Add a coat", "Add the gloves", "Add the socks"]
 
@@ -455,6 +459,16 @@ class Thin(unittest.TestCase):
                          "to tell a fix from anything else, so the count can't be read and the fixes by file aren't "
                          "listed. 11% of the subjects carry a type.")
         self.assertNotIn("Fixes by file", result.out)
+
+    @unittest.expectedFailure
+    def test_short_subjects_are_weighed_against_all_the_commits(self):
+        # 16 commits, 13 of them typed and 5 of those fix:; the 3 without a type are a word or two.
+        repo = build_typed(MOSTLY_TYPED, "mostly-typed")
+        result = support.run("heatmap.py", "-C", repo.path)
+        self.assertTrue(fixes_lines(result.out)[0].startswith("Fixes, a lead and not a verdict: at least 5 of the 16 "
+                                                              "commits"), result.out)
+        self.assertNotIn("Most subjects", result.out)
+        self.assertEqual(fix_rows(result.out)["app.py"][::3], (5, 5))
 
 
 class Words(unittest.TestCase):
