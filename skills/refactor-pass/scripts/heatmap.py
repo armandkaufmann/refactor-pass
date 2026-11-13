@@ -244,14 +244,15 @@ def git(repo, *args):
 # git log as read_log reads it, whatever the user's or the repo's config says: the root commit's changes shown
 # (log.showRoot), no signature checked, whose output would come first (log.showSignature), git's own diff and
 # limit on renames, which change the counts (diff.algorithm, diff.renameLimit), and the subjects in UTF-8
-# (i18n.logOutputEncoding), and git's own size past which a file is read as binary (core.bigFileThreshold).
+# (i18n.logOutputEncoding), git's own size past which a file is read as binary (core.bigFileThreshold), and its
+# own context, at 0 of which git cuts the files' common end before it diffs them (diff.context).
 # No text conversion, external diff, notes or colour either, though git leaves them
 # out of --numstat today. Each commit is its hash, time, author, subject and body (the message after the
 # subject, which says what a revert reverts), each after a NUL, which no message or name can hold; then its
 # numstat lines, each ending with a NUL, a rename's followed by its old and its new name.
-LOG = ["-c", "core.bigFileThreshold=512m", "log", "--no-merges", "-z", "-M", "-l1000", "--numstat", "--root",
-       "--no-show-signature", "--no-textconv", "--no-ext-diff", "--diff-algorithm=myers", "--no-notes", "--no-color",
-       "--encoding=UTF-8", "--format=%x00%H%x00%ct%x00%aN <%aE>%x00%s%x00%b"]
+LOG = ["-c", "core.bigFileThreshold=512m", "-c", "diff.context=3", "log", "--no-merges", "-z", "-M", "-l1000",
+       "--numstat", "--root", "--no-show-signature", "--no-textconv", "--no-ext-diff", "--diff-algorithm=myers",
+       "--no-notes", "--no-color", "--encoding=UTF-8", "--format=%x00%H%x00%ct%x00%aN <%aE>%x00%s%x00%b"]
 # git show as file_diffs reads it, whatever the config says: each commit's patch of the paths given, after a
 # NUL and its hash; git's own diff, context and renames; paths quoted as git does by default, with a/ and b/
 # whatever diff.noprefix, diff.mnemonicPrefix, diff.srcPrefix and diff.dstPrefix say; blank context lines as a
