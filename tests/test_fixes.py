@@ -575,6 +575,20 @@ class Diffs(unittest.TestCase):
         result = support.run("heatmap.py", "-C", repo.path, "--show", "a.txt", "--diffs", repo.short(change))
         self.assertIn("Change b\n      @@ -1,3 +1,3 @@\n       a\n      -b\n      +B\n       c\n", result.out)
 
+    @unittest.expectedFailure
+    def test_a_long_line_is_cut_as_a_subject_is(self):
+        # A minified file's one line, and a message's: each cut at 200 characters, saying how many more.
+        repo = support.Repo("one-line")
+        repo.commit("2026-01-01", "Start", {"long.js": "x" * 300000 + "\n"})
+        change = repo.commit("2026-01-02", "Rewrite the bundle\n\n" + "y" * 50000, {"long.js": "z" * 300000 + "\n"})
+        repo.done()
+        diffs = support.run("heatmap.py", "-C", repo.path, "--show", "long.js", "--diffs", repo.short(change)).out
+        self.assertIn("      -%s... (299801 more characters)\n" % ("x" * 199), diffs)
+        self.assertLess(len(diffs), 2000)
+        messages = support.run("heatmap.py", "-C", repo.path, "--show", "long.js", "--messages").out
+        self.assertIn("      %s... (49800 more characters)\n" % ("y" * 200), messages)
+        self.assertLess(len(messages), 2000)
+
     def test_the_lines_a_file_gives(self):
         # As file_diffs reads git show's output: one call for several commits, each commit's section of the file.
         heatmap = support.load("heatmap")
