@@ -43,7 +43,7 @@ names of refactorings are those of Fowler's second edition (2018), as in
 - Duplication: [Duplicated Code](#duplicated-code),
   [Oddball Solution](#oddball-solution)
 - Knowledge in the wrong place: [Misplaced Responsibility](#misplaced-responsibility),
-  [Magic Literal](#magic-literal)
+  [Logic in a List](#logic-in-a-list), [Magic Literal](#magic-literal)
 - Dispensables: [Speculative Generality](#speculative-generality),
   [Dead Code](#dead-code)
 - [Fix in passing](#fix-in-passing): Feature Envy, Message Chains, Middle Man,
@@ -697,6 +697,36 @@ its class-level form; Inconsistency is Martin's G11.*
   Split Phase where one function both calculates and presents.
 - **Priority:** medium; high when the two copies of a rule have already
   disagreed.
+
+### Logic in a List
+
+*Named here, after Misplaced Responsibility; the playbook is Fowler's.*
+
+A file that lists things (routes, config, a schema, a registry of handlers,
+types) changes with every feature by design: an entry added is its churn.
+What hurts in one is the logic that isn't an entry.
+
+- **Felt like:** a request handled in the routes file, where nobody looks
+  for it and no test reaches it; a computed value in a config file that
+  broke a deploy; a branch that registers a route only sometimes, found
+  after the route went missing.
+- **Count:** the logic lines the heatmap lists for a `[declarations]` file,
+  each a run of lines in a function's or a closure's body, or with a branch:
+  - an inline handler, a closure or a function that does work, not one
+    that only names a controller or a view;
+  - a computed value, a loop or a branch among the entries.
+- **Not a smell when:** the logic only picks between entries (a feature's
+  routes registered when it's on) and reads as one line; or the project's
+  convention is a small app's whole router in one file, its handlers a few
+  lines each.
+- **Playbook:** Extract Function, then Move Function: the handler becomes a
+  named one where its siblings' live (a controller's action, an invokable
+  class, a handler module), and the entry names it. A computed value moves
+  to where the configuration is built, as a provider or a factory does,
+  and the list reads the result. A branch around several entries becomes
+  a list of its own, registered once behind the flag.
+- **Priority:** medium; high where the logic has had fixes, or is the only
+  code in the file no test reaches.
 
 ### Magic Literal
 
