@@ -607,8 +607,8 @@ def declarations(repo, paths):
     for (_, path), (kind, blob) in objects(repo, [("HEAD", p) for p in paths]).items():
         if kind != b"blob" or b"\0" in blob[:8000]:
             continue
-        kinds = measure.line_kinds(path, blob.decode("utf-8", errors="replace"))
-        if kinds is not None and measure.logic_share(kinds) <= measure.DECLARATIONS:
+        kinds = measure.line_kinds(path, blob.decode("utf-8", errors="replace"), measure.DECLARATIONS)
+        if kinds is not None:
             marked[path] = measure.logic_lines(kinds)
     return marked
 

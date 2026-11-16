@@ -1470,15 +1470,17 @@ ASSIGNS = re.compile(r"(?<![=!<>+\-*/%&|^.?:])=(?![=>~])")
 ASSERTS = re.compile(r"(?:expect|assert\w*|refute\w*|should\w*|is_expected)\b")
 
 
-def line_kinds(path, text):
+def line_kinds(path, text, most=None):
     """Per line of a file, what it does: "logic", "declaration", or None where it holds no code (blank, or only a
-    comment); or None for the whole file where its language isn't read for this, as markup isn't."""
+    comment); or None for the whole file where its language isn't read for this, as markup isn't. With most, a
+    share, None as well for a file more of whose code lines are logic: its functions, which only add logic, are
+    then left unread."""
     lower = path.lower()
     language = BY_EXTENSION.get(os.path.splitext(lower)[1])
     if lower.endswith(MARKUP) or not language or language[0] not in LINE_FAMILIES:
         return None
     family = LINE_FAMILIES[language[0]]
-    if text.startswith("﻿"):
+    if text.startswith("\ufeff"):
         text = text[1:]
     lines = text.split("\n")
     if family == "rb":
@@ -1486,14 +1488,7 @@ def line_kinds(path, text):
     else:
         code, inside = skeleton(lines, language[4], language[5], language[0] == "PHP", language[0])
     kinds = ["declaration" if line.strip() else None for line in code]
-    if family in ("py", "rb"):
-        _, found, _ = functions(path, text)
-        for _, first, last, _, _ in found:
-            for k in range(first - 1, last):
-                kinds[k] = kinds[k] and "logic"
-        if family == "rb":
-            ruby_blocks(code, inside, [indent_of(line) for line in lines], kinds)
-    else:
+    if family not in ("py", "rb"):
         spans = brace_logic(code, family, language[0] == "PHP")
         if spans is None:
             return None  # Brackets that don't match: what's inside what can't be told.
@@ -1509,7 +1504,17 @@ def line_kinds(path, text):
     for k, line in enumerate(code):
         if kinds[k] and not inside[k] and flow.search(line):
             kinds[k] = "logic"
-    return kinds
+    if most is not None and logic_share(kinds) > most:
+        return None
+    # A function's lines after its first are logic, whatever the blocks were read as; in Python and Ruby, its
+    # first too, where the block reader doesn't look.
+    _, found, _ = functions(path, text)
+    for _, first, last, _, _ in found:
+        for k in range(first - (family in ("py", "rb")), last):
+            kinds[k] = kinds[k] and "logic"
+    if family == "rb":
+        ruby_blocks(code, inside, [indent_of(line) for line in lines], kinds)
+    return None if most is not None and logic_share(kinds) > most else kinds
 
 
 def logic_islands(kinds):
@@ -1585,15 +1590,19 @@ def brace_logic(code, family, php):
         elif c == ";" or (c == "," and stack and stack[-1][0] != "{"):
             start = i + 1
         elif c == "\n" and family != "c" and (not stack or stack[-1][0] == "{"):
-            # Go and Rust end a statement at a line's end, unless the line goes on to the next.
+            # Go and Rust end a statement at a line's end, unless the line goes on to the next, as a signature
+            # does to its where clause.
             ended = flat[start:i].rstrip()
-            if ended and ended[-1] not in ",([{=+-*/&|.:<>!":
+            if ended and ended[-1] not in ",([{=+-*/&|.:<>!" and not re.search(r"\bwhere$", ended) and \
+                    not re.match(r"\s*where\b", flat[i + 1:i + 80]):
                 start = i + 1
     if stack:
         return None
-    spans = []
+    spans, kinds = [], {}
     for at, head, outer in heads:
-        if block_kind(head, family) != "code":
+        around = outer[0] if outer and outer[0] != "{" else kinds.get(outer and outer[1])
+        kind = kinds[at] = block_kind(head, family, around)
+        if kind != "code":
             continue
         last_line = head.rstrip().rsplit("\n", 1)[-1]
         if CONTROL_HEAD[family].match(head.strip() if family == "c" else last_line):
@@ -1606,31 +1615,42 @@ def brace_logic(code, family, php):
     return spans
 
 
-def block_kind(head, family):
+def block_kind(head, family, around=None):
     """What a block opened after head holds: "code" (a function's, a closure's or a branch's body), "type" (a
-    class's or an interface's members) or "data" (a literal's). A brace that could be either is code."""
+    class's or an interface's members) or "data" (a literal's). around is what the block is in: "(" or "[", the
+    kind of the block it's in, or None at the file's top. A block is data or a type only where its head says so;
+    any other is code."""
     t = head.strip()
+    if not t:  # Right after a bracket, a ; or a }: a literal among others, or a block among statements.
+        return "data" if around in ("(", "[", "data") else "code"
     if family == "c":
         if TYPE_HEAD["c"].search(t) and not t.endswith(")"):
             return "type"
-        if t.endswith("=>") or t.endswith(")") or re.search(r"\)\s*:\s*[\w\\?|<>\[\], .&$]+$", t) or \
-                re.search(r"\buse\s*\([^()]*\)$", t) or re.search(r"(?<![\w$])(?:else|try|finally|do|static)$", t):
+        if t.endswith("=>") or t.endswith(")") or re.search(r"\buse\s*\([^()]*\)$", t) or \
+                re.search(r"(?<![\w$])(?:else|try|finally|do|static)$", t):
             return "code"
-        if not t or t[-1] in "=(,[:?<|&!>" or \
-                re.search(r"(?<![\w$])(?:return|default|yield|in|of|new|throw|import|export|type|const|let|var)$", t):
-            return "data"
+        if t[-1] in "=(,[:?<|&!" or (t[-1] == ">" and re.search(r"<[A-Za-z>]", t) and not re.search(r"\)\s*:", t)) \
+                or re.search(r"(?<![\w$])(?:return|default|yield|in|of|new|throw|import|export|type|const|let|var|"
+                             r"extends|as|satisfies)$", t):
+            return "data"  # A value's or a type's place, or JSX's: <div>{
         return "code"
-    t = t.rsplit("\n", 1)[-1].strip()
+    whole = outline(t)
+    t = whole.rsplit("\n", 1)[-1].strip()
     if family == "go":
+        if re.search(r"(?<![\]*])\bfunc\b", whole) or re.match(r"(?:\}\s*)?(?:if|for|switch|select|else|go|defer)\b", t):
+            return "code"
         if TYPE_HEAD["go"].search(t):
             return "type"
-        if re.search(r"\bfunc\b", t) or re.match(r"(?:\}\s*)?(?:if|for|switch|select|else|go|defer)\b", t):
-            return "code"
-        return "data"
-    if re.search(r"\bfn\b", t) or re.search(r"\|[^|]*\|\s*(?:->\s*[^{]+)?$", t) or t.endswith(("=", "=>")) or \
+        return "data" if re.search(r"[\w\]:,]$", t) else "code"  # A composite literal's type, or a key's value.
+    if re.search(r"\bfn\b", whole) or re.search(r"\|[^|]*\|\s*(?:->\s*[^{]+)?$", t) or t.endswith(("=", "=>")) or \
             re.match(r"(?:\}\s*)?(?:if|else|match|for|while|loop|unsafe|async|move)\b", t):
         return "code"
-    return "type" if TYPE_HEAD["rust"].search(t) else "data"
+    if TYPE_HEAD["rust"].search(whole):
+        return "type"
+    # A struct's literal where a value goes, a macro's body or a use's group.
+    if re.search(r"(?:^|[=(,\[{:]|=>|\breturn)\s*&?[\w:]+(?:<[^<>]*>)?$|!\s*\w*$|::$", t):
+        return "data"
+    return "code"
 
 
 def declarative(body, head, outer, flat, family):
@@ -1640,8 +1660,8 @@ def declarative(body, head, outer, flat, family):
     # A closure has no name: function (...) and fn (...) in PHP and JavaScript, an arrow, func(...) in Go,
     # |...| in Rust. A named function's or a method's body is logic, however short.
     marker = {"c": r"\b(?:function|fn)\s*&?\s*\(|=>\s*$", "go": r"\bfunc\s*\(", "rust": r"\|"}[family]
-    if not re.search(marker, head):
-        return False
+    if not re.search(marker, head) or re.search(r"\bfunc\s*\(\s*\)\s*\w+\s*[(\[]", outline(head)):
+        return False  # Go's method: func (s *S) Name(
     statements = statements_of(body)
     if len(statements) == 1 and NAMES.match(statements[0]):
         return True

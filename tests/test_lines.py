@@ -23,7 +23,7 @@ SHAPES = [
     # A long array property and a short method: the method's body.
     ("app/Rules/Domains.php", "<?php\nclass Domains implements Rule\n{\n    protected $domains = [\n"
      + "        'a.com',\n" * 30 + "    ];\n\n    public function passes($attribute, $value)\n    {\n"
-     "        return in_array(substr($value, 1), $this->domains);\n    }\n}\n", "39-40"),
+     "        return in_array(substr($value, 1), $this->domains);\n    }\n}\n", "38-40"),
     # Routes, each with its handler written inline: mostly logic, however short one is.
     ("server/routes/api/documents.ts", 'router.post("documents.list", auth(), async (ctx) => {\n'
      "  const { sort } = ctx.input.body;\n  ctx.body = { data: await Document.findAll({ order: sort }) };\n});\n"
@@ -94,11 +94,9 @@ class Shapes(unittest.TestCase):
                 kinds = measure.line_kinds(path, text)
                 self.assertEqual(None if kinds is None else measure.logic_lines(kinds), logic)
 
-    @unittest.expectedFailure
     def test_a_named_functions_lines(self):
         self.assertEqual(logic_of(FUNCTIONS), [(path, logic) for path, _, logic in FUNCTIONS])
 
-    @unittest.expectedFailure
     def test_a_found_functions_lines_are_logic(self):
         """Every code line of a function measure.functions finds, after its first, is logic: over the samples of
         its tests, in every language whose lines are read."""
@@ -138,7 +136,7 @@ class Marked(unittest.TestCase):
         self.assertEqual(set(support.heatmap_rows(out)), {"routes/web.php", "app/Cart.php"})
         shown = support.run("measure.py", "-C", self.repo.path, "--show", "routes/web.php", "--show", "app/Cart.php")
         self.assertIn("Declarations: all but 6% of its code lines; its logic, by line: 33-34.\n", shown.out)
-        self.assertIn("Logic: 50% of its code lines, in a function's or a closure's body or on a branch's line.\n",
+        self.assertIn("Logic: 58% of its code lines, in a function's or a closure's body or on a branch's line.\n",
                       shown.out)
 
     def test_the_page_carries_it(self):
