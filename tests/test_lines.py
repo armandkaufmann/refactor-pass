@@ -135,7 +135,7 @@ SCRIPTS = [
 
 # A closure that returns a string or another literal serves a value, as a stub's handler does: it names nothing.
 LITERALS = [
-    ("routes/admin.php", "<?php\nRoute::get('/a', function () {\n    return 'stubbed admin.invoices.index';\n});\n"
+    ("routes/admin.php", "<?php\nRoute::get('/a', function () {\n    return 'coming soon';\n});\n"
      "Route::get('/', fn () => view('home'));\n", "3-4"),
     ("src/titles.js", "export const titles = {\n  home: () => 'Home',\n  about: AboutTitle,\n};\n", "2"),
     ("spec/factories.rb", 'FactoryBot.define do\n  factory :user do\n    name { "John" }\n    admin { false }\n'
