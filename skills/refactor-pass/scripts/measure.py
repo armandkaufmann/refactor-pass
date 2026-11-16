@@ -46,8 +46,8 @@ fifth of its lines at most, the file is nearly all declarations, as routes,
 config, a schema or types are, and its logic is listed by line. A route
 group's closure, holding only more routes, declares; an inline handler is
 logic. That's read for PHP, JavaScript, TypeScript, Go, Rust, Python and
-Ruby, not markup (Blade, Vue, ERB, HTML), and not where the brackets don't
-match.
+Ruby, not markup (Blade, Vue, ERB, HTML, a PHP template), and not where the
+brackets don't match.
 
 Functions are found by each language's definition keyword (def, func, fn,
 fun, function, and Swift's init, deinit and subscript), operators' too
