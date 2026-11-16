@@ -61,6 +61,30 @@ SHAPES = [
 ]
 
 
+# A named function's lines after its first are logic, however its signature is written: over several lines, with
+# a where clause, or with a return type that's an object's or ends in ]>; and a Go method that returns a field.
+FUNCTIONS = [
+    ("src/cmd.rs", "impl Cmd {\n    pub async fn run(\n        self,\n        db: Sqlite,\n    ) -> Result<()> {\n"
+     "        let q = self.q;\n        db.save(q).await?;\n        Ok(())\n    }\n}\n", "3-9"),
+    ("src/run.rs", "fn run<T>(db: T) -> Vec<T>\nwhere\n    T: Clone,\n{\n    let q = 1;\n    vec![db]\n}\n", "2-7"),
+    ("src/pos.ts", "function pos(e: Ev): { x: number; y: number } {\n  const r = e.target.rect();\n"
+     "  return { x: r.x, y: r.y };\n}\n", "2-4"),
+    ("src/rows.ts", "export async function rows(\n  ids: string[],\n): Promise<{ id: string }[]> {\n"
+     "  const found = await load(ids);\n  return found;\n}\n", "2-6"),
+    ("src/ops.ts", "export class Client {\n  batch(\n    input: Input<'batch'>,\n  ): Promise<Output<'batch'>> {\n"
+     "    return this.execute('batch', input);\n  }\n}\n", "3-6"),
+    ("do.go", "package a\n\nfunc (s *S) Do(\n\ta int,\n) (int, error) {\n\tx := s.load(a)\n\treturn x, nil\n}\n\n"
+     "func (p *Provider) Config() any {\n\treturn p.config\n}\n", "4-8, 11-12"),
+]
+
+
+def logic_of(shapes):
+    """Each shape's path and its logic lines, as the output writes them; None where nothing is said of them."""
+    measure = support.load("measure")
+    return [(path, None if kinds is None else measure.logic_lines(kinds))
+            for path, kinds in ((path, measure.line_kinds(path, text)) for path, text, _ in shapes)]
+
+
 class Shapes(unittest.TestCase):
 
     def test_each_shape(self):
@@ -69,6 +93,25 @@ class Shapes(unittest.TestCase):
             with self.subTest(path=path):
                 kinds = measure.line_kinds(path, text)
                 self.assertEqual(None if kinds is None else measure.logic_lines(kinds), logic)
+
+    @unittest.expectedFailure
+    def test_a_named_functions_lines(self):
+        self.assertEqual(logic_of(FUNCTIONS), [(path, logic) for path, _, logic in FUNCTIONS])
+
+    @unittest.expectedFailure
+    def test_a_found_functions_lines_are_logic(self):
+        """Every code line of a function measure.functions finds, after its first, is logic: over the samples of
+        its tests, in every language whose lines are read."""
+        measure = support.load("measure")
+        folder, declared = os.path.join(support.SAMPLES, "functions"), []
+        for name in sorted(os.listdir(folder)):
+            with open(os.path.join(folder, name), encoding="utf-8") as f:
+                text = f.read()
+            kinds = measure.line_kinds(name, text)
+            if kinds is not None:
+                declared += ["%s:%d" % (name, k + 1) for _, first, last, _, _ in measure.functions(name, text)[1]
+                             for k in range(first, last) if kinds[k] == "declaration"]
+        self.assertEqual(declared, [])
 
 
 class Marked(unittest.TestCase):
