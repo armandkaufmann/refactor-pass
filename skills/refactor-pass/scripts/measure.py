@@ -1496,6 +1496,13 @@ def line_kinds(path, text, most=None):
         if language[0] == "PHP" and any(part.split("<?", 1)[0].strip() for part in "\n".join(code).split("?>")[1:]):
             return None  # A template, its HTML outside <?php ?>: markup.
     kinds = ["declaration" if line.strip() else None for line in code]
+    if family == "py":  # Docstrings are documentation, as measure.py counts code lines.
+        depth, continued = 0, []
+        for line in code:
+            continued.append(depth > 0)
+            depth = max(0, depth + sum(line.count(c) for c in OPEN) - sum(line.count(c) for c in CLOSE))
+        for k in docstrings(code, inside, continued):
+            kinds[k] = None
     starts = [0]
     for line in code:
         starts.append(starts[-1] + len(line) + 1)
