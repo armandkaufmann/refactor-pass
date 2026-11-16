@@ -1465,11 +1465,13 @@ TYPE_HEAD = {
     "rust": re.compile(r"\b(?:impl|trait|struct|enum|mod|union)\b"),
 }
 # What only names something: a call of a bare name with string literals for its arguments (as the skeleton
-# writes a string, its insides as s), as import("./Home.vue") and view("welcome"), a string, or a name. A call on
-# a receiver, as res.send("ok"), does something.
+# writes a string, its insides as s), as import("./Home.vue") and view("welcome"), or a name. A call on a
+# receiver, as res.send("ok"), does something; a string, a number or true returned is served, as a stub's
+# handler serves its text.
 STRING = r"""(?:"s*"|'s*'|`s*`)"""
-NAMES = re.compile(r"(?:return\s+)?(?:[\w$\\]+\s*\(\s*%s\s*(?:,\s*%s\s*)*\)|%s|[\w$\\.:]+)\s*;?$"
-                   % (STRING, STRING, STRING))
+NAMES = re.compile(r"(?:return\s+)?(?:[\w$\\]+\s*\(\s*%s\s*(?:,\s*%s\s*)*\)|"
+                   r"(?!(?:true|false|null|nil|None|True|False|undefined)\b)[A-Za-z_$\\][\w$\\.:]*)\s*;?$"
+                   % (STRING, STRING))
 ASSIGNS = re.compile(r"(?<![=!<>+\-*/%&|^.?:])=(?![=>~])")
 ASSERTS = re.compile(r"(?:expect|assert\w*|refute\w*|should\w*|is_expected)\b")
 
@@ -1984,7 +1986,10 @@ def arrow_expressions(flat, php, blocks):
 
 
 def arrow_is_type(flat, at):
-    """Whether the => at offset at is a function type's (onChange: (value: string) => void), not a function's."""
+    """Whether the => at offset at is a function type's (onChange: (value: string) => void), not a function's,
+    whose body after a key can be a literal (home: () => "Home")."""
+    if re.match(r"""\s*(?:["'`\d]|-\d)""", flat[at + 2:at + 40]):
+        return False
     before = flat[max(0, at - 2000):at].rstrip()
     if before.endswith(")"):
         depth, k = 0, len(before) - 1
