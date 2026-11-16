@@ -121,7 +121,7 @@ class Columns(unittest.TestCase):
         by_path = dict((f["path"], f) for f in heat["files"])
         self.assertEqual(by_path["src/new.py"], {
             "path": "src/new.py", "commits": 4, "recent": 3, "last": "2026-01-10", "churn": 13, "added": 12,
-            "removed": 1, "size": 11, "rel": 1.18, "size_before": 0, "growth": 11})
+            "removed": 1, "size": 11, "rel": 1.18, "size_before": 0, "growth": 11, "declarations": ""})
         self.assertEqual([by_path[p]["rel"] for p in ("src/big.py", "src/new.py", "src/shrink.py", "src/renamed.py",
                                                       "docs/guide.md")], [0.4, 1.18, 0.7, 0.29, 0.25])
         self.assertEqual((by_path["src/new.py"]["added"], by_path["src/new.py"]["removed"]), (12, 1))

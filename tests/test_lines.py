@@ -1,5 +1,8 @@
-"""What each code line does: measure.py's line kinds, which tell a line that declares something from one of logic."""
+"""What each code line does: measure.py's line kinds, which tell a line that declares something from one of logic,
+and the heatmap's mark on a file nearly all of whose lines declare things, with its logic by line."""
 
+import json
+import os
 import unittest
 
 try:
@@ -66,6 +69,50 @@ class Shapes(unittest.TestCase):
             with self.subTest(path=path):
                 kinds = measure.line_kinds(path, text)
                 self.assertEqual(None if kinds is None else measure.logic_lines(kinds), logic)
+
+
+class Marked(unittest.TestCase):
+    """The heatmap marks a file of its table nearly all of whose code lines declare things, and lists its logic by
+    line; the page carries it, and measure.py --show says it."""
+
+    @classmethod
+    def setUpClass(cls):
+        repo = cls.repo = support.Repo("declarations")
+        for day in range(1, 4):
+            routes = "".join("Route::get('r%d', C%d::class);\n" % (n, n) for n in range(day * 10))
+            repo.commit("2026-01-%02d" % day, "Add routes", {
+                "routes/web.php": "<?php\n" + routes + "Route::get('up', function () {\n    return now();\n});\n",
+                "app/Cart.php": "<?php\nclass Cart\n{\n    public function total($items)\n    {\n        $sum = %d;\n"
+                                "        foreach ($items as $item) {\n            $sum += $item;\n        }\n"
+                                "        return $sum;\n    }\n}\n" % day})
+        repo.done()
+
+    def test_the_mark_and_the_logic_by_line(self):
+        out = support.run("heatmap.py", "-C", self.repo.path).out
+        self.assertIn("  routes/web.php  [declarations]\n", out)
+        self.assertNotIn("app/Cart.php  [", out)
+        self.assertIn("\n  routes/web.php: 33-34\n", out)
+        self.assertEqual(set(support.heatmap_rows(out)), {"routes/web.php", "app/Cart.php"})
+        shown = support.run("measure.py", "-C", self.repo.path, "--show", "routes/web.php", "--show", "app/Cart.php")
+        self.assertIn("Declarations: all but 6% of its code lines; its logic, by line: 33-34.\n", shown.out)
+        self.assertIn("Logic: 50% of its code lines, in a function's or a closure's body or on a branch's line.\n",
+                      shown.out)
+
+    def test_the_page_carries_it(self):
+        page = os.path.join(support.new_folder("declarations"), "p.html")
+        support.run("heatmap.py", "-C", self.repo.path, "--page", page)
+        with open(page, encoding="utf-8") as f:
+            text = f.read()
+        files = dict((f["path"], f) for f in json.loads(support.block(text, "heatmap"))["files"])
+        self.assertEqual((files["routes/web.php"].get("declarations"), "declarations" in files["app/Cart.php"]),
+                         ("33-34", False))
+        check_page = support.load("check_page")
+        self.assertEqual(check_page.check(text)[0], [])
+        heat = json.loads(support.block(text, "heatmap"))
+        heat["files"][0]["declarations"] = "lines 3 to 4"
+        errors = check_page.check(support.page_with(heatmap=heat, template=page))[0]
+        self.assertIn("The heatmap's row for routes/web.php: its declarations should be its logic lines, as 23-31, 88, "
+                      "or empty.", errors)
 
 
 if __name__ == "__main__":

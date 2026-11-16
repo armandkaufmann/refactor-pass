@@ -527,7 +527,9 @@ function renderHeatmap(heat) {
     : `<td class="num fix muted" title="documentation, tests, or CI, build or dependency files: not counted">–</td>`;
   const most = Math.max(1, ...heat.files.map(f => f.commits));
   const lastCell = f => hasLast ? `<td class="num">${day(f.last)}</td>` : "";
-  const row = f => `<tr><td class="path">${path(f.path)}</td><td class="num">${number(f.size)}</td><td class="num">${f.commits}</td><td class="num">${f.recent}</td>${fixCell(f)}${lastCell(f)}<td class="num">${f.growth > 0 ? "+" : ""}${number(f.growth)}</td>` +
+  // A file nearly all of whose code lines declare things, with its logic by line; a heatmap from before has no mark.
+  const declared = f => typeof f.declarations !== "string" ? "" : ` <span class="muted" title="${f.declarations ? `Logic at lines ${esc(f.declarations)}` : "No logic"}">declarations</span>`;
+  const row = f => `<tr><td class="path">${path(f.path)}${declared(f)}</td><td class="num">${number(f.size)}</td><td class="num">${f.commits}</td><td class="num">${f.recent}</td>${fixCell(f)}${lastCell(f)}<td class="num">${f.growth > 0 ? "+" : ""}${number(f.growth)}</td>` +
     `<td class="bar-col"><div class="bar" role="img" aria-label="${f.commits} commits, ${f.recent} in the newer half${f.last ? `, the last on ${day(f.last)}` : ""}"><span class="all" style="width:${100 * f.commits / most}%"></span><span class="recent" style="width:${100 * f.recent / most}%"></span></div></td></tr>`;
   $("files-top").innerHTML = heat.files.slice(0, HEATMAP_ROWS_SHOWN).map(row).join("");
   const rest = heat.files.slice(HEATMAP_ROWS_SHOWN);
