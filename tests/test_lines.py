@@ -3,6 +3,7 @@ and the heatmap's mark on a file nearly all of whose lines declare things, with 
 
 import json
 import os
+import time
 import unittest
 
 try:
@@ -190,6 +191,25 @@ class Shapes(unittest.TestCase):
                 declared += ["%s:%d" % (name, k + 1) for _, first, last, _, _ in measure.functions(name, text)[1]
                              for k in range(first, last) if kinds[k] == "declaration"]
         self.assertEqual(declared, [])
+
+
+class Speed(unittest.TestCase):
+    """The reading takes time in proportion to a file's size. Each shape here took about 8 seconds where it grew
+    with the square of a string's length or a chain's; read in proportion, it takes a hundredth of that. A second
+    leaves room for a slow runner either way: no run reads either shape as fast when it grows with the square."""
+
+    @unittest.expectedFailure
+    def test_a_long_string_and_a_long_chain(self):
+        measure = support.load("measure")
+        handlers = '$("#k").T({html:"%s"})\n  %s;\n' % ("x" * 4800, "\n  ".join(
+            '.on("e%d",function(e){t("got "+e.id)})' % n for n in range(30)))
+        chain = '$("#t")\n%s;\n' % "\n".join('  .on("e%d",function(e){t("x"+e.id)})' % n for n in range(1200))
+        took = []
+        for text in (handlers, chain):
+            start = time.time()
+            measure.line_kinds("app.js", text)
+            took.append(time.time() - start < 1)
+        self.assertEqual(took, [True, True])
 
 
 class Marked(unittest.TestCase):
