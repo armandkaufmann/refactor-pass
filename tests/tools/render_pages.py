@@ -1,19 +1,18 @@
 """Render checklist pages in headless Chrome and check what each page shows against its data, outside the
 default run, since it needs a browser.
 
-A page fails if its error box shows, or if it shows a different number of items than its pass block holds,
-of file rows than its heatmap block's files, of pair and group rows than its pairs and groups, or of tests
-than its tests; or, in today's template, of fix cells than its file rows where the heatmap counts fixes (and
-any where it doesn't), of items' cited fixes than its items with fixes, or of newer halves or notes they
-cite than their entries give; or if it doesn't say where the window sat in time as its heatmap does. The
-pages: one heatmap.py makes in a small repo, as made and with a pass written that cites fixes, and that one
-in the templates of v1.0.0, v1.0.1 and v1.1.0, as a checklist made by them keeps, taken from their tags; the
-suite's fixture checklists, their data in today's template; a page whose heatmap is in an older format, with
-no last dates, no bots, no dates on pairs and no fixes; and one heatmap.py makes from commits whose subjects
-hold <!-- and <script. Then, for each text test_check_page.py tries in a pass block that a browser might
-read as HTML, a page with it written as it is and one with each < written \u003c: check_page.py must find an
-error in the page exactly when the browser shows its error box. It exits 0 with a message when Chrome isn't
-found.
+A page fails if its error box shows, or if it shows a different number of items than its pass block holds, of
+file rows than its heatmap block's files, of pair and group rows than its pairs and groups, or of tests than its
+tests; or, in today's template, of fix cells than its file rows where the heatmap counts fixes (and any where it
+doesn't), of items' cited fixes than its items with fixes, or of newer halves or notes they cite than their
+entries give; or if it doesn't say where the window sat in time as its heatmap does. The pages: one heatmap.py
+makes in a small repo, as made and with a pass written that cites fixes, and that one in the templates of
+v1.0.0, v1.0.1, v1.1.0 and v1.2.0, as a checklist made by them keeps, taken from their tags; the suite's fixture
+checklists, their data in today's template; a page whose heatmap is in an older format, with no last dates, no
+bots, no dates on pairs and no fixes; and one heatmap.py makes from commits whose subjects hold <!-- and
+<script. Then, for each text test_check_page.py tries in a pass block that a browser might read as HTML, a page
+with it written as it is and one with each < written \u003c: check_page.py must find an error in the page
+exactly when the browser shows its error box. It exits 0 with a message when Chrome isn't found.
 
 It uses the skill's scripts and template, or those REFACTOR_PASS_SCRIPTS names, and git.
 
@@ -221,7 +220,7 @@ def fixtures(folder):
     return pages
 
 
-RELEASES = ["v1.0.0", "v1.0.1", "v1.1.0"]
+RELEASES = ["v1.0.0", "v1.0.1", "v1.1.0", "v1.2.0"]
 
 
 def old_templates(folder, made):
