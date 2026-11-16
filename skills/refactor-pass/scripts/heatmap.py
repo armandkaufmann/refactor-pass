@@ -28,9 +28,9 @@ Files are listed by commits times size, so the top ones are both busy and
 big. A small file changed often, like a config, and a big one rarely
 changed both come lower. One nearly all of whose code lines declare things,
 as routes, config, a schema or types do, is marked [declarations], and its
-logic, a fifth of its lines at most, listed by line: in a function's or a
-closure's body, with a branch, or a statement at the top that runs. Markup,
-and a language measure.py doesn't read for it, is never marked.
+logic, a fifth at most, listed by line: in a function's or a closure's
+body, with a branch, or a statement at the top that runs. Markup, minified
+code and a language measure.py doesn't read for it are never marked.
 Under the table, the newest work it leaves out: files past --top that 2 or
 more of the commits of the window's last 60 days (its newer half at most)
 changed, 10 at most; renames, commits of more than --max-files files,
