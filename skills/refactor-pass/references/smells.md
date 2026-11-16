@@ -711,7 +711,8 @@ What hurts in one is the logic that isn't an entry.
   broke a deploy; a branch that registers a route only sometimes, found
   after the route went missing.
 - **Count:** the logic lines the heatmap lists for a `[declarations]` file,
-  each a run of lines in a function's or a closure's body, or with a branch:
+  each a run of lines in a function's or a closure's body, with a branch,
+  or in a statement at the top that runs:
   - an inline handler, a closure or a function that does work, not one
     that only names a controller or a view;
   - a computed value, a loop or a branch among the entries.
