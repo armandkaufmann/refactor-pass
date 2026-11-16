@@ -242,7 +242,8 @@ def check_item(item, page, seen, errors, warnings, spread):
 
 
 def check_heatmap(heatmap, errors):
-    """A heatmap block's facts on where its window sits in time, where it has them; and the fixes it counts,
+    """A heatmap block's facts on where its window sits in time, where it has them; the logic lines of a file
+    marked as declarations; and the fixes it counts,
     where it counts them: its window's facts, and each file's count, the commits that say they fixed a defect
     and changed it, and how many of those were in the newer half."""
     window = heatmap.get("window") if isinstance(heatmap.get("window"), dict) else {}
@@ -261,6 +262,11 @@ def check_heatmap(heatmap, errors):
             errors.append("The heatmap's window.fixes counts %d fixes, but %d by reverts, types and words: run "
                           "heatmap.py --page again rather than editing its block." % (facts["fixes"], sum(counts)))
     for row in heatmap.get("files") if isinstance(heatmap.get("files"), list) else []:
+        if isinstance(row, dict) and "declarations" in row and (
+                not isinstance(row["declarations"], str) or not re.fullmatch(r"(?:\d+(?:-\d+)?(?:, |$))*",
+                                                                            row["declarations"])):
+            errors.append("The heatmap's row for %s: its declarations should be its logic lines, as 23-31, 88, or "
+                          "empty." % row.get("path"))
         if not isinstance(row, dict) or "fixes" not in row and "fixes_recent" not in row:
             continue
         where = "The heatmap's row for %s" % row.get("path")

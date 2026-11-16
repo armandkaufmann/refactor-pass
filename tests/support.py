@@ -385,7 +385,8 @@ def heatmap_rows(out):
             table = True
             continue
         if table:
-            match = re.match(r"\s*(\d+)\s+(\d+)\s+(\S+)\s+(\d+)\s+([\d.]+)\s+(\d+)\s+([+-]\d+)\s\s(.+)$", line)
+            match = re.match(r"\s*(\d+)\s+(\d+)\s+(\S+)\s+(\d+)\s+([\d.]+)\s+(\d+)\s+([+-]\d+)\s\s(.+?)"
+                             r"(?:  \[declarations\])?$", line)
             if not match:
                 break
             rows[match.group(8)] = dict(commits=int(match.group(1)), recent=int(match.group(2)),

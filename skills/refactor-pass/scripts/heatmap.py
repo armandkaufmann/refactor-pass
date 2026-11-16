@@ -26,23 +26,24 @@ of recent commits:
 
 Files are listed by commits times size, so the top ones are both busy and
 big. A small file changed often, like a config, and a big one rarely
-changed both come lower. Under them, the newest work they leave out: files
-past --top that 2 or more of the commits of the window's last 60 days (its
-newer half at most) changed, 10 at most; renames, commits of more than
---max-files files, documentation, tests, CI, build and dependency files and
-a dist folder aside. Dates are commit dates, as local dates; git log shows
-author dates, which a rebase or a cherry-pick keeps. This shows these:
-
-  git log --date=short-local --format='%h %cd %s'
+changed both come lower. One nearly all of whose code lines declare things,
+as routes, config, a schema or types do, is marked [declarations], and its
+logic listed by line: lines in a function's or a closure's body, or with a
+branch, a fifth of its lines at most. Markup, and a language measure.py
+doesn't read for it, is never marked.
+Under the table, the newest work it leaves out: files past --top that 2 or
+more of the commits of the window's last 60 days (its newer half at most)
+changed, 10 at most; renames, commits of more than --max-files files,
+documentation, tests, CI, build and dependency files and a dist folder
+aside. Dates are commit dates, as local dates (git log
+--date=short-local shows them), not the author dates git log shows.
 
 Test files are set aside, so a spec beside its source doesn't top the list:
 those named as the common frameworks name them (Board.spec.ts, test_x.py,
 x_test.go, XTest.php, XTests.cs...) and anything in a folder named test,
 tests, __tests__, spec or the like. --test adds a pattern, --not-test keeps
 a file that only looks like a test, and --keep-tests counts them all like
-the rest. The output names any set aside in doubt: a name such as
-ABTest.php in no folder of tests, or a spec folder in which no file is
-named like a test.
+the rest. The output names any set aside in doubt.
 
 Then the files that keep changing in the same commits, with two measures:
 of the quieter file's commits, the share that changed both (how likely the
@@ -122,8 +123,8 @@ a rebase, gets a warning. A left out commit counts toward nothing but its
 renames, and growth, being two sizes, includes what it did. Binary files,
 symbolic links and submodules are left out, and so is any copy of this skill
 a project keeps in the repo, unless a scope names its folder. In a shallow
-clone, the commits where its history stops look as if they add every file,
-so they are left out too, and the output says so. A window left empty, as with --since a pass's base just
+clone, the commits where its history stops are left out too, as they look
+as if they add every file. A window left empty, as with --since a pass's base just
 after the pass, is a result, not an error: the output says what was left
 out, and --page leaves the page as it was.
 
@@ -132,9 +133,8 @@ worktree, which may be removed once its work is done, a relative --page path
 is written in the main checkout's .refactor-pass/, which outlives it. Every
 worktree's .refactor-pass/ is read, wherever this runs, since a sandbox may
 have kept a pass out of the main checkout. --checklists lists them all,
-newest first, by the date in each one's name and then its number (a second
-pass on one day is 2026-11-10-2.html), and names the one a new pass should
-make: today's date, or the first number after it that's free. --page on a
+newest first, and names the one a new pass should make: today's date, or a
+second pass's 2026-11-10-2.html. --page on a
 checklist that exists refreshes its heatmap and nothing else, and says
 which checklist that is. --page also writes a .gitignore into
 a .refactor-pass/ folder that has none and holds nothing git tracks, so the
@@ -172,6 +172,7 @@ from itertools import combinations
 # __pycache__ is written, so a run leaves the skill's folder as it was.
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import measure  # noqa: E402
 import scoping  # noqa: E402
 
 # Housekeeping bots, whose commits are left out: dependency updates, releases and formatting. Matched against
@@ -562,16 +563,16 @@ def not_landed(repo, shas):
     return lost
 
 
-def line_counts(repo, wanted):
-    """Lines in each (rev, path) wanted, read in one batch; a path missing at its rev, or binary, is left
-    out. A (rev, None) asks for the commit itself: its committer's time."""
+def objects(repo, wanted):
+    """Each (rev, path) wanted, read in one batch, as its type and its bytes; a (rev, None) asks for the commit
+    itself. One missing is left out, and so is a path with a newline in it, which the batch can't ask for."""
     wanted = list(dict.fromkeys(w for w in wanted if w[1] is None or "\n" not in w[1]))
     if not wanted:
         return {}
     proc = scoping.git(repo, "cat-file", "--batch", input="".join(
         ("%s:%s\n" % w) if w[1] is not None else w[0] + "\n" for w in wanted).encode())
     data = proc.stdout
-    counts = {}
+    found = {}
     pos = 0
     for path in wanted:
         end = data.index(b"\n", pos)
@@ -581,14 +582,35 @@ def line_counts(repo, wanted):
         if len(header) != 3 or not SHA.fullmatch(header[0].decode()) or not header[2].isdigit():
             continue
         size = int(header[2])
-        blob = data[pos:pos + size]
+        found[path] = (header[1], data[pos:pos + size])
         pos += size + 1  # The object, then its newline.
-        if header[1] == b"blob" and b"\0" not in blob[:8000]:  # git's own test for binary.
+    return found
+
+
+def line_counts(repo, wanted):
+    """Lines in each (rev, path) wanted, read in one batch; a path missing at its rev, or binary, is left
+    out. A (rev, None) asks for the commit itself: its committer's time."""
+    counts = {}
+    for path, (kind, blob) in objects(repo, wanted).items():
+        if kind == b"blob" and b"\0" not in blob[:8000]:  # git's own test for binary.
             counts[path] = blob.count(b"\n")
-        elif header[1] == b"commit" and path[1] is None:
+        elif kind == b"commit" and path[1] is None:
             stamp = re.search(br"(?m)^committer .* (\d+) [+-]\d{4}$", blob.split(b"\n\n", 1)[0])
             counts[path] = int(stamp.group(1)) if stamp else 0
     return counts
+
+
+def declarations(repo, paths):
+    """Of paths, those nearly all declarations at HEAD (measure.py's DECLARATIONS), each with its logic lines as
+    ranges ("23-31, 88", or "" where it has none); a file whose language isn't read for this is none of them."""
+    marked = {}
+    for (_, path), (kind, blob) in objects(repo, [("HEAD", p) for p in paths]).items():
+        if kind != b"blob" or b"\0" in blob[:8000]:
+            continue
+        kinds = measure.line_kinds(path, blob.decode("utf-8", errors="replace"))
+        if kinds is not None and measure.logic_share(kinds) <= measure.DECLARATIONS:
+            marked[path] = measure.logic_lines(kinds)
+    return marked
 
 
 # The fixes trace: which commits fixed a defect in the project's own code, as their messages say. Each rule
@@ -1753,6 +1775,8 @@ def main():
             row.update(fixes=files[row["path"]]["fixes"][0], fixes_recent=files[row["path"]]["fixes_recent"])
     by_path = dict((r["path"], r) for r in rows)
     rows = [r for r in rows if r["path"] in alive]
+    for path, logic in declarations(repo, [r["path"] for r in rows[:args.top]]).items():
+        by_path[path]["declarations"] = logic
     in_scope = [p for p in tracked if scoping.in_scope(p, args.scope) and not scoping.ignored(p, patterns)]
     doubts = scoping.doubtful_tests(tests, in_scope, args.test)
     # Each production file's name, so a test's own file is found even where it isn't in the window.
@@ -1940,11 +1964,20 @@ def main():
     else:
         print("No file in the scope%s changed in the window." % ("" if args.keep_tests else ", tests aside,"))
     for row in rows[:args.top]:
-        print("%7d %6d %10s %7d %5.1f %7d %+7d  %s" % (row["commits"], row["recent"], row["last"], row["churn"],
-                                                      row["rel"], row["size"], row["growth"], row["path"]))
+        print("%7d %6d %10s %7d %5.1f %7d %+7d  %s%s" % (row["commits"], row["recent"], row["last"], row["churn"],
+                                                        row["rel"], row["size"], row["growth"], row["path"],
+                                                        "  [declarations]" if "declarations" in row else ""))
     if len(rows) > args.top:
         print("  ... %d more files changed in the window" % (len(rows) - args.top))
     print()
+    marked = [r for r in rows[:args.top] if "declarations" in r]
+    if marked:
+        print("Declarations: files nearly all of whose code lines declare things, as routes, config, a schema or "
+              "types do: at most a fifth are logic, in a function's or a closure's body or on a branch's line. "
+              "Their churn is entries added, by design; their logic, by line:")
+        for row in marked:
+            print("  %s: %s" % (row["path"], row["declarations"] or "none"))
+        print()
     if len(rows) > args.top:
         # The newest work the table leaves out, as a wide window's can: a list to account for.
         part, found = newest_work(commits, set(r["path"] for r in rows[args.top:]), wide, today,
