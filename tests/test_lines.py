@@ -210,6 +210,16 @@ class Speed(unittest.TestCase):
             took.append(time.time() - start < 1)
         self.assertEqual(took, [True, True])
 
+    @unittest.expectedFailure
+    def test_a_line_or_a_file_too_long_is_not_read(self):
+        """A file with a line over 5,000 characters, as minified code has, or of over a million characters, as a
+        bundle is, is said nothing of, whatever it holds: it gets no mark."""
+        measure = support.load("measure")
+        minified = "var a=[%s];\n" % ",".join('"%d"' % n for n in range(1200))
+        bundle = "export const a = 1;\n" * 60000
+        self.assertEqual([measure.line_kinds("app.min.js", minified), measure.line_kinds("bundle.js", bundle)],
+                         [None, None])
+
 
 class Marked(unittest.TestCase):
     """The heatmap marks a file of its table nearly all of whose code lines declare things, and lists its logic by
