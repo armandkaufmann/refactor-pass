@@ -150,7 +150,6 @@ class Shapes(unittest.TestCase):
     def test_a_scripts_lines(self):
         self.assertEqual(logic_of(SCRIPTS), [(path, logic) for path, _, logic in SCRIPTS])
 
-    @unittest.expectedFailure
     def test_a_literals_lines(self):
         self.assertEqual(logic_of(LITERALS), [(path, logic) for path, _, logic in LITERALS])
 
