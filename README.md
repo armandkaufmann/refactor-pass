@@ -26,7 +26,10 @@ fix.
   it; the agent reads each file's commits for the few files it recommends.
   It says how old the newest commit is and how long the window spans, and
   where the work has gone quiet, and it lists the newest work the table
-  leaves out, which the checklist then accounts for.
+  leaves out, which the checklist then accounts for. A file nearly all of
+  whose lines declare things, as routes, config and types do, is marked,
+  with its logic listed by line, so its churn isn't mistaken for trouble
+  and the logic in it isn't missed.
 - **The smells**, from a catalogue of the established code smells, each
   with what to count, when it isn't a smell, and its playbook of named
   refactorings.
