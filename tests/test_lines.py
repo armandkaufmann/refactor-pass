@@ -38,6 +38,9 @@ SHAPES = [
      '  { path: "/", component: () => import("./Home.vue") },\n'
      '  { path: "/about", component: () => import("./About.vue"), meta: { auth: true } },\n];\n'
      'export const isAdmin = (user) => user.role === "admin";\n', "10"),
+    # A group whose closure is handed the router by the router's name, and registers on it.
+    ("src/routes.js", "router.group((router) => {\n  router.get('/a', A.index);\n  router.post('/a', A.store);\n});\n",
+     ""),
     # Go's struct and composite literal declare; a list registered inside a function is that function's body.
     ("routes.go", "package routes\n\ntype Route struct {\n\tPath string\n}\n\nvar all = []Route{\n\t{Path: \"/\"},\n}\n"
      "\nfunc Mount(r chi.Router) {\n\tr.Route(\"/admin\", func(r chi.Router) {\n\t\tr.Get(\"/users\", users)\n"
@@ -77,6 +80,24 @@ FUNCTIONS = [
      "func (p *Provider) Config() any {\n\treturn p.config\n}\n", "4-8, 11-12"),
 ]
 
+# Closures passed to a call that run code on what they're handed, or on another receiver: a handler, a callback,
+# a transaction, jQuery's ready, Ruby's each and define_method, and Ruby's brace blocks, a proc's and a lambda's.
+CALLBACKS = [
+    ("server.js", "app.get('/health', (req, res) => {\n  res.set('Cache-Control', 'no-store');\n  res.status(200);\n"
+     "  res.send('ok');\n});\napp.get('/x', handlers.x);\n", "2-5"),
+    ("purge.php", "<?php\n$users->each(function ($user) {\n    $user->notify(new Expired());\n    $user->delete();\n});\n"
+     "DB::transaction(function () {\n    DB::table('users')->where('old', 1)->delete();\n"
+     "    DB::table('logs')->insert(['what' => 'purged']);\n});\n", "3-5, 7-9"),
+    ("each.ts", "items.forEach((item) => {\n  item.save();\n  item.publish();\n});\nfetchAll().then((conn) => {\n"
+     "  conn.flush();\n  conn.close();\n});\n", "2-4, 6-8"),
+    ("ready.js", "$(document).ready(function () {\n  $('#save').hide();\n  $('.menu').show();\n});\n", "2-4"),
+    ("deactivate.rb", "users.each do |u|\n  u.deactivate!\n  u.notify\nend\nclass A\n  define_method(:go) do |y|\n"
+     "    y.save\n    y.notify\n  end\nend\n", "2-3, 7-8"),
+    ("config/routes.rb", "Rails.application.routes.draw do\n  resources :users\n  get '/up', to: proc { [200, {}, ['ok']] }\n"
+     "  constraints(lambda { |req| req.env['warden'].user&.admin? }) do\n    mount Sidekiq::Web => '/sidekiq'\n"
+     "  end\nend\n", "3-4"),
+]
+
 
 def logic_of(shapes):
     """Each shape's path and its logic lines, as the output writes them; None where nothing is said of them."""
@@ -96,6 +117,10 @@ class Shapes(unittest.TestCase):
 
     def test_a_named_functions_lines(self):
         self.assertEqual(logic_of(FUNCTIONS), [(path, logic) for path, _, logic in FUNCTIONS])
+
+    @unittest.expectedFailure
+    def test_a_callbacks_lines(self):
+        self.assertEqual(logic_of(CALLBACKS), [(path, logic) for path, _, logic in CALLBACKS])
 
     def test_a_found_functions_lines_are_logic(self):
         """Every code line of a function measure.functions finds, after its first, is logic: over the samples of
