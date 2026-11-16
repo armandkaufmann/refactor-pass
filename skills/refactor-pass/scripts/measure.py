@@ -1637,7 +1637,8 @@ def block_kind(head, family, around=None):
     whole = outline(t)
     t = whole.rsplit("\n", 1)[-1].strip()
     if family == "go":
-        if re.search(r"(?<![\]*])\bfunc\b", whole) or re.match(r"(?:\}\s*)?(?:if|for|switch|select|else|go|defer)\b", t):
+        if re.search(r"(?<![\]*])\bfunc\b", whole) or \
+                re.match(r"(?:\}\s*)?(?:if|for|switch|select|else|go|defer)\b", t):
             return "code"
         if TYPE_HEAD["go"].search(t):
             return "type"

@@ -88,17 +88,17 @@ FUNCTIONS = [
 CALLBACKS = [
     ("server.js", "app.get('/health', (req, res) => {\n  res.set('Cache-Control', 'no-store');\n  res.status(200);\n"
      "  res.send('ok');\n});\napp.get('/x', handlers.x);\n", "2-5"),
-    ("purge.php", "<?php\n$users->each(function ($user) {\n    $user->notify(new Expired());\n    $user->delete();\n});\n"
-     "DB::transaction(function () {\n    DB::table('users')->where('old', 1)->delete();\n"
+    ("purge.php", "<?php\n$users->each(function ($user) {\n    $user->notify(new Expired());\n"
+     "    $user->delete();\n});\nDB::transaction(function () {\n    DB::table('users')->where('old', 1)->delete();\n"
      "    DB::table('logs')->insert(['what' => 'purged']);\n});\n", "3-5, 7-9"),
     ("each.ts", "items.forEach((item) => {\n  item.save();\n  item.publish();\n});\nfetchAll().then((conn) => {\n"
      "  conn.flush();\n  conn.close();\n});\n", "2-4, 6-8"),
     ("ready.js", "$(document).ready(function () {\n  $('#save').hide();\n  $('.menu').show();\n});\n", "2-4"),
     ("deactivate.rb", "users.each do |u|\n  u.deactivate!\n  u.notify\nend\nclass A\n  define_method(:go) do |y|\n"
      "    y.save\n    y.notify\n  end\nend\n", "2-3, 7-8"),
-    ("config/routes.rb", "Rails.application.routes.draw do\n  resources :users\n  get '/up', to: proc { [200, {}, ['ok']] }\n"
-     "  constraints(lambda { |req| req.env['warden'].user&.admin? }) do\n    mount Sidekiq::Web => '/sidekiq'\n"
-     "  end\nend\n", "3-4"),
+    ("config/routes.rb", "Rails.application.routes.draw do\n  resources :users\n"
+     "  get '/up', to: proc { [200, {}, ['ok']] }\n  constraints(lambda { |req| req.env['warden'].user&.admin? }) do\n"
+     "    mount Sidekiq::Web => '/sidekiq'\n  end\nend\n", "3-4"),
 ]
 
 # Scripts: statements at the top level that run, an await, or a value worked out from one statement read by the
