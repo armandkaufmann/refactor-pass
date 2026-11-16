@@ -138,7 +138,6 @@ class Shapes(unittest.TestCase):
     def test_a_callbacks_lines(self):
         self.assertEqual(logic_of(CALLBACKS), [(path, logic) for path, _, logic in CALLBACKS])
 
-    @unittest.expectedFailure
     def test_a_scripts_lines(self):
         self.assertEqual(logic_of(SCRIPTS), [(path, logic) for path, _, logic in SCRIPTS])
 
@@ -181,8 +180,8 @@ class Marked(unittest.TestCase):
         self.assertEqual(set(support.heatmap_rows(out)), {"routes/web.php", "app/Cart.php"})
         shown = support.run("measure.py", "-C", self.repo.path, "--show", "routes/web.php", "--show", "app/Cart.php")
         self.assertIn("Declarations: all but 6% of its code lines; its logic, by line: 33-34.\n", shown.out)
-        self.assertIn("Logic: 58% of its code lines, in a function's or a closure's body or on a branch's line.\n",
-                      shown.out)
+        self.assertIn("Logic: 58% of its code lines, in a function's or a closure's body, on a branch's line or in a "
+                      "statement at the top that runs.\n", shown.out)
 
     def test_the_page_carries_it(self):
         page = os.path.join(support.new_folder("declarations"), "p.html")
