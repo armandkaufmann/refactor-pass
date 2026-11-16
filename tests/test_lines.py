@@ -171,6 +171,13 @@ class Shapes(unittest.TestCase):
     def test_a_literals_lines(self):
         self.assertEqual(logic_of(LITERALS), [(path, logic) for path, _, logic in LITERALS])
 
+    @unittest.expectedFailure
+    def test_a_docstring_is_no_code_line(self):
+        """Python's docstrings are left out of the code lines, as measure.py's counts leave them out."""
+        kinds = support.load("measure").line_kinds("models.py", '"""Models."""\nimport os\n\n\nclass A:\n'
+                                                   '    """A, over\n    two lines."""\n\n    name = "a"\n')
+        self.assertEqual(kinds, [None, "declaration", None, None, "declaration", None, None, None, "declaration", None])
+
     def test_a_found_functions_lines_are_logic(self):
         """Every code line of a function measure.functions finds, after its first, is logic: over the samples of
         its tests, in every language whose lines are read."""
