@@ -1540,10 +1540,11 @@ def line_kinds(path, text, most=None):
     for _, first, last, _, _ in functions_found:
         for k in range(first - (family in ("py", "rb")), last):
             kinds[k] = kinds[k] and "logic"
+    kept = [len(a) == len(b) for a, b in zip(lines, code)]  # Where the skeleton kept a line's length.
     if family == "c":
-        mark(top_logic(*found[1]))
+        mark(top_logic(*found[1], raw="\n".join(lines) if all(kept) else None))
     elif family in ("py", "rb"):
-        for first, last in indented_top(code, inside, kinds, functions_found, family):
+        for first, last in indented_top(code, inside, kinds, functions_found, family, lines, kept):
             for k in range(first, last + 1):
                 kinds[k] = kinds[k] and "logic"
     if family == "rb":
@@ -1551,9 +1552,10 @@ def line_kinds(path, text, most=None):
     return None if most is not None and logic_share(kinds) > most else kinds
 
 
-def indented_top(code, inside, kinds, found, family):
+def indented_top(code, inside, kinds, found, family, lines, kept):
     """The statements at a Python or a Ruby file's top level that run code (runs), as (first, last) line indexes:
-    in Python, every statement outside a function's or a class's body; in Ruby, those not indented."""
+    in Python, every statement outside a function's or a class's body; in Ruby, those not indented. lines: the
+    file as written, read for what its strings interpolate where the skeleton kept their length (kept)."""
     widths = [indent_of(line) for line in code]
     skip = [False] * len(code)
     for _, first, last, _, _ in found:
@@ -1580,7 +1582,8 @@ def indented_top(code, inside, kinds, found, family):
         text = "\n".join(code[first:last + 1])
         if FLOW_WORD[family].match(text.strip()):
             made.update(dict.fromkeys(loop_names(text, family), True))
-        elif runs(text, family, made):
+        elif runs(text, family, made, interpolated("\n".join(lines[first:last + 1]))
+                  if all(kept[first:last + 1]) else ()):
             found.append((first, last))
     return found
 
@@ -1718,9 +1721,10 @@ def goes_on_from(ended, following, family):
         not re.match(r"\s*where\b", following)
 
 
-def top_logic(flat, contexts, inner):
+def top_logic(flat, contexts, inner, raw=None):
     """The spans of the statements at a brace language's top level that run code (runs): each one's own, less the
-    insides of the blocks of code or of a type in it, which are read on their own."""
+    insides of the blocks of code or of a type in it, which are read on their own. raw is the file as written,
+    where its skeleton kept each line's length, for the names its strings interpolate."""
     statements = sorted((a + s, a + e) for a, b in contexts for s, e in statement_spans(flat[a:b]))
     made, spans, firsts = {}, [], [a for a, _ in inner]
     for s, e in statements:
@@ -1728,7 +1732,7 @@ def top_logic(flat, contexts, inner):
         if CONTROL_HEAD["c"].match(text):
             made.update(dict.fromkeys(loop_names(text, "c"), True))
             continue
-        if not runs(text, "c", made):
+        if not runs(text, "c", made, interpolated(raw[s:e]) if raw else ()):
             continue
         k = bisect.bisect_right(firsts, s)  # The blocks in it, not the one it's in.
         while k < len(inner) and inner[k][0] < e:
@@ -1904,10 +1908,10 @@ LITERAL_NAME = re.compile(r"(?:true|false|null|undefined|None|True|False|nil|NaN
                           r"[\w\\]+::class)$")
 
 
-def runs(text, family, made):
+def runs(text, family, made, interpolated=()):
     """Whether a top-level statement, a skeleton's text, runs code rather than declares something (see above).
     made, for the statements after it, takes each name it gives a value: True where the value is worked out
-    from names, False where it's plain."""
+    from names, False where it's plain. interpolated: the names its strings read, which the skeleton blanks."""
     s = text.strip().rstrip("; \t\n")
     if not s or TOP_DECLARES[family].match(s):
         return False
@@ -1930,7 +1934,8 @@ def runs(text, family, made):
         logic = True  # A comprehension.
     else:
         logic = not shaped(value, family) or (not NAME_PATH.match(outline(value)) and reads(
-            (target + " " if eq and eq.group() != "=" else "") + (s[receiver.end():] if receiver else value), made))
+            (target + " " if eq and eq.group() != "=" else "") + (s[receiver.end():] if receiver else value), made)) \
+            or any(made.get(name) for name in interpolated)
     for name in names:
         made[name] = logic or worked_out(value, made)
     return logic
@@ -2015,6 +2020,25 @@ def reads(text, made):
         else:
             out.append(" " if hide else c)
     return any(made.get(name) for name in re.findall(r"(?<![\w$.>:\\])\$?[A-Za-z_]\w*", "".join(out)))
+
+
+# A string, and what it interpolates: PHP's "$name" and "{$name}", JavaScript's `${...}`, Ruby's "#{...}" and
+# Python's f"{...}".
+STRING_TEXT = re.compile(r"""([fFrRbBuU]{0,2})("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`)""")
+
+
+def interpolated(raw):
+    """The names the strings in raw, a statement's text as written, interpolate."""
+    names = []
+    for found in STRING_TEXT.finditer(raw):
+        prefix, string = found.groups()
+        parts = re.findall(r"\$\{([^{}]*)\}|#\{([^{}]*)\}", string)
+        if string[0] == '"':
+            parts += [(name, "") for name in re.findall(r"\{?(\$[A-Za-z_]\w*)", string)]
+        if "f" in prefix.lower() and string[0] != "`":
+            parts += [(inner, "") for inner in re.findall(r"\{([^{}]*)\}", string)]
+        names += [name for part in parts for name in re.findall(r"(?<![\w$.])\$?[A-Za-z_]\w*", "".join(part))]
+    return names
 
 
 def split_top(text, mark):
