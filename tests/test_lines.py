@@ -115,6 +115,15 @@ SCRIPTS = [
      "A = 1\nB = 2\n", "3-4"),
 ]
 
+# A closure that returns a string or another literal serves a value, as a stub's handler does: it names nothing.
+LITERALS = [
+    ("routes/admin.php", "<?php\nRoute::get('/a', function () {\n    return 'coming soon';\n});\n"
+     "Route::get('/', fn () => view('home'));\n", "3-4"),
+    ("src/titles.js", "export const titles = {\n  home: () => 'Home',\n  about: AboutTitle,\n};\n", "2"),
+    ("spec/factories.rb", 'FactoryBot.define do\n  factory :user do\n    name { "John" }\n    admin { false }\n'
+     "  end\nend\n", "3-4"),
+]
+
 
 def logic_of(shapes):
     """Each shape's path and its logic lines, as the output writes them; None where nothing is said of them."""
@@ -140,6 +149,10 @@ class Shapes(unittest.TestCase):
 
     def test_a_scripts_lines(self):
         self.assertEqual(logic_of(SCRIPTS), [(path, logic) for path, _, logic in SCRIPTS])
+
+    @unittest.expectedFailure
+    def test_a_literals_lines(self):
+        self.assertEqual(logic_of(LITERALS), [(path, logic) for path, _, logic in LITERALS])
 
     def test_a_found_functions_lines_are_logic(self):
         """Every code line of a function measure.functions finds, after its first, is logic: over the samples of
