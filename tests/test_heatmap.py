@@ -441,7 +441,8 @@ def build_settings():
     removed, and as 4 and 8 with diff.context=0, where git cuts the files' common end before it diffs them.
     Then a fix, its message's body past ASCII, and another
     author's revert of it, whose body names it: the fixes trace reads bodies; and --diffs shows the revert's
-    change to g.py, whose context holds blank lines."""
+    change to g.py, whose context holds blank lines. Last, work HEAD lacks, which the header reads from the
+    refs: its upstream's and a side branch's."""
     repo = support.Repo("settings")
     tail = lines(50, "a line of the tail")
     repo.commit("2026-01-01", "Start", {"a.py": lines(3, "a"), "b.txt": "{\nx\nx\n}\n}\nz\n", "c.py": lines(4, "c"),
@@ -463,9 +464,16 @@ def build_settings():
     fix = repo.commit("2026-01-07", "Fix the crash in g\n\nThe caf\u00e9's g crashed.\n",
                       {"g.py": "g 1\n\ng 2\ng 3\n\ng 4\n"})
     repo.done()
-    repo.commit("2026-01-08", 'Revert "Fix the crash in g"\n\nThis reverts commit %s.\n' % repo.sha(fix),
-                {"g.py": "g 1\n\ng 2\ng three\n\ng 4\n"}, author=support.BOB)
+    revert = repo.commit("2026-01-08", 'Revert "Fix the crash in g"\n\nThis reverts commit %s.\n' % repo.sha(fix),
+                         {"g.py": "g 1\n\ng 2\ng three\n\ng 4\n"}, author=support.BOB)
+    # Work HEAD lacks: its upstream's, old, and a side branch's, new, which keeps the work from going quiet.
+    repo.commit("2026-01-09", "Work upstream", {"g.py": "g 1\n"}, branch="upstream", parent=revert)
+    repo.commit("2026-11-01", "Work on the side", {"f.py": lines(7, "d")}, branch="side", parent=fix)
     repo.done()
+    for args in (["update-ref", "refs/remotes/origin/main", "refs/heads/upstream"], ["branch", "-D", "upstream"],
+                 ["config", "branch.main.remote", "origin"], ["config", "branch.main.merge", "refs/heads/main"],
+                 ["config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*"]):
+        support.git(repo.path, *args)
     return repo
 
 

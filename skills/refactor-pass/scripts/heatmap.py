@@ -26,10 +26,12 @@ of recent commits:
 
 Files are listed by commits times size, so the top ones are both busy and
 big. A small file changed often, like a config, and a big one rarely
-changed both come lower. Dates are commit dates, as the local date where
-this runs, like the checklist page's own dates. git log shows author dates
-by default, which a rebase or a cherry-pick keeps from the first commit
-while the commit date moves on. This shows the dates given here:
+changed both come lower. Under them, the newest work they leave out: files
+past --top that 2 or more of the commits of the window's last 60 days (its
+newer half at most) changed, 10 at most; renames, commits of more than
+--max-files files, documentation, tests, CI, build and dependency files and
+a dist folder aside. Dates are commit dates, as local dates; git log shows
+author dates, which a rebase or a cherry-pick keeps. This shows these:
 
   git log --date=short-local --format='%h %cd %s'
 
@@ -114,9 +116,8 @@ dependabot, renovate, github-actions, pre-commit-ci and the like; the output
 names them, and --bot NAME adds another), those the repo lists in
 .git-blame-ignore-revs (bulk reformats), and those recorded on the items of the
 checklists (a refactor pass's own work, which would make the files it just
-refactored look hot). Any other bot counts, coding agents such as Copilot,
-Claude, Devin and Jules among them: theirs are the changes a pass is about.
-A recorded commit that isn't reachable from HEAD, as after a squash merge or
+refactored look hot). Any other bot counts, coding agents among them: theirs
+are the changes a pass is about. A recorded commit that isn't reachable from HEAD, as after a squash merge or
 a rebase, gets a warning. A left out commit counts toward nothing but its
 renames, and growth, being two sizes, includes what it did. Binary files,
 symbolic links and submodules are left out, and so is any copy of this skill
@@ -140,9 +141,6 @@ a .refactor-pass/ folder that has none and holds nothing git tracks, so the
 checklists stay out of commits and the project's own .gitignore is left
 alone. If the page can't be written, as in a sandbox, it says what to do.
 
-Usage:
-  heatmap.py [options] [SCOPE ...]
-
 SCOPE is a folder or a glob (src, lib, 'app/**/*.py'), from the repo's top or
 from the folder -C names; with none, every file counts. In a glob, * matches
 across folders too, so 'app/*.py' takes app/sub/deep.py; and **/ matches any
@@ -155,7 +153,6 @@ Examples:
   heatmap.py src tests
   heatmap.py -n 300 --exclude-commits 9e1d16e,b7fc306 src lib
   heatmap.py --since v2.0.0 app
-  heatmap.py --since "3 months ago" src
   heatmap.py --page .refactor-pass/2026-11-10.html src
   heatmap.py --show src/app/main.py
   heatmap.py --checklists
@@ -166,6 +163,7 @@ import json
 import os
 import re
 import sys
+import time
 from collections import Counter, defaultdict
 from datetime import datetime
 from itertools import combinations
@@ -663,11 +661,15 @@ NOT_FIX_WORDS = {"typo": "typo typos spelling grammar grammatical wording", "for
                  "warning": "warning warnings", "release": "release"}
 NOT_FIX_PHRASES = {"error message": ("error message", "error messages")}
 NOT_FIX_CHINESE = ["注释", "文档"]
-# Documentation by its name: a changelog, a readme, a licence and the like, with a documentation extension or
-# one in capitals (COPYING.LESSER), as against src/history.ts or news.py, or with none, where anything after
-# the word needs the word in capitals (LICENSE-MIT, as against bin/license-checker); or Markdown and the like.
+# Documentation by its name: a changelog, a readme, a licence, release notes and the like, with a documentation
+# extension or one in capitals (COPYING.LESSER), as against src/history.ts or news.py, or with none, where
+# anything after the word needs the word in capitals (LICENSE-MIT, as against bin/license-checker); or Markdown
+# and the like. Release notes and the words after them need capitals with no extension, as convention writes
+# them: bin/todo is a program.
 DOC_NAMES = re.compile(r"(?P<word>changelog|changes|history|news|authors|contributors|readme|license|copying|"
-                       r"contributing|code_of_conduct)(?P<more>[._-][\w.-]*)?$", re.I)
+                       r"contributing|code_of_conduct|release[-_]?notes|notice|thanks|credits|maintainers|todo)"
+                       r"(?P<more>[._-][\w.-]*)?$", re.I)
+CAPITALS = re.compile(r"release[-_]?notes|notice|thanks|credits|maintainers|todo", re.I)
 DOC_EXTENSIONS = {"md", "markdown", "rst", "txt", "text", "adoc", "asciidoc", "rdoc", "org", "pod"}
 DOC_FILES = re.compile(r".*\.(?:md|markdown|rst|adoc|asciidoc|rdoc)$", re.I)
 
@@ -704,8 +706,9 @@ def is_doc(path):
     name = path.split("/")[-1]
     _, dot, extension = name.rpartition(".")
     found = DOC_NAMES.match(name)
+    word = found.group("word") if found else ""
     named = found and (extension.lower() in DOC_EXTENSIONS or extension.isupper() if dot else
-                       not found.group("more") or found.group("word").isupper())
+                       word.isupper() or not (found.group("more") or CAPITALS.fullmatch(word)))
     in_docs = set(path.lower().split("/")[:-1]) & {"doc", "docs", "documentation"}
     return bool(named or DOC_FILES.match(name) or in_docs and not (dot and "." + extension.lower() in CODE_EXTENSIONS))
 
@@ -804,6 +807,119 @@ def same_person(one, other):
     name, other_name = name.strip().lower(), other_name.strip().lower()
     email, other_email = email.rstrip(">").strip().lower(), other_email.rstrip(">").strip().lower()
     return bool(name) and name == other_name or bool(email) and email == other_email
+
+
+# The newest work, which a wide window's table can leave out: its commits of the last 60 days, no more than its
+# newer half. The newer half of a wide window is months long, while a feature's commits land within weeks; a
+# span of time, not of commits, stays the same as the window widens, which is how the newest work gets pushed
+# out of the table. Files that 2 or more of them changed are busy, 10 at most listed.
+NEWEST_DAYS = 60
+NEWEST_LISTED = 10
+
+
+def newest_work(commits, past, wide, today, not_listed):
+    """The newest work the table leaves out: (the commits read, newest first; of the files past it, those 2 or
+    more of them changed, as (path, how many), most first), counting neither a commit in wide (of more than
+    --max-files files) nor a rename alone, and no file not_listed names. today gives a path's name today."""
+    half = commits[:(len(commits) + 1) // 2]
+    part = [c for c in half if commits[0][1] - c[1] <= NEWEST_DAYS * 86400]
+    busy, churn = Counter(), Counter()
+    for commit in part:
+        if commit[0] in wide:
+            continue
+        changed = [(today(p), (added or 0) + (removed or 0)) for p, _, added, removed in commit[3] if added or removed]
+        busy.update(set(p for p, _ in changed if p in past and not not_listed(p)))
+        for p, lines in changed:
+            churn[p] += lines
+    found = sorted((p for p in busy if busy[p] >= 2), key=lambda p: (-busy[p], -churn[p], p))
+    return part, [(p, busy[p]) for p in found]
+
+
+# Over a quarter with nothing landed: work planned by the quarter lands something in one, and a holiday or a
+# release freeze is shorter, so no one is changing that code now, and a refactor's payoff waits for whoever next
+# does.
+QUIET_DAYS = 90
+
+
+def now():
+    """The time the window is set against: REFACTOR_PASS_NOW, a Unix time, where it's set, as the tests set it;
+    else the clock's."""
+    given = os.environ.get("REFACTOR_PASS_NOW")
+    if not given:
+        return time.time()
+    try:
+        seconds = int(given)
+        datetime.fromtimestamp(seconds)  # One this system can't read as a date fails here, as on Windows before 1970.
+        if seconds < 0:
+            raise ValueError(given)
+        return seconds
+    except (ValueError, OverflowError, OSError):
+        sys.exit("REFACTOR_PASS_NOW should be a Unix time, a whole number of seconds since 1970 this system can read "
+                 "as a date, not %r." % given)
+
+
+def in_time(today, commits, scoped):
+    """The header's line on where the window sits in time, and whether its work has gone quiet by HEAD's
+    history: today, the newest commit's age and the window's span; with scoped, the newest commit to change the
+    scope, where it isn't the newest commit, which the quiet is judged by. The window's commits are newest
+    first."""
+    newest, span = commits[0], max(c[1] for c in commits) - min(c[1] for c in commits)
+    judged = scoped or newest
+    line = "Today is %s: the newest commit is %s%s%s the window spans %s." % (
+        datetime.fromtimestamp(today).strftime("%Y-%m-%d"), age(today, newest[1]),
+        ", and the newest to change the scope %s" % age(today, scoped[1]) if scoped else "", ";" if scoped else
+        ", and", how_long(span) if span >= 60 else "under a minute")
+    return line, today - judged[1] > QUIET_DAYS * 86400
+
+
+def age(today, stamp):
+    """How old a time is, as the header says it; one after now, by a clock that's wrong, isn't any age."""
+    return "%s old" % how_long(today - stamp) if today >= stamp else "dated after now"
+
+
+LACKED = 200  # The commits HEAD lacks read from another ref, newest first.
+
+
+def work_lacked(repo, today, quiet, person, in_scope):
+    """The header's lines on a person's work HEAD lacks, from the refs the clone holds, and whether the work
+    HEAD's history has gone quiet, as quiet says, is still to be said to have: (lines, quiet, behind,
+    elsewhere). behind is the upstream's work, which the checkout is behind; elsewhere, where quiet, the newest
+    commit of any ref's that's under QUIET_DAYS old, which says the work hasn't gone quiet. in_scope, where a
+    scope is given, tells a path in it: a commit counts for the quiet only where it changed one."""
+    def lacking(revs):
+        read = read_log(repo, ["-n", str(LACKED)] + revs + ["--not", "HEAD"], changes=in_scope is not None)
+        mine = [c for c in read if person(c[4])]
+        return sorted(mine, key=lambda c: -c[1]), len(read) == LACKED
+
+    def recent(found):
+        return [c for c in found if (in_scope is None or any(in_scope(p) for p, _, _, _ in c[3])) and
+                today - c[1] <= QUIET_DAYS * 86400]
+
+    lines, behind, elsewhere = [], None, None
+    up = scoping.git(repo, "rev-parse", "--symbolic-full-name", "@{upstream}")
+    upstream = up.stdout.decode("utf-8", errors="replace").strip() if up.returncode == 0 else ""
+    if upstream:
+        ahead, more = lacking([upstream])
+        if ahead:
+            behind = {"ref": re.sub(r"^refs/(?:heads|remotes)/", "", upstream), "commits": len(ahead),
+                      "date": describe(ahead[0])["date"]}
+            lines.append("This checkout is behind %s by %s%s: the heatmap reads HEAD's history only." % (
+                behind["ref"], "%d or more commits" % len(ahead) if more else "1 commit" if len(ahead) == 1 else
+                "%d commits" % len(ahead), (", " if len(ahead) == 1 else ", the newest ") + age(today, ahead[0][1])))
+            quiet = quiet and not recent(ahead)
+    if quiet:
+        found = recent(lacking(["--branches", "--remotes"])[0])
+        if found:
+            holders = git(repo, "for-each-ref", "--contains", found[0][0], "--sort=-committerdate",
+                          "--format=%(symref)%00%(refname:short)", "refs/heads", "refs/remotes").split("\n")
+            ref = next((h.split("\0", 1)[1] for h in holders if h.startswith("\0")), "")
+            elsewhere = {"ref": ref, "date": describe(found[0])["date"]}
+            lines.append("This checkout's history has gone quiet%s, but %s's newest commit%s, which it lacks, is %s: "
+                         "the heatmap reads HEAD's history only." % (" in the scope" if in_scope else "", ref,
+                                                                     " to change it" if in_scope else "",
+                                                                     age(today, found[0][1])))
+            quiet = False
+    return lines, quiet, behind, elsewhere
 
 
 def how_long(seconds):
@@ -1302,8 +1418,8 @@ def main():
     parser.add_argument("--since", metavar="REV_OR_DATE",
                         help="the window: every commit after REV (a tag, branch or commit, itself not included), "
                              "or since a date: 2026-06-01 (from the start of that day), 2026-06-01 14:30, "
-                             "'3 months ago', 3.days.ago, yesterday or last week, and the other forms git's "
-                             "documentation gives. The output says how it read a date; anything else is an error")
+                             "'3 months ago', yesterday or another form git reads. The output says how it read a "
+                             "date; anything else is an error")
     parser.add_argument("--exclude-commits", default="", metavar="SHAS",
                         help="comma-separated commits to leave out, such as a mass reformat or a vendored "
                              "import, which would make every file they touched look hot: each a hash (7 or more "
@@ -1557,6 +1673,23 @@ def main():
     # --show, before the work the heatmap alone needs: every file's size, and the pairs.
     oldest, latest = describe(commits[-1]), describe(commits[0])
     newer_from = describe(commits[(len(commits) + 1) // 2 - 1])["date"]
+    # Where the window sits in time. Its newest commit is the repo's; with a scope, the newest to change it
+    # too, where that's another, which judges whether the work has gone quiet: the scope's.
+    clock = now()
+    scoped = next((commits[i] for i, touched in enumerate(sets) if touched), None) if args.scope else None
+    time_line, quiet = in_time(clock, commits, scoped if scoped is not commits[0] else None)
+    # A person's work HEAD lacks, on the refs the clone holds: its upstream's, and any's where its history has
+    # gone quiet. Bots' commits aren't work, as in the window.
+    bot_words = [n.lower() for n in args.bot]
+
+    def person(author):
+        return args.keep_bots or not (HOUSEKEEPING.search(author) or any(n in author.lower() for n in bot_words))
+    more_lines, quiet, behind, elsewhere = ([], quiet, None, None) if args.show else work_lacked(
+        repo, clock, quiet, person, (lambda p: scoping.in_scope(p, args.scope) and not scoping.ignored(p, patterns))
+        if args.scope else None)  # Only the heatmap's header says it, so --show reads no more of git for it.
+    there = (" in the scope", " there") if scoped is not None and scoped is not commits[0] else ("", "")
+    gone = "Nothing has landed%s for over three months: the work it counts%s has gone quiet." % there
+    time_lines = [time_line] + more_lines + [gone] * quiet
     if args.show:
         # A file git tracks, or one changed in the window, as a file deleted in it; or a name a file had before
         # it was renamed in the window, read as its name today. Any other is a mistake, as a scope's would be.
@@ -1730,7 +1863,10 @@ def main():
               "excluded": len(excluded), "excluded_asked": len(asked), "excluded_ignore_revs": len(listed),
               "excluded_checklists": len(recorded), "excluded_bots": len(bots), "bots": bot_names,
               "too_big_for_pairs": too_big,
-              "since": args.since, "tests_aside": None if args.keep_tests else len(tests), "shallow": bool(cut)}
+              "since": args.since, "tests_aside": None if args.keep_tests else len(tests), "shallow": bool(cut),
+              "today": datetime.fromtimestamp(clock).strftime("%Y-%m-%d"), "quiet": quiet, "behind": behind,
+              "elsewhere": elsewhere,
+              "scope_newest": describe(scoped) if scoped is not None and scoped is not commits[0] else None}
     if fix_facts:
         window["fixes"] = fix_facts
     scope = args.scope or ["(everything)"]
@@ -1769,6 +1905,8 @@ def main():
         window["oldest"]["date"], "; left out: " + reasons if reasons else ""))
     if since_read:
         print("--since %s reads as %s, local time." % (args.since, since_read))
+    for line in time_lines:
+        print(line)
     print("Newer half from %s. Ordered by commits times size." % window["newer_half_from"])
     if base:
         print("Growth is against %s (%s), just before the window." % (
@@ -1807,6 +1945,21 @@ def main():
     if len(rows) > args.top:
         print("  ... %d more files changed in the window" % (len(rows) - args.top))
     print()
+    if len(rows) > args.top:
+        # The newest work the table leaves out, as a wide window's can: a list to account for.
+        part, found = newest_work(commits, set(r["path"] for r in rows[args.top:]), wide, today,
+                                  lambda p: not_code(p, is_test, tops) or "dist" in p.split("/")[:-1])
+        print("Newest work outside the table: files past its top %d that 2 or more of the window's newest %d commits "
+              "changed (%s, from %s); documentation, tests, and CI, build and dependency files aside%s" % (
+                  args.top, len(part), "its newer half" if len(part) == (len(commits) + 1) // 2 else
+                  "those of its last %d days" % NEWEST_DAYS, describe(part[-1])["date"], ":" if found else ": none."))
+        if found:
+            print("%7s %7s %7s  file" % ("commits", "size", "growth"))
+        for path, count in found[:NEWEST_LISTED]:
+            print("%7d %7d %+7d  %s" % (count, by_path[path]["size"], by_path[path]["growth"], path))
+        if len(found) > NEWEST_LISTED:
+            print("  ... %d more" % (len(found) - NEWEST_LISTED))
+        print()
     if fix_facts and not fix_facts["thin"]:
         # Fixes by file: where the commits that read as fixes landed, each counted once, its strongest way.
         place = dict((r["path"], i) for i, r in enumerate(rows))

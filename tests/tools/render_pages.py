@@ -5,15 +5,15 @@ A page fails if its error box shows, or if it shows a different number of items 
 of file rows than its heatmap block's files, of pair and group rows than its pairs and groups, or of tests
 than its tests; or, in today's template, of fix cells than its file rows where the heatmap counts fixes (and
 any where it doesn't), of items' cited fixes than its items with fixes, or of newer halves or notes they
-cite than their entries give. The pages: one heatmap.py makes in
-a small repo, as made and with a pass written that cites fixes, and that one in the templates of v1.0.0 and
-v1.0.1, as a checklist made by them keeps, taken from their tags; the suite's fixture checklists, their data
-in today's template; a page whose heatmap is in an older format, with no last dates, no bots, no dates on
-pairs and no fixes; and
-one heatmap.py makes from commits whose subjects hold <!-- and <script. Then, for each text
-test_check_page.py tries in a pass block that a browser might read as HTML, a page with it written as it is
-and one with each < written \u003c: check_page.py must find an error in the page exactly when the browser
-shows its error box. It exits 0 with a message when Chrome isn't found.
+cite than their entries give; or if it doesn't say where the window sat in time as its heatmap does. The
+pages: one heatmap.py makes in a small repo, as made and with a pass written that cites fixes, and that one
+in the templates of v1.0.0, v1.0.1 and v1.1.0, as a checklist made by them keeps, taken from their tags; the
+suite's fixture checklists, their data in today's template; a page whose heatmap is in an older format, with
+no last dates, no bots, no dates on pairs and no fixes; and one heatmap.py makes from commits whose subjects
+hold <!-- and <script. Then, for each text test_check_page.py tries in a pass block that a browser might
+read as HTML, a page with it written as it is and one with each < written \u003c: check_page.py must find an
+error in the page exactly when the browser shows its error box. It exits 0 with a message when Chrome isn't
+found.
 
 It uses the skill's scripts and template, or those REFACTOR_PASS_SCRIPTS names, and git.
 
@@ -107,6 +107,12 @@ def problems(dom, text):
         if sum(1 for n in notes if n in "".join(cited)) != len(notes):
             found.append("%d notes on cited fixes shown, %d given" % (
                 sum(1 for n in notes if n in "".join(cited)), len(notes)))
+    # Where the window sat in time, in a template that says it, from a heatmap that has it.
+    window = (heat or {}).get("window") or {}
+    if window.get("today") and "w.today" in text:
+        if ("when it was made" in dom, "had gone quiet" in dom) != (True, bool(window.get("quiet"))):
+            found.append("where the window sat in time isn't shown as its heatmap says (quiet: %s)"
+                         % window.get("quiet"))
     title = re.search(r"<title>(.*?)</title>", dom)
     if data.get("project") and (not title or data["project"] not in title.group(1)):
         found.append("the title doesn't name the project")
@@ -215,7 +221,7 @@ def fixtures(folder):
     return pages
 
 
-RELEASES = ["v1.0.0", "v1.0.1"]
+RELEASES = ["v1.0.0", "v1.0.1", "v1.1.0"]
 
 
 def old_templates(folder, made):

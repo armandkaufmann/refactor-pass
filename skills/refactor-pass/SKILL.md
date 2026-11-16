@@ -85,6 +85,22 @@ what it said, and go on without it, from `git log` and the code.
 
 ### Reading it
 
+- **When.** The header says today's date, how old the newest commit is and
+  how long the window spans. Where it says the work has gone quiet, nothing
+  has landed there for over three months: say so in the summary, and give
+  each refactor as worth doing when work resumes there, since its payoff
+  comes with the next change; a bug keeps its standing, as it hurts whoever
+  runs the code. Where the window spans years, its counts mix code since
+  rewritten with today's: weigh `recent` and `last` above `commits`, and say
+  so. Where it says this checkout is behind its upstream, or that its
+  history has gone quiet while another ref's work goes on, tell the user
+  what it says. Stop and ask whether to update the checkout or check out
+  that ref only where what it lacks changes the picture: its history has
+  gone quiet while work goes on elsewhere (that line, or the one saying it's
+  behind, with the newest commit here over three months old), or it lacks a
+  quarter of the window or more (50 of the default 200 commits), which
+  would change half the newer half that `recent` counts. Otherwise say it in
+  a sentence and go on.
 - **A hot spot** has many commits and is also big, so the list puts those
   first: it's ordered by commits times size. Many commits on a small file is
   often fine, like a config edited for each feature. A big file nobody
@@ -94,6 +110,9 @@ what it said, and go on without it, from `git log` and the code.
   latest. Read both against the window's dates: eight `recent` commits, all
   on the day the newer half starts, are a burst that has cooled. A file
   that shrank may already have been dealt with.
+- **Newest work.** Under the table, the files the window's newest commits
+  kept changing that the table leaves out, as a wide window leaves out a
+  new feature's small files. Step 6 accounts for every area on it.
 - **`rel`** is lines changed over the file's size. Relative churn predicts
   defects far better than absolute churn. Well above 1 means the file was
   rewritten or grew in the window. Read it with **growth**: a file that only
@@ -307,7 +326,8 @@ second pass that day). It makes the checklist from
 nothing else, and says so. You write the `pass` block below it, whose
 `project`, `started`, `base` and `updated` are already filled in:
 
-- `summary`: the overall state in two or three sentences;
+- `summary`: the overall state in two or three sentences, first that the
+  work has gone quiet where the heatmap says so;
 - `items`: every item, in the suggested order, with step 5's fields, a
   `status` (`todo`, `doing`, `waiting` on the user, `done`, or `skipped`
   with the reason in its outcome), and `commits` and `outcome`, empty for a
@@ -316,7 +336,10 @@ nothing else, and says so. You write the `pass` block below it, whose
   its other fields go on the lines after, as the comment above the blocks
   shows. Not the whole item on one line, nor a JSON pretty-printer's
   layout: step 7's status updates edit that first line;
-- `left_alone`: each with `what` and `why`;
+- `left_alone`: each with `what` and `why`. Every area on the heatmap's
+  newest-work list is in an item or here, its `why` saying whether you read
+  the code: "small and new, under the floors, not read" is a `why`, and
+  "fine" for code you didn't read isn't;
 - `checks`: the project's checks, from its instructions, or what you'll
   check by hand if it has none;
 - `earlier`: after an earlier pass, `checklist`, its path as

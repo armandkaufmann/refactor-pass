@@ -24,6 +24,9 @@ fix.
   coding agents' commits count. It counts the commits whose messages say
   they fixed a defect, at least that many, and by file which of them changed
   it; the agent reads each file's commits for the few files it recommends.
+  It says how old the newest commit is and how long the window spans, and
+  where the work has gone quiet, and it lists the newest work the table
+  leaves out, which the checklist then accounts for.
 - **The smells**, from a catalogue of the established code smells, each
   with what to count, when it isn't a smell, and its playbook of named
   refactorings.

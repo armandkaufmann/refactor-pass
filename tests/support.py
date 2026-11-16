@@ -99,8 +99,8 @@ def git_folder():
 
 def environment(**extra):
     """The environment the scripts and git run in: UTF-8 output, no bytecode written, no git configuration
-    but the run's own empty one, no repo found above the temporary folder, and git itself first on the
-    PATH (git_folder)."""
+    but the run's own empty one, no repo found above the temporary folder, git itself first on the PATH
+    (git_folder), and now, for the heatmap, 2026-11-13 at noon UTC (NOW), so no test reads the clock."""
     env = dict(os.environ)
     for key in list(env):
         if key.startswith("GIT_") or key in ("REFACTOR_PASS_SCRIPTS",):
@@ -108,7 +108,7 @@ def environment(**extra):
     root = temp_root()
     env.update(PYTHONIOENCODING="utf-8", PYTHONDONTWRITEBYTECODE="1", GIT_CONFIG_NOSYSTEM="1",
                GIT_CONFIG_GLOBAL=os.path.join(root, "gitconfig"), GIT_CEILING_DIRECTORIES=os.path.dirname(root),
-               GIT_TERMINAL_PROMPT="0")
+               GIT_TERMINAL_PROMPT="0", REFACTOR_PASS_NOW=str(NOW))
     if git_folder():
         env["PATH"] = git_folder() + os.pathsep + env.get("PATH", "")
     env.update(extra)
@@ -177,6 +177,9 @@ def stamp(day, hour=12):
     """The Unix time of a day written 2026-01-05, at noon UTC unless hour says otherwise: far enough from
     midnight that the date is the same in nearly every time zone."""
     return calendar.timegm(datetime.strptime(day, "%Y-%m-%d").replace(hour=hour).timetuple())
+
+
+NOW = stamp("2026-11-13")  # The heatmap's today, a Unix time, as environment() sets it.
 
 
 def local_day(seconds):
