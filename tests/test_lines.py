@@ -38,6 +38,9 @@ SHAPES = [
      '  { path: "/", component: () => import("./Home.vue") },\n'
      '  { path: "/about", component: () => import("./About.vue"), meta: { auth: true } },\n];\n'
      'export const isAdmin = (user) => user.role === "admin";\n', "10"),
+    # An app made, configured by calls on it and exported: no statement reads what another worked out.
+    ("app.js", "const express = require('express');\nconst app = express();\napp.use(express.json());\n"
+     "app.get('/x', handlers.x);\nmodule.exports = app;\n", ""),
     # A group whose closure is handed the router by the router's name, and registers on it.
     ("src/routes.js", "router.group((router) => {\n  router.get('/a', A.index);\n  router.post('/a', A.store);\n});\n",
      ""),
@@ -98,6 +101,20 @@ CALLBACKS = [
      "  end\nend\n", "3-4"),
 ]
 
+# Scripts: statements at the top level that run, an await, or a value worked out from one statement read by the
+# next, in a branch's block too, are logic; a call on what an earlier one made, or a literal named, isn't.
+SCRIPTS = [
+    ("total.php", "<?php\n$pdo = new PDO($dsn);\n$rows = $pdo->query('select * from t')->fetchAll();\n"
+     "$total = array_sum(array_column($rows, 'amount'));\n$pdo->exec(\"update s set total = $total\");\n"
+     "mail($to, 'done', \"total $total\");\n", "3-4"),
+    ("log.mjs", "const db = await connect(url);\nconst rows = await db.query('select 1');\n"
+     "await db.insert('log', { n: rows.length });\nawait db.close();\nconsole.log('done');\n", "1-4"),
+    ("fixture.mjs", "const root = path.join(__dirname, '..');\ntry {\n  const db = open(path.join(root, 'kuma.db'));\n"
+     "  db.exec('VACUUM');\n} finally {\n  fs.rmSync(root, { recursive: true });\n}\n", "2-3, 5-6"),
+    ("run.py", "import os\ndata = load(os.environ['F'])\nresult = [transform(x) for x in data if x.ok]\nwrite(result)\n"
+     "A = 1\nB = 2\n", "3-4"),
+]
+
 
 def logic_of(shapes):
     """Each shape's path and its logic lines, as the output writes them; None where nothing is said of them."""
@@ -120,6 +137,10 @@ class Shapes(unittest.TestCase):
 
     def test_a_callbacks_lines(self):
         self.assertEqual(logic_of(CALLBACKS), [(path, logic) for path, _, logic in CALLBACKS])
+
+    @unittest.expectedFailure
+    def test_a_scripts_lines(self):
+        self.assertEqual(logic_of(SCRIPTS), [(path, logic) for path, _, logic in SCRIPTS])
 
     def test_a_found_functions_lines_are_logic(self):
         """Every code line of a function measure.functions finds, after its first, is logic: over the samples of
