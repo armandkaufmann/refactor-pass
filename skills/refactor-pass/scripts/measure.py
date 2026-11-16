@@ -1932,7 +1932,8 @@ def worked_out(value, made):
 
 def plain(value, made):
     """Whether a value is made of literals: a string, a number, a table, a closure, a constant, a name made a
-    plain value before, or a call whose arguments are plain (express(), app("router"), createRouter({...}))."""
+    plain value before, or a call whose arguments are plain (express(), app("router"), createRouter({...})), and
+    not on something the file made (parser.parse_args())."""
     v = bare(value)
     top = outline(v)
     if re.match(r"\(\s*new\b", v) and ")" in top:  # (new Config())->setRules(...)
@@ -1941,7 +1942,8 @@ def plain(value, made):
     if re.match(r"(?:\[\s*\]|\{\s*\}|:\w+)$", top) or constant(v) or CLOSURE.match(top) or LITERAL_NAME.match(top) \
             or made.get(top.strip()) is False:
         return True
-    if not VALUE.match(top) or not re.match(r"(?:new\s+)?\\?[\w$\\]+(?:\s*(?:\.|->|::|\?->|\?\.)\s*[\w$]+)*\s*\(", top):
+    call = re.match(r"(?:new\s+)?\\?([\w$\\]+)(\s*(?:\.|->|::|\?->|\?\.)\s*[\w$]+)*\s*\(", top)
+    if not VALUE.match(top) or not call or call.group(2) and call.group(1) in made:
         return False
     return all(plain(argument, made) for a, b in paren_groups(top) for argument in split_top(v[a + 1:b], ",")
                if argument.strip())
