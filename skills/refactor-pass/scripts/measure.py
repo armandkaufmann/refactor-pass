@@ -47,7 +47,8 @@ config, a schema or types are, and its logic is listed by line. A route
 group's closure, holding only more routes, declares; an inline handler is
 logic. That's read for PHP, JavaScript, TypeScript, Go, Rust, Python and
 Ruby, not markup (Blade, Vue, ERB, HTML, a PHP template), and not where the
-brackets don't match.
+brackets don't match, nor in a file with a line over 5,000 characters or of
+over a million, as minified code and bundles are.
 
 Functions are found by each language's definition keyword (def, func, fn,
 fun, function, and Swift's init, deinit and subscript), operators' too
@@ -1476,11 +1477,17 @@ ASSIGNS = re.compile(r"(?<![=!<>+\-*/%&|^.?:])=(?![=>~])")
 ASSERTS = re.compile(r"(?:expect|assert\w*|refute\w*|should\w*|is_expected)\b")
 
 
+# A file the reader leaves alone, said nothing of: one with a line longer than this, as minified code and
+# generated data have, or of more characters than this, as a bundle is. A file written to be read has neither.
+LONGEST_LINE = 5000
+MOST_CHARACTERS = 1000000
+
+
 def line_kinds(path, text, most=None):
     """Per line of a file, what it does: "logic", "declaration", or None where it holds no code (blank, or only a
-    comment); or None for the whole file where its language isn't read for this, as markup isn't. With most, a
-    share, None as well for a file more of whose code lines are logic: its functions and its top level, which
-    only add logic, are then left unread."""
+    comment); or None for the whole file where its language isn't read for this, as markup isn't, or where it's past
+    the reader's limits (LONGEST_LINE, MOST_CHARACTERS). With most, a share, None as well for a file more of whose
+    code lines are logic: its functions and its top level, which only add logic, are then left unread."""
     lower = path.lower()
     language = BY_EXTENSION.get(os.path.splitext(lower)[1])
     if lower.endswith(MARKUP) or not language or language[0] not in LINE_FAMILIES:
@@ -1488,7 +1495,11 @@ def line_kinds(path, text, most=None):
     family = LINE_FAMILIES[language[0]]
     if text.startswith("\ufeff"):
         text = text[1:]
+    if len(text) > MOST_CHARACTERS:
+        return None
     lines = text.split("\n")
+    if max(map(len, lines)) > LONGEST_LINE:
+        return None
     if family == "rb":
         code, inside = ruby_skeleton(lines)
     else:

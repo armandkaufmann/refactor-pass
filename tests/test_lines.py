@@ -210,7 +210,6 @@ class Speed(unittest.TestCase):
             took.append(time.time() - start < 1)
         self.assertEqual(took, [True, True])
 
-    @unittest.expectedFailure
     def test_a_line_or_a_file_too_long_is_not_read(self):
         """A file with a line over 5,000 characters, as minified code has, or of over a million characters, as a
         bundle is, is said nothing of, whatever it holds: it gets no mark."""
