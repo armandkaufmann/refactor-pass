@@ -1014,7 +1014,7 @@ def ruby_skeleton(lines):
             if c == "#":
                 break  # A comment, to the end of the line.
             # What comes before c is read in place, never copied, so a long line stays quick.
-            if c in "[]<=>!~+-*/%^&|`" and RUBY_DEF_NAME.search(line, 0, i):
+            if c in "[]<=>!~+-*/%^&|`" and RUBY_DEF_NAME.search(line, max(0, i - 120), i):
                 name = re.match(RUBY_OPERATOR, line[i:])
                 if name:
                     code.append(mark(name.group(0)))
@@ -1060,9 +1060,9 @@ def ruby_skeleton(lines):
                 continue
             # A ? straight after a name's character ends the name, as in next? and nil?; else after a
             # bracket, an = or a word such as return, it can open a character, as ?a.
+            before = c == "?" and (line[max(0, i - 60):i].rstrip() or line[:i].rstrip())
             if c == "?" and not RUBY_NAME_CHARACTER.match(line[i - 1:i]) and (
-                    not line[:i].rstrip() or line[:i].rstrip()[-1] in "(,=[{" or
-                    RUBY_VALUE_AFTER.search(line[:i].rstrip())):
+                    not before or before[-1] in "(,=[{" or RUBY_VALUE_AFTER.search(before)):
                 character = re.match(r"\?(?:\\.|[^\s\w])(?!\w)", line[i:])
                 if character:
                     code.append(mark("s" * len(character.group(0))))
@@ -1630,30 +1630,34 @@ def brace_logic(code, family, php):
     or a loop's own block, nor a closure that's a declaration (declarative). None where the brackets don't
     match."""
     flat = "\n".join(code)
-    heads, closes, stack, start = [], {}, [], 0
+    # start: where the text before a { begins, its head; statement: where the statement it's in begins, a line's
+    # end ending one too where no ; does, as a call's receiver is read from it.
+    heads, closes, stack, start, statement, line_start = [], {}, [], 0, 0, 0
     for mark in STRUCTURE.finditer(flat):  # Only what brackets and ends statements; the rest is skipped.
         i, c = mark.start(), mark.group()
         if c in OPEN:
-            if c == "{":
+            if c == "{":  # A head is read from its end; a thousand characters are enough to tell a block's kind.
                 outer = stack[-1] if stack else None
-                heads.append((i, flat[start:i], outer, start))
-            stack.append((c, i, start))
-            start = i + 1
+                heads.append((i, flat[max(start, i - 1000):i], outer, start))
+            stack.append((c, i, start, statement))
+            start = statement = i + 1
         elif c in CLOSE:
             if not stack or OPEN.index(stack[-1][0]) != CLOSE.index(c):
                 return None
-            _, at, outer_start = stack.pop()
+            _, at, outer_start, outer_statement = stack.pop()
             closes[at] = i
-            start = i + 1 if c == "}" else outer_start
+            start, statement = (i + 1, i + 1) if c == "}" else (outer_start, outer_statement)
         elif c == ";" or (c == "," and stack and stack[-1][0] != "{"):
-            start = i + 1
-        elif c == "\n" and family != "c" and (not stack or stack[-1][0] == "{"):
-            # Go and Rust end a statement at a line's end, unless the line goes on to the next, as a signature
-            # does to its where clause.
-            ended = flat[start:i].rstrip()
-            if ended and ended[-1] not in ",([{=+-*/&|.:<>!" and not re.search(r"\bwhere$", ended) and \
-                    not re.match(r"\s*where\b", flat[i + 1:i + 80]):
-                start = i + 1
+            start = statement = i + 1
+        elif c == "\n":
+            # A statement ends at a line's end, among statements, unless the line goes on to the next, as a
+            # signature does to its where clause. Only the line is read, however long the statement. In Go
+            # and Rust a head starts there too; in the brace languages with a ;, a class's may go on over lines.
+            ended = flat[max(statement, line_start):i].rstrip()
+            line_start = i + 1
+            if ended and (not stack or stack[-1][0] == "{") and goes_on_from(ended, flat[i + 1:i + 200], family):
+                statement = i + 1
+                start = i + 1 if family != "c" else start
     if stack:
         return None
     spans, kinds, control = [], {}, set()
@@ -1691,6 +1695,16 @@ def loop_names(head, family):
     else:
         found = re.match(r"\s*(?:async\s+)?for\s+(.+?)\s+in\b", head) or re.search(r"\bas\s+([\w, ()]+?):?\s*$", head)
     return re.findall(r"\$?[A-Za-z_]\w*", found.group(1)) if found else []
+
+
+def goes_on_from(ended, following, family):
+    """Whether a statement ends with a line that ends as ended does, the text after it starting following: not
+    where the line, or the next one, says it goes on."""
+    if family == "c":
+        return ended[-1] not in "=+-*/&|?:.,([{<" and not ended.endswith("=>") and \
+            not following.lstrip().startswith((".", "->", "?", ":", "&", "|", ")", "]", "{", "}", ">"))
+    return ended[-1] not in ",([{=+-*/&|.:<>!" and not re.search(r"\bwhere$", ended[-6:]) and \
+        not re.match(r"\s*where\b", following)
 
 
 def top_logic(flat, contexts, inner):
@@ -1753,6 +1767,11 @@ def block_kind(head, family, around=None):
     return "code"
 
 
+# A call's receiver, where its statement starts; and an argument along its chain, as Route::prefix("admin").
+CALL_ROOT = re.compile(r"\s*(?:<\?(?:php)?\s*)?(?:return\s+|await\s+)?\\?([$\w\\]+)")
+ARGUMENT = re.compile(r"\(\s*[^\s)]")
+
+
 def declarative(body, head, outer, flat, family, opened, closes):
     """Whether a closure's block is a declaration: it only names something, or it goes on with the list of the
     call it's passed to (outer, the bracket around it, is that call's; the closure's head starts at opened). Each
@@ -1770,17 +1789,25 @@ def declarative(body, head, outer, flat, family, opened, closes):
         return True
     if not outer or outer[0] != "(":
         return False
-    call = (statements_of(re.sub(r"^\s*<\?(?:php)?", "", flat[outer[2]:outer[1]])) or [""])[-1]
-    root = re.match(r"(?:return\s+|await\s+)?\\?([$\w\\]+)", call)
+    # The call is read where it starts and where its bracket opens, not along the chain between: a chain or a
+    # string thousands of characters long costs no more than a short one.
+    root = CALL_ROOT.match(flat, outer[3], outer[1])
     if not root:
         return False
-    root, method = root.group(1), re.search(r"(\w*)\s*$", call).group(1)
+    end = outer[1]
+    while end > outer[3] and flat[end - 1] in " \t\n":
+        end -= 1
+    begin = end
+    while begin > outer[3] and (flat[begin - 1].isalnum() or flat[begin - 1] == "_"):
+        begin -= 1
+    root, method = root.group(1), flat[begin:end]
     params = re.search(r"\|([^|]*)\|" if family == "rust" else r"\(([^()]*)\)", head)
     names = [re.search(r"\$\w+" if "$" in part else r"[\w$]+", part) for part in
              (params.group(1).split(",") if params else []) + re.findall(r"([\w$]+)\s*=>\s*$", head)]
     handed = [name.group() for name in names if name and named_by(name.group(), root, method)]
     after = flat[closes[outer[1]] + 1:closes[outer[1]] + 200]
-    if not handed and not (flat[outer[1] + 1:opened].strip(" \n,") or re.search(r"\(\s*[^\s)]", call) or
+    if not handed and not (re.compile(r"[^\s,]").search(flat, outer[1] + 1, opened) or
+                           ARGUMENT.search(flat, outer[3], outer[1]) or
                            re.match(r"\s*(?:\.|->|::|\?->)\s*\w+\s*\(\s*[^\s)]", after)):
         return False  # The call names no group: DB::transaction(function () {...}).
     member = re.compile(r"(?:await\s+)?\\?(?:%s)\s*(?:\.|->|::|\?->)" % "|".join(map(re.escape, [root] + handed)))
@@ -1822,19 +1849,24 @@ def statements_of(body):
 def statement_spans(body):
     """The (start, end) offsets of a block's statements, as statements_of reads them."""
     top = outline(body)
-    pieces, start = [], 0
-    for k, c in enumerate(top):
-        if c == ";":
+    pieces, start, line_start, last = [], 0, 0, ""
+    for mark in re.finditer(r"[;\n]", top):
+        k = mark.start()
+        if top[k] == ";":
             pieces.append((start, k))
             start = k + 1
-        elif c == "\n":
-            line, following = top[start:k].strip(), top[k + 1:k + 200].lstrip()
-            if line and line[-1] not in "=+-*/&|?:.,([{<" and not line.endswith("=>") and \
-                    not following.startswith((".", "->", "?", ":", "&", "|", ")", "]", "{", "}", ">")):
-                pieces.append((start, k))
-                start = k + 1
+            last = ""
+            continue
+        line = top[max(start, line_start):k].rstrip()  # The statement's last character so far, from its lines.
+        line_start = k + 1
+        last = line or last
+        if last and goes_on_from(last, top[k + 1:k + 200], "c"):
+            pieces.append((start, k))
+            start = k + 1
+            last = ""
     pieces.append((start, len(body)))
     return [(a, b) for a, b in pieces if body[a:b].strip()]
+
 
 # A statement at a file's top level, or in a branch's block there, declares only in a declaration's shape: an
 # import, a definition (a function's, a class's, a type's), or a value named, exported, returned or passed to a
@@ -1865,7 +1897,7 @@ def runs(text, family, made):
     """Whether a top-level statement, a skeleton's text, runs code rather than declares something (see above).
     made, for the statements after it, takes each name it gives a value: True where the value is worked out
     from names, False where it's plain."""
-    s = re.sub(r"[;\s]+$", "", text.strip())
+    s = text.strip().rstrip("; \t\n")
     if not s or TOP_DECLARES[family].match(s):
         return False
     if family == "rb":
@@ -2019,13 +2051,28 @@ def arrow_expressions(flat, php, blocks):
         if php:  # PHP's arrow function is fn (...) =>; any other => pairs a key with its value.
             if not re.search(r"\bfn\s*&?\s*\([^()]*\)\s*(?::\s*[\w\\?|]+\s*)?$", before):
                 continue
-        elif not re.search(r"(?:\)\s*(?::\s*[^=;{}]+)?|[\w$]+)\s*$", before) or arrow_is_type(flat, arrow.start()):
+        elif not arrow_after(before.rstrip()) or arrow_is_type(flat, arrow.start()):
             continue
         end = expression_end(flat, j)
         body = flat[j:end].strip()
         if body and not NAMES.match(body):
             spans.append((j, end))
     return spans
+
+
+def arrow_after(before):
+    """Whether an arrow can follow before, as a function's: after a parameter's name, the parameters' bracket,
+    or a return type after it, read from the end."""
+    if not before or before[-1].isalnum() or before[-1] in "_$)":
+        return bool(before)
+    k = len(before)
+    for _ in range(4):  # A return type may hold brackets of its own: (A | B)[].
+        k = before.rfind(")", 0, k)
+        if k < 0:
+            return False
+        if re.match(r"\s*:\s*[^=;{}]+$", before[k + 1:]):
+            return True
+    return False
 
 
 def arrow_is_type(flat, at):
@@ -2042,9 +2089,12 @@ def arrow_is_type(flat, at):
                 break
             k -= 1
         before = before[:k].rstrip()
-    else:
-        before = re.sub(r"[\w$]+$", "", before).rstrip()
-    if before.endswith((":", "<", "|", "&")) or re.search(r"(?<![\w$])new$", before):
+    else:  # A parameter's name, read back from its end.
+        k = len(before)
+        while k and (before[k - 1].isalnum() or before[k - 1] in "_$"):
+            k -= 1
+        before = before[:k].rstrip()
+    if before.endswith((":", "<", "|", "&")) or re.search(r"(?<![\w$])new$", before[-8:]):
         return True
     statement = re.split(r"[;\n]", before)[-1].strip()
     return bool(re.match(r"(?:export\s+)?(?:declare\s+)?type\b", statement))
@@ -2053,7 +2103,7 @@ def arrow_is_type(flat, at):
 def expression_end(flat, j):
     """Where an arrow function's expression body, starting at j, ends: at a , ; or closing bracket at its own
     level, or at a line's end that neither it nor the next line goes on from."""
-    depth = 0
+    depth, last = 0, ""  # last: the body's last character so far, other than a space.
     for k in range(j, len(flat)):
         c = flat[k]
         if c in OPEN:
@@ -2065,10 +2115,11 @@ def expression_end(flat, j):
         elif depth == 0 and c in ",;":
             return k
         elif depth == 0 and c == "\n":
-            ended, following = flat[j:k].rstrip(), flat[k + 1:k + 200].lstrip()
-            if ended and ended[-1] not in "=+-*/&|?:.,(" and \
-                    not following.startswith((".", "?", ":", "&&", "||", "+", "-")):
+            if last and last not in "=+-*/&|?:.,(" and \
+                    not flat[k + 1:k + 200].lstrip().startswith((".", "?", ":", "&&", "||", "+", "-")):
                 return k
+        if not c.isspace():
+            last = c
     return len(flat)
 
 

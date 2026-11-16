@@ -198,7 +198,6 @@ class Speed(unittest.TestCase):
     with the square of a string's length or a chain's; read in proportion, it takes a hundredth of that. A second
     leaves room for a slow runner either way: no run reads either shape as fast when it grows with the square."""
 
-    @unittest.expectedFailure
     def test_a_long_string_and_a_long_chain(self):
         measure = support.load("measure")
         handlers = '$("#k").T({html:"%s"})\n  %s;\n' % ("x" * 4800, "\n  ".join(
