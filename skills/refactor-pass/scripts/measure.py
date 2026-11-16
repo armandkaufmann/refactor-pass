@@ -40,12 +40,14 @@ Then, per file, longest first:
 line, its code lines, deepest nesting and band. git log -L FIRST,LAST:FILE
 then lists the commits that changed that function. Before them, how much of
 it is logic: its lines in a function's or a closure's body, or with a word
-that branches or loops. Where that's a fifth of its lines at most, the file
-is nearly all declarations, as routes, config, a schema or types are, and
-its logic is listed by line. A route group's closure, holding only more
-routes, declares; an inline handler is logic. That's read for PHP,
-JavaScript, TypeScript, Go, Rust, Python and Ruby, not markup (Blade, Vue,
-ERB, HTML), and not where the brackets don't match.
+that branches or loops, or a statement at its top that runs (an await, an
+operator, a value one statement works out read by the next). Where that's a
+fifth of its lines at most, the file is nearly all declarations, as routes,
+config, a schema or types are, and its logic is listed by line. A route
+group's closure, holding only more routes, declares; an inline handler is
+logic. That's read for PHP, JavaScript, TypeScript, Go, Rust, Python and
+Ruby, not markup (Blade, Vue, ERB, HTML), and not where the brackets don't
+match.
 
 Functions are found by each language's definition keyword (def, func, fn,
 fun, function, and Swift's init, deinit and subscript), operators' too
@@ -119,6 +121,7 @@ Examples:
 
 import argparse
 import bisect
+import functools
 import os
 import re
 import sys
@@ -1430,11 +1433,12 @@ def functions(path, text):
 
 # What each code line does: declare something (a route, a key and its value, a field, a type, a schema's
 # column) or run (logic). A line is logic where it holds code in a function's body, a closure's or a method's,
-# or a word that branches or loops; any other is a declaration. Two closures are declarations all the same:
-# one passed to a call whose statements only go on with that call's list, each a call on the call's own
-# receiver or on the closure's parameter (Route::group's Route::get, create_table's t.string, a router
-# group's r.Get), and one that only names something (() => import("./Home.vue"), return view("welcome")).
-# A branch among such statements is logic on its own line, and the statements under it stay what they are.
+# or a word that branches or loops, or a statement at the top that runs (runs); any other is a declaration.
+# Two closures are declarations all the same: one passed to a call whose statements only go on with that
+# call's list, each a call on the call's own receiver or on a parameter it hands the closure by name
+# (Route::group's Route::get, create_table's t.string, a router group's r.Get), and one that only names
+# something (() => import("./Home.vue"), return view("welcome")). A branch among such statements is logic on
+# its own line, and the statements under it stay what they are.
 # Read for the languages below; in any other, and in markup (Blade, Vue, ERB, HTML), nothing is said.
 LINE_FAMILIES = {"PHP": "c", "JavaScript": "c", "TypeScript": "c", "Go": "go", "Rust": "rust", "Python": "py",
                  "Ruby": "rb"}
@@ -1473,8 +1477,8 @@ ASSERTS = re.compile(r"(?:expect|assert\w*|refute\w*|should\w*|is_expected)\b")
 def line_kinds(path, text, most=None):
     """Per line of a file, what it does: "logic", "declaration", or None where it holds no code (blank, or only a
     comment); or None for the whole file where its language isn't read for this, as markup isn't. With most, a
-    share, None as well for a file more of whose code lines are logic: its functions, which only add logic, are
-    then left unread."""
+    share, None as well for a file more of whose code lines are logic: its functions and its top level, which
+    only add logic, are then left unread."""
     lower = path.lower()
     language = BY_EXTENSION.get(os.path.splitext(lower)[1])
     if lower.endswith(MARKUP) or not language or language[0] not in LINE_FAMILIES:
@@ -1488,18 +1492,20 @@ def line_kinds(path, text, most=None):
     else:
         code, inside = skeleton(lines, language[4], language[5], language[0] == "PHP", language[0])
     kinds = ["declaration" if line.strip() else None for line in code]
-    if family not in ("py", "rb"):
-        spans = brace_logic(code, family, language[0] == "PHP")
-        if spans is None:
-            return None  # Brackets that don't match: what's inside what can't be told.
-        starts = [0]
-        for line in code:
-            starts.append(starts[-1] + len(line) + 1)
+    starts = [0]
+    for line in code:
+        starts.append(starts[-1] + len(line) + 1)
+
+    def mark(spans):
         for first, last in spans:
             for k in range(bisect.bisect_right(starts, first) - 1, bisect.bisect_right(starts, max(first, last - 1))):
-                part = code[k][max(0, first - starts[k]):max(0, last - starts[k])]
-                if part.strip():
+                if code[k][max(0, first - starts[k]):max(0, last - starts[k])].strip():
                     kinds[k] = "logic"
+    if family not in ("py", "rb"):
+        found = brace_logic(code, family, language[0] == "PHP")
+        if found is None:
+            return None  # Brackets that don't match: what's inside what can't be told.
+        mark(found[0])
     flow = FLOW_WORD["php" if language[0] == "PHP" else family]
     for k, line in enumerate(code):
         if kinds[k] and not inside[k] and flow.search(line):
@@ -1508,13 +1514,48 @@ def line_kinds(path, text, most=None):
         return None
     # A function's lines after its first are logic, whatever the blocks were read as; in Python and Ruby, its
     # first too, where the block reader doesn't look.
-    _, found, _ = functions(path, text)
-    for _, first, last, _, _ in found:
+    _, functions_found, _ = functions(path, text)
+    for _, first, last, _, _ in functions_found:
         for k in range(first - (family in ("py", "rb")), last):
             kinds[k] = kinds[k] and "logic"
+    if family == "c":
+        mark(top_logic(*found[1]))
+    elif family in ("py", "rb"):
+        for first, last in indented_top(code, inside, kinds, functions_found, family):
+            for k in range(first, last + 1):
+                kinds[k] = kinds[k] and "logic"
     if family == "rb":
         ruby_blocks(code, inside, [indent_of(line) for line in lines], kinds)
     return None if most is not None and logic_share(kinds) > most else kinds
+
+
+def indented_top(code, inside, kinds, found, family):
+    """The statements at a Python or a Ruby file's top level that run code (runs), as (first, last) line indexes:
+    in Python, every statement outside a function's or a class's body; in Ruby, those not indented."""
+    widths = [indent_of(line) for line in code]
+    skip = [False] * len(code)
+    for _, first, last, _, _ in found:
+        skip[first - 1:last] = [True] * (last - first + 1)
+    depth, continued = 0, []
+    for k, line in enumerate(code):  # A line in brackets left open, or after one ending in \, goes on.
+        continued.append(depth > 0 or (k > 0 and code[k - 1].rstrip().endswith("\\")))
+        depth = max(0, depth + sum(line.count(c) for c in OPEN) - sum(line.count(c) for c in CLOSE))
+    body = None  # A class's body, as the width of its line: its members are declarations.
+    statements = []
+    for k, line in enumerate(code):
+        if not line.strip() or inside[k] or continued[k]:
+            if statements and continued[k] and statements[-1][1] == k - 1:
+                statements[-1][1] = k
+            continue
+        if body is not None and widths[k] > body:
+            continue
+        body = widths[k] if re.match(r"\s*class\b", line) else None
+        if skip[k] or (family == "rb" and widths[k] > 0) or FLOW_WORD[family].match(line.strip()):
+            continue
+        statements.append([k, k])
+    made = {}
+    return [(first, last) for first, last in statements
+            if runs("\n".join(code[first:last + 1]), family, made)]
 
 
 def logic_islands(kinds):
@@ -1548,6 +1589,7 @@ def logic_share(kinds):
     return sum(1 for kind in code if kind == "logic") / float(max(1, len(code)))
 
 
+@functools.lru_cache(maxsize=256)  # A statement's text is outlined again as each part of it is read.
 def outline(text):
     """text with what's inside each bracket blanked, so its own level is left: newlines stay."""
     out, depth = [], 0
@@ -1612,6 +1654,31 @@ def brace_logic(code, family, php):
         spans.append((at + 1, closes[at] + 1))
     if family == "c":
         spans.extend(arrow_expressions(flat, php, spans))
+    # Where statements stand at the top: the file's own level, and a branch's or a loop's block there.
+    contexts = {None: (0, len(flat))}
+    for at, head, outer, _ in heads:
+        if kinds[at] == "code" and CONTROL_HEAD[family].match(head.strip()) and \
+                (outer[1] if outer and outer[0] == "{" else outer) in contexts:
+            contexts[at] = (at + 1, closes[at])
+    inner = sorted((at + 1, closes[at]) for at, kind in kinds.items() if kind != "data")
+    return spans, (flat, list(contexts.values()), inner)
+
+
+def top_logic(flat, contexts, inner):
+    """The spans of the statements at a brace language's top level that run code (runs): each one's own, less the
+    insides of the blocks of code or of a type in it, which are read on their own."""
+    statements = sorted((a + s, a + e) for a, b in contexts for s, e in statement_spans(flat[a:b]))
+    made, spans, firsts = {}, [], [a for a, _ in inner]
+    for s, e in statements:
+        text = flat[s:e]
+        if CONTROL_HEAD["c"].match(text) or not runs(text, "c", made):
+            continue
+        k = bisect.bisect_right(firsts, s)  # The blocks in it, not the one it's in.
+        while k < len(inner) and inner[k][0] < e:
+            spans.append((s, inner[k][0]))
+            s = inner[k][1]
+            k = bisect.bisect_left(firsts, s, k + 1)
+        spans.append((s, e))
     return spans
 
 
@@ -1664,7 +1731,8 @@ def declarative(body, head, outer, flat, family, opened, closes):
     # A closure has no name: function (...) and fn (...) in PHP and JavaScript, an arrow, func(...) in Go,
     # |...| in Rust. A named function's or a method's body is logic, however short.
     marker = {"c": r"\b(?:function|fn)\s*&?\s*\(|=>\s*$", "go": r"\bfunc\s*\(", "rust": r"\|"}[family]
-    if not re.search(marker, head) or re.search(r"\bfunc\s*\(\s*\)\s*\w+\s*[(\[]", outline(head)):
+    if not re.search(marker, head) or \
+            family == "go" and re.search(r"\bfunc\s*\(\s*\)\s*\w+\s*[(\[]", outline(head)):
         return False  # Go's method: func (s *S) Name(
     if NAMES.match(body.strip()):
         return True
@@ -1705,20 +1773,183 @@ def named_by(name, receiver, method):
 def statements_of(body):
     """A block's statements, at its own level: split at ; and at a line's end where the next line doesn't go on
     from it."""
+    return [body[a:b].strip() for a, b in statement_spans(body)]
+
+
+def statement_spans(body):
+    """The (start, end) offsets of a block's statements, as statements_of reads them."""
     top = outline(body)
     pieces, start = [], 0
     for k, c in enumerate(top):
         if c == ";":
-            pieces.append(body[start:k])
+            pieces.append((start, k))
             start = k + 1
         elif c == "\n":
             line, following = top[start:k].strip(), top[k + 1:k + 200].lstrip()
-            if line and line[-1] not in "=+-*/&|?:.,([{" and \
-                    not following.startswith((".", "->", "?", ":", "&&", "||", ")", "]", "}")):
-                pieces.append(body[start:k])
+            if line and line[-1] not in "=+-*/&|?:.,([{<" and not line.endswith("=>") and \
+                    not following.startswith((".", "->", "?", ":", "&", "|", ")", "]", "{", "}", ">")):
+                pieces.append((start, k))
                 start = k + 1
-    pieces.append(body[start:])
-    return [p.strip() for p in pieces if p.strip()]
+    pieces.append((start, len(body)))
+    return [(a, b) for a, b in pieces if body[a:b].strip()]
+
+# A statement at a file's top level, or in a branch's block there, declares only in a declaration's shape: an
+# import, a definition (a function's, a class's, a type's), or a value named, exported, returned or passed to a
+# call on its own (a registration: Route::get(...), app.use(cors()), admin.site.register(User)), where a value
+# is a literal, a table, a name, a closure, or a call of a name with such values. Any other runs: an await, an
+# operator, a throw, a loop's break; and so does one that reads a name an earlier statement gave a value worked
+# out from names (a script's data going from one statement to the next), other than to call on it or export it.
+TOP_DECLARES = {
+    "c": re.compile(r"(?:<\?php|\?>|import\b(?!\s*\()|export\s*(?:\*|\{|type\s*\{)|(?:export\s+)?(?:default\s+)?"
+                    r"(?:declare\s+|abstract\s+|final\s+|readonly\s+|async\s+|const\s+(?=enum))*(?:function|class|"
+                    r"interface|trait|enum|declare)\b|(?:export\s+)?(?:type|namespace|module)\s+[\w$'\"]|use\s|"
+                    r"(?:require|include)(?:_once)?\b|@)"),
+    "py": re.compile(r"(?:import|from|def|async\s+def|class|pass)\b|@|\.\.\.$"),
+    "rb": re.compile(r"(?:require|require_relative|load|class|module|def|include|extend|end|__END__)\b"),
+}
+STATEMENT_WORDS = ("const", "let", "var", "static", "readonly", "global", "final", "public", "private", "protected")
+CLOSURE = re.compile(r"(?:async\s+)?(?:static\s+)?(?:function\b|fn\s*&?\s*\(|\(\s*\)\s*(?::[^=]*)?=>|[\w$]+\s*=>|"
+                     r"(?:new\s+)?class\b|lambda\b|->|proc\b|<[A-Za-z>])")
+VALUE = re.compile(r"""(?:new\s+)?(?:[\w$\\]+|-?\d[\w.]*|[rRbBuUfF]{0,2}(?:"s*"|'s*')|`[^`]*`|/s+/\w*|\(\s*\)|"""
+                   r"""\[\s*\]|\{\s*\}|:\w+)(?:\s*(?:\.|->|::|\?->|\?\.)\s*[\w$]+|\s*\(\s*\)|\s*\[\s*\]|\s*\{\s*\}|"""
+                   r"""!)*(?:\s+(?:as|satisfies)\s+[\s\S]+)?$""")
+NAME_PATH = re.compile(r"\s*\\?[\w$\\]+(?:\s*(?:\.|->|::|\?->|\?\.)\s*[\w$]+)*\s*$")
+LITERAL_NAME = re.compile(r"(?:true|false|null|undefined|None|True|False|nil|NaN|Infinity|[A-Z][A-Z0-9_]*|"
+                          r"[\w\\]+::class)$")
+
+
+def runs(text, family, made):
+    """Whether a top-level statement, a skeleton's text, runs code rather than declares something (see above).
+    made, for the statements after it, takes each name it gives a value: True where the value is worked out
+    from names, False where it's plain."""
+    s = re.sub(r"[;\s]+$", "", text.strip())
+    if not s or TOP_DECLARES[family].match(s):
+        return False
+    if family == "rb":
+        s = re.sub(r"\s+do(?:\s*\|[^|]*\|)?$", "", s)  # The block's own lines are read on their own.
+    returned = re.match(r"(?:return\b|export\s+default\b|export\b(?=\s+(?:const|let|var)\b))\s*", s)
+    if returned:
+        s = s[returned.end():]
+        returned = not re.match(r"(?:const|let|var)\b", s)
+    top = outline(s)
+    eq = None if returned else re.search(r"(?<![=!<>])(?:[+\-*/%&|^.?]+|<<|>>)?=(?![=>~])", top)
+    target, value = (s[:eq.start()], s[eq.end():]) if eq else ("", s)
+    names = [] if not eq or re.search(r"[.\[]|->|::", outline(target)) else [
+        name for name in re.findall(r"\$?[A-Za-z_]\w*", re.sub(r":[^=]*$", "", target))
+        if name not in STATEMENT_WORDS]
+    receiver = None if eq or returned else re.match(r"\s*\\?\$?[\w\\]+", s)
+    if family == "c" and not eq and not returned and not re.search(r"[(`'\"]|^-?\d", top):
+        logic = True  # A word alone, as break, or an operator's statement, as i++.
+    elif family == "py" and re.search(r"\bfor\b", value):
+        logic = True  # A comprehension.
+    else:
+        logic = not shaped(value, family) or (not NAME_PATH.match(outline(value)) and reads(
+            (target + " " if eq and eq.group() != "=" else "") + (s[receiver.end():] if receiver else value), made))
+    for name in names:
+        made[name] = logic or worked_out(value, made)
+    return logic
+
+
+def bare(value):
+    """A value without what only types it or spreads it: as const, satisfies T, ...rest, a keyword's name."""
+    asserted = re.search(r"\s(?:as|satisfies)\s", value) and re.search(r"\s(?:as|satisfies)\s", outline(value))
+    value = value[:asserted.start()] if asserted else value
+    return re.sub(r"^\s*(?:\.\.\.|\*\*?|&|[\w$]+\s*(?::(?!:)|=(?![=>~])))\s*", "", value).strip()
+
+
+def constant(value):
+    """Whether a value is literals and constants with operators between them: 1 << 4, 24 * HOUR, "a" + "b"."""
+    rest = re.sub(r"""[rRbBuUfF]{0,2}(?:"s*"|'s*')|`s*`|\b\d[\w.]*|\b[A-Z][A-Z0-9_]*\b|"""
+                  r"""\b(?:true|false|null|None|True|False|nil)\b""", "", value)
+    return not re.sub(r"[\s()+\-*/%|&^~<>]", "", rest)
+
+
+def shaped(value, family):
+    """Whether a value, a skeleton's text, has a declaration's shape: a literal, a table, a name, a closure, a
+    constant's expression, or a call of a name, on its own or on a chain, whose arguments are such values."""
+    if family == "c":
+        value = bare(value)
+    parts = split_top(value, ",")
+    if len(parts) == 1 and family == "rb":  # Ruby's key => value among a call's arguments.
+        parts = split_top(value, "=>")
+    if len(parts) > 1:
+        return all(shaped(part, family) for part in parts)
+    v = bare(value)
+    if constant(v):
+        return True
+    if family == "rb":  # A call without brackets: gem "rails", resources :users.
+        command = re.match(r"([\w:.@$]+[!?]?)\s+(?![-+*/%=<>&|^!?.]|(?:if|unless|while|until|and|or|then|do)\b)", v)
+        if command:
+            v = "%s(%s)" % (command.group(1), v[command.end():])
+    top = outline(v)
+    if not v or CLOSURE.match(top):
+        return True
+    if not VALUE.match(top):
+        return False
+    return all(shaped(v[a + 1:b], family) for a, b in paren_groups(top))
+
+
+def worked_out(value, made):
+    """Whether a value is worked out from names: anything but a name or plain."""
+    return not NAME_PATH.match(outline(value.strip())) and not plain(value, made)
+
+
+def plain(value, made):
+    """Whether a value is made of literals: a string, a number, a table, a closure, a constant, a name made a
+    plain value before, or a call whose arguments are plain (express(), app("router"), createRouter({...}))."""
+    v = bare(value)
+    top = outline(v)
+    if re.match(r"\(\s*new\b", v) and ")" in top:  # (new Config())->setRules(...)
+        v = v[1:top.index(")")] + v[top.index(")") + 1:]
+        top = outline(v)
+    if re.match(r"(?:\[\s*\]|\{\s*\}|:\w+)$", top) or constant(v) or CLOSURE.match(top) or LITERAL_NAME.match(top) \
+            or made.get(top.strip()) is False:
+        return True
+    if not VALUE.match(top) or not re.match(r"(?:new\s+)?\\?[\w$\\]+(?:\s*(?:\.|->|::|\?->|\?\.)\s*[\w$]+)*\s*\(", top):
+        return False
+    return all(plain(argument, made) for a, b in paren_groups(top) for argument in split_top(v[a + 1:b], ",")
+               if argument.strip())
+
+
+def reads(text, made):
+    """Whether text, a statement's, reads a name in made outside its tables and its closures' bodies."""
+    if not made:
+        return False
+    out, stack, hide = [], [], 0
+    for c in text:  # The insides of [] and {} blanked, of () kept: a call's arguments are read.
+        if c in OPEN:
+            out.append(" " if hide else c)
+            stack.append(c != "(")
+            hide += c != "("
+        elif c in CLOSE:
+            hide -= bool(stack and stack.pop())
+            out.append(" " if hide else c)
+        else:
+            out.append(" " if hide else c)
+    return any(made.get(name) for name in re.findall(r"(?<![\w$.>:\\])\$?[A-Za-z_]\w*", "".join(out)))
+
+
+def split_top(text, mark):
+    """text split at mark where it's at text's own level, outside brackets."""
+    if mark not in text:
+        return [text]
+    top, parts, start = outline(text), [], 0
+    for found in re.finditer(re.escape(mark), top):
+        parts.append(text[start:found.start()])
+        start = found.end()
+    return parts + [text[start:]]
+
+
+def paren_groups(top):
+    """The (start, end) offsets of the round brackets at an outline's own level."""
+    groups, start = [], None
+    for k, c in enumerate(top):
+        if c == "(":
+            start = k
+        elif c == ")" and start is not None:
+            groups.append((start, k))
+            start = None
+    return groups
 
 
 def arrow_expressions(flat, php, blocks):
@@ -2117,7 +2348,8 @@ def main():
                 share = logic_share(kinds)
                 print("Declarations: all but %d%% of its code lines; its logic, by line: %s." % (
                     round(share * 100), logic_lines(kinds) or "none") if share <= DECLARATIONS else
-                    "Logic: %d%% of its code lines, in a function's or a closure's body or on a branch's line."
+                    "Logic: %d%% of its code lines, in a function's or a closure's body, on a branch's line or in a "
+                    "statement at the top that runs."
                     % round(share * 100))
             # The first and last lines, as git log -L FIRST,LAST:FILE takes them.
             spans = ["%d-%d" % (f[1], f[2]) for f in found]

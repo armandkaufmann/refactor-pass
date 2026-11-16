@@ -28,9 +28,9 @@ Files are listed by commits times size, so the top ones are both busy and
 big. A small file changed often, like a config, and a big one rarely
 changed both come lower. One nearly all of whose code lines declare things,
 as routes, config, a schema or types do, is marked [declarations], and its
-logic listed by line: lines in a function's or a closure's body, or with a
-branch, a fifth of its lines at most. Markup, and a language measure.py
-doesn't read for it, is never marked.
+logic, a fifth of its lines at most, listed by line: in a function's or a
+closure's body, with a branch, or a statement at the top that runs. Markup,
+and a language measure.py doesn't read for it, is never marked.
 Under the table, the newest work it leaves out: files past --top that 2 or
 more of the commits of the window's last 60 days (its newer half at most)
 changed, 10 at most; renames, commits of more than --max-files files,
@@ -1973,7 +1973,8 @@ def main():
     marked = [r for r in rows[:args.top] if "declarations" in r]
     if marked:
         print("Declarations: files nearly all of whose code lines declare things, as routes, config, a schema or "
-              "types do: at most a fifth are logic, in a function's or a closure's body or on a branch's line. "
+              "types do: at most a fifth are logic, in a function's or a closure's body, on a branch's line or in "
+              "a statement at the top that runs. "
               "Their churn is entries added, by design; their logic, by line:")
         for row in marked:
             print("  %s: %s" % (row["path"], row["declarations"] or "none"))
