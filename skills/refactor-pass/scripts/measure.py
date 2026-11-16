@@ -1757,8 +1757,19 @@ def declarative(body, head, outer, flat, family, opened, closes):
     other = re.compile(r"(?:require|include)(?:_once)?\b|" + FLOW_WORD["php" if family == "c" else family].pattern)
     if not member.match(body.lstrip()) and not other.match(body.lstrip()):
         return False  # Its first statement isn't on the receiver: no need to read the rest.
+    return listed(body, member, other)
+
+
+def listed(body, member, other):
+    """Whether each of a block's statements is a call member matches, with no assignment, or one other matches (a
+    branch, a require) whose blocks' statements are read the same way."""
     for statement in statements_of(body):
-        if not other.match(statement) and (ASSIGNS.search(outline(statement)) or not member.match(statement)):
+        if other.match(statement):
+            top = outline(statement)
+            for start in [k for k, c in enumerate(top) if c == "{"]:
+                if not listed(statement[start + 1:top.index("}", start)], member, other):
+                    return False
+        elif ASSIGNS.search(outline(statement)) or not member.match(statement):
             return False
     return True
 
@@ -2078,9 +2089,9 @@ RUBY_BODIES = re.compile(r"(?:define_method|define_singleton_method|lambda|proc|
 def ruby_declarative(code, head, inner, widths):
     """Whether a Ruby block's statements, its lines inner, only go on with its call's list: each a call on no
     receiver (a DSL's, as routes' resources), or on the block's parameter where the block's call has no receiver
-    (a schema's create_table "users" do |t|) or names it (permissions_policy do |policy|). None an assignment or
-    an assertion. A block a call on a receiver hands something else (each's |user|) isn't, nor a method's or a
-    closure's body (define_method's, a lambda's) or a loop's."""
+    (a schema's create_table "users" do |t|) or names it (permissions_policy do |policy|), under a branch or not.
+    None an assignment or an assertion. A block a call on a receiver hands something else (each's |user|)
+    isn't, nor a method's or a closure's body (define_method's, a lambda's) or a loop's."""
     lead = re.match(r"((?:[\w:@$]+(?:\[[^\]]*\])?(?:\([^()]*\))?\.)*)(\w+[!?]?)", head)
     chain, method = lead.groups() if lead else ("", "")
     params = [p.strip().lstrip("*&") for p in re.findall(r"\|([^|]*)\|\s*$", head)[0].split(",")] \
@@ -2088,11 +2099,16 @@ def ruby_declarative(code, head, inner, widths):
     if RUBY_BODIES.match(chain + method) or (chain and params and not named_by(params[0], "", method)):
         return False
     names = set([""] + params)
-    level = min([widths[k] for k in inner] or [0])
+    around = []  # The lines a statement is under, by indentation, each as whether it's a branch's.
     for k in inner:
         statement = code[k].strip()
-        if widths[k] != level or statement == "end" or FLOW_WORD["rb"].match(statement):
-            continue
+        while around and around[-1][0] >= widths[k]:
+            around.pop()
+        branch = bool(FLOW_WORD["rb"].match(statement))
+        under_blocks = not all(flow for _, flow in around)
+        around.append((widths[k], branch))
+        if under_blocks or statement == "end" or branch:
+            continue  # A block's own lines are read on their own; a branch's are read here.
         lead = re.match(r"([\w:@]+)(\.|\s|\(|$)", statement)
         if ASSIGNS.search(outline(statement)) or ASSERTS.match(statement) or not lead or \
                 (lead.group(1) if lead.group(2) == "." else "") not in names:
