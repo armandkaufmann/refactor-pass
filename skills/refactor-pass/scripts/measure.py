@@ -1578,7 +1578,7 @@ def brace_logic(code, family, php):
         if c in OPEN:
             if c == "{":
                 outer = stack[-1] if stack else None
-                heads.append((i, flat[start:i], outer))
+                heads.append((i, flat[start:i], outer, start))
             stack.append((c, i, start))
             start = i + 1
         elif c in CLOSE:
@@ -1599,7 +1599,7 @@ def brace_logic(code, family, php):
     if stack:
         return None
     spans, kinds = [], {}
-    for at, head, outer in heads:
+    for at, head, outer, opened in heads:
         around = outer[0] if outer and outer[0] != "{" else kinds.get(outer and outer[1])
         kind = kinds[at] = block_kind(head, family, around)
         if kind != "code":
@@ -1607,7 +1607,7 @@ def brace_logic(code, family, php):
         last_line = head.rstrip().rsplit("\n", 1)[-1]
         if CONTROL_HEAD[family].match(head.strip() if family == "c" else last_line):
             continue
-        if declarative(flat[at + 1:closes[at]], head, outer, flat, family):
+        if declarative(flat[at + 1:closes[at]], head, outer, flat, family, opened, closes):
             continue
         spans.append((at + 1, closes[at] + 1))
     if family == "c":
@@ -1653,41 +1653,52 @@ def block_kind(head, family, around=None):
     return "code"
 
 
-def declarative(body, head, outer, flat, family):
-    """Whether a closure's block is a declaration: it only names something, or it's passed to a call (outer, the
-    bracket around it, is that call's) and each of its statements is a call on the call's own receiver or on
-    the closure's parameter, or a branch, or in PHP a require."""
+def declarative(body, head, outer, flat, family, opened, closes):
+    """Whether a closure's block is a declaration: it only names something, or it goes on with the list of the
+    call it's passed to (outer, the bracket around it, is that call's; the closure's head starts at opened). Each
+    of its statements is then a call on that call's receiver, or on a parameter the call hands it by its name
+    (named_by), or a branch, or in PHP a require; and the call hands it that parameter, or names the group it
+    opens with an argument besides the closure (a prefix, a middleware, attributes). A transaction's closure, a
+    handler's, a callback's are logic."""
     # A closure has no name: function (...) and fn (...) in PHP and JavaScript, an arrow, func(...) in Go,
     # |...| in Rust. A named function's or a method's body is logic, however short.
     marker = {"c": r"\b(?:function|fn)\s*&?\s*\(|=>\s*$", "go": r"\bfunc\s*\(", "rust": r"\|"}[family]
     if not re.search(marker, head) or re.search(r"\bfunc\s*\(\s*\)\s*\w+\s*[(\[]", outline(head)):
         return False  # Go's method: func (s *S) Name(
-    statements = statements_of(body)
-    if len(statements) == 1 and NAMES.match(statements[0]):
+    if NAMES.match(body.strip()):
         return True
-    if not statements or not outer or outer[0] != "(":
+    if not outer or outer[0] != "(":
         return False
-    call = re.sub(r"^\s*<\?(?:php)?", "", flat[outer[2]:outer[1]])
-    root = re.match(r"\s*(?:return\s+|await\s+)?([$\w\\]+)", call)
+    call = (statements_of(re.sub(r"^\s*<\?(?:php)?", "", flat[outer[2]:outer[1]])) or [""])[-1]
+    root = re.match(r"(?:return\s+|await\s+)?\\?([$\w\\]+)", call)
     if not root:
         return False
-    names = {root.group(1).lstrip("\\")}
+    root, method = root.group(1), re.search(r"(\w*)\s*$", call).group(1)
     params = re.search(r"\|([^|]*)\|" if family == "rust" else r"\(([^()]*)\)", head)
-    for part in (params.group(1).split(",") if params else []):
-        word = re.match(r"\s*&?\s*(?:mut\s+)?([$\w]+)", part)
-        if word:
-            names.add(word.group(1))
-    single = re.search(r"([\w$]+)\s*=>\s*$", head)
-    if single:
-        names.add(single.group(1))
-    for statement in statements:
-        if re.match(r"(?:require|include)(?:_once)?\b", statement) or \
-                FLOW_WORD["php" if family == "c" else family].match(statement):
-            continue
-        lead = re.match(r"(?:await\s+)?([$\w\\]+)\s*(?:\.|->|::|\?->|\(|$)", statement)
-        if ASSIGNS.search(outline(statement)) or not lead or lead.group(1).lstrip("\\") not in names:
+    names = [re.search(r"\$\w+" if "$" in part else r"[\w$]+", part) for part in
+             (params.group(1).split(",") if params else []) + re.findall(r"([\w$]+)\s*=>\s*$", head)]
+    handed = [name.group() for name in names if name and named_by(name.group(), root, method)]
+    after = flat[closes[outer[1]] + 1:closes[outer[1]] + 200]
+    if not handed and not (flat[outer[1] + 1:opened].strip(" \n,") or re.search(r"\(\s*[^\s)]", call) or
+                           re.match(r"\s*(?:\.|->|::|\?->)\s*\w+\s*\(\s*[^\s)]", after)):
+        return False  # The call names no group: DB::transaction(function () {...}).
+    member = re.compile(r"(?:await\s+)?\\?(?:%s)\s*(?:\.|->|::|\?->)" % "|".join(map(re.escape, [root] + handed)))
+    other = re.compile(r"(?:require|include)(?:_once)?\b|" + FLOW_WORD["php" if family == "c" else family].pattern)
+    if not member.match(body.lstrip()) and not other.match(body.lstrip()):
+        return False  # Its first statement isn't on the receiver: no need to read the rest.
+    for statement in statements_of(body):
+        if not other.match(statement) and (ASSIGNS.search(outline(statement)) or not member.match(statement)):
             return False
     return True
+
+
+def named_by(name, receiver, method):
+    """Whether a closure's parameter, name, is named like the call that hands it: as the call's receiver is
+    (router.group((router) => ...)), or as a word of its method that it begins (permissions_policy do |policy|,
+    $app->group("/api", function ($group) ...))."""
+    name = name.lstrip("$")
+    return name == receiver.lstrip("$") or len(name) > 3 and any(
+        word.lower().startswith(name.lower()) for word in re.findall(r"[a-z0-9]+|[A-Z][a-z0-9]*", method))
 
 
 def statements_of(body):
@@ -1782,9 +1793,9 @@ def expression_end(flat, j):
 
 
 def ruby_blocks(code, inside, widths, kinds):
-    """Ruby's blocks (do ... end), whose lines are logic unless the block only goes on with its call's list:
-    each of its statements a call on no receiver (a DSL's, as routes' resources), the call's own or the block's
-    parameter, and none an assignment or an assertion. A block's end is found by indentation."""
+    """Ruby's blocks: in do ... end, found by indentation, their lines are logic unless the block only goes on
+    with its call's list (ruby_declarative); in braces, a proc's, a lambda's or each's { |x| ... }, unless the
+    block only names something."""
     continued, depth = [], 0  # A line that starts inside brackets left open goes on with a statement.
     for line in code:
         continued.append(depth > 0)
@@ -1802,17 +1813,44 @@ def ruby_blocks(code, inside, widths, kinds):
         if not ruby_declarative(code, line.strip(), [k for k in inner if not continued[k]], widths):
             for k in inner:
                 kinds[k] = kinds[k] and "logic"
+    flat = "\n".join("" if ins else line for line, ins in zip(code, inside))
+    opened, at_line = [], 0
+    for mark in re.finditer(r"[{}\n]", flat):
+        if mark.group() == "\n":
+            at_line += 1
+        elif mark.group() == "{":
+            opened.append((mark.start(), at_line))
+        elif opened:
+            start, first = opened.pop()
+            before = flat[max(0, start - 80):start].rstrip()
+            # A brace after a name, a closing bracket or ->, not after a keyword, opens a block; any other a hash.
+            if not re.search(r"(?:[\w?!)\]]|->(?:\s*\([^()]*\))?)$", before) or re.search(
+                    r"(?<![\w@$:.])(?:return|when|in|and|or|not|if|unless|elsif|then|else|while|until|yield|case|"
+                    r"break|next)$", before):
+                continue
+            body = re.sub(r"^\s*\|[^|]*\|", "", flat[start + 1:mark.start()])
+            if body.strip() and not NAMES.match(body.strip()):  # Its lines, its head's if the body starts there.
+                for k in range(first + (not body.split("\n", 1)[0].strip()), at_line + 1):
+                    kinds[k] = kinds[k] and "logic"
+
+
+# Blocks that are a method's or a closure's body, or a loop's, whatever their statements.
+RUBY_BODIES = re.compile(r"(?:define_method|define_singleton_method|lambda|proc|loop|Proc\.new)$")
 
 
 def ruby_declarative(code, head, inner, widths):
-    """Whether a Ruby block's statements, its lines inner, only go on with its call's list."""
-    names = {""}
-    params = re.search(r"\|([^|]*)\|\s*$", head)
-    if params:
-        names.update(p.strip().lstrip("*&") for p in params.group(1).split(","))
-    receiver = re.match(r"([\w:]+)\s*\.", head)
-    if receiver:
-        names.add(receiver.group(1))
+    """Whether a Ruby block's statements, its lines inner, only go on with its call's list: each a call on no
+    receiver (a DSL's, as routes' resources), or on the block's parameter where the block's call has no receiver
+    (a schema's create_table "users" do |t|) or names it (permissions_policy do |policy|). None an assignment or
+    an assertion. A block a call on a receiver hands something else (each's |user|) isn't, nor a method's or a
+    closure's body (define_method's, a lambda's) or a loop's."""
+    lead = re.match(r"((?:[\w:@$]+(?:\[[^\]]*\])?(?:\([^()]*\))?\.)*)(\w+[!?]?)", head)
+    chain, method = lead.groups() if lead else ("", "")
+    params = [p.strip().lstrip("*&") for p in re.findall(r"\|([^|]*)\|\s*$", head)[0].split(",")] \
+        if re.search(r"\|[^|]*\|\s*$", head) else []
+    if RUBY_BODIES.match(chain + method) or (chain and params and not named_by(params[0], "", method)):
+        return False
+    names = set([""] + params)
     level = min([widths[k] for k in inner] or [0])
     for k in inner:
         statement = code[k].strip()
