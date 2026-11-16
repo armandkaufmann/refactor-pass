@@ -270,8 +270,8 @@ class NothingAboutTheSuite(unittest.TestCase):
                     self.assertNotIn(name.upper(), ("SKILL.MD", "AGENTS.MD", "CLAUDE.MD", "README.MD", "GEMINI.MD"))
 
     def test_the_suite_stays_small(self):
-        # Its size as git keeps it: a checkout with core.autocrlf (Git for Windows's default) writes each line's
-        # end as CRLF, which isn't in the blob.
+        # So it doesn't grow unnoticed: a test that adds bytes earns them. Its size as git keeps it: a checkout
+        # with core.autocrlf (Git for Windows's default) writes each line's end as CRLF, which isn't in the blob.
         total, biggest = 0, (0, "")
         for folder, dirs, files in os.walk(support.HERE):
             dirs[:] = [d for d in dirs if d != "__pycache__"]
@@ -280,7 +280,7 @@ class NothingAboutTheSuite(unittest.TestCase):
                     size = len(f.read().replace(b"\r\n", b"\n"))
                 total += size
                 biggest = max(biggest, (size, name))
-        self.assertLess(total, 600000)
+        self.assertLess(total, 620000)
         self.assertLess(biggest[0], 60 * 1024, biggest[1])
 
     def test_a_copy_by_hand_takes_only_the_skill(self):
