@@ -1460,11 +1460,12 @@ TYPE_HEAD = {
     "go": re.compile(r"\b(?:struct|interface)\s*$"),
     "rust": re.compile(r"\b(?:impl|trait|struct|enum|mod|union)\b"),
 }
-# What only names something: a call of a name or a chain of names with string literals for its arguments (as the
-# skeleton writes a string, its insides as s), a string, or a name.
+# What only names something: a call of a bare name with string literals for its arguments (as the skeleton
+# writes a string, its insides as s), as import("./Home.vue") and view("welcome"), a string, or a name. A call on
+# a receiver, as res.send("ok"), does something.
 STRING = r"""(?:"s*"|'s*'|`s*`)"""
-NAMES = re.compile(r"(?:return\s+)?(?:[\w$\\]+(?:\s*(?:\.|::|->)\s*[\w$]+)*\s*\(\s*%s\s*(?:,\s*%s\s*)*\)|%s|"
-                   r"[\w$\\.:]+)\s*;?$" % (STRING, STRING, STRING))
+NAMES = re.compile(r"(?:return\s+)?(?:[\w$\\]+\s*\(\s*%s\s*(?:,\s*%s\s*)*\)|%s|[\w$\\.:]+)\s*;?$"
+                   % (STRING, STRING, STRING))
 ASSIGNS = re.compile(r"(?<![=!<>+\-*/%&|^.?:])=(?![=>~])")
 ASSERTS = re.compile(r"(?:expect|assert\w*|refute\w*|should\w*|is_expected)\b")
 

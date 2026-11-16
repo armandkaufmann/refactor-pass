@@ -24,10 +24,10 @@ SHAPES = [
     ("app/Rules/Domains.php", "<?php\nclass Domains implements Rule\n{\n    protected $domains = [\n"
      + "        'a.com',\n" * 30 + "    ];\n\n    public function passes($attribute, $value)\n    {\n"
      "        return in_array(substr($value, 1), $this->domains);\n    }\n}\n", "39-40"),
-    # Routes, each with its handler written inline: mostly logic.
+    # Routes, each with its handler written inline: mostly logic, however short one is.
     ("server/routes/api/documents.ts", 'router.post("documents.list", auth(), async (ctx) => {\n'
-     "  const { sort } = ctx.input.body;\n  ctx.body = { data: await Document.findAll({ order: sort }) };\n});\n",
-     "2-4"),
+     "  const { sort } = ctx.input.body;\n  ctx.body = { data: await Document.findAll({ order: sort }) };\n});\n"
+     'router.get("/up", (req, res) => res.send("ok"));\n', "2-5"),
     # A spec's describe and it hold calls of other names than their own, and assertions: logic.
     ("cart.spec.js", 'describe("cart", () => {\n  it("adds", () => {\n    expect(add(1, 2)).toBe(3);\n  });\n});\n',
      "2-5"),
