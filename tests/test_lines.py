@@ -162,7 +162,6 @@ class Shapes(unittest.TestCase):
     def test_a_callbacks_lines(self):
         self.assertEqual(logic_of(CALLBACKS), [(path, logic) for path, _, logic in CALLBACKS])
 
-    @unittest.expectedFailure
     def test_a_scripts_lines(self):
         self.assertEqual(logic_of(SCRIPTS), [(path, logic) for path, _, logic in SCRIPTS])
 

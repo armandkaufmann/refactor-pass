@@ -1493,6 +1493,8 @@ def line_kinds(path, text, most=None):
         code, inside = ruby_skeleton(lines)
     else:
         code, inside = skeleton(lines, language[4], language[5], language[0] == "PHP", language[0])
+        if language[0] == "PHP" and any(part.split("<?", 1)[0].strip() for part in "\n".join(code).split("?>")[1:]):
+            return None  # A template, its HTML outside <?php ?>: markup.
     kinds = ["declaration" if line.strip() else None for line in code]
     starts = [0]
     for line in code:
@@ -1552,12 +1554,17 @@ def indented_top(code, inside, kinds, found, family):
         if body is not None and widths[k] > body:
             continue
         body = widths[k] if re.match(r"\s*class\b", line) else None
-        if skip[k] or (family == "rb" and widths[k] > 0) or FLOW_WORD[family].match(line.strip()):
+        if skip[k] or (family == "rb" and widths[k] > 0):
             continue
         statements.append([k, k])
-    made = {}
-    return [(first, last) for first, last in statements
-            if runs("\n".join(code[first:last + 1]), family, made)]
+    made, found = {}, []
+    for first, last in statements:
+        text = "\n".join(code[first:last + 1])
+        if FLOW_WORD[family].match(text.strip()):
+            made.update(dict.fromkeys(loop_names(text, family), True))
+        elif runs(text, family, made):
+            found.append((first, last))
+    return found
 
 
 def logic_islands(kinds):
@@ -1642,14 +1649,17 @@ def brace_logic(code, family, php):
                 start = i + 1
     if stack:
         return None
-    spans, kinds = [], {}
+    spans, kinds, control = [], {}, set()
     for at, head, outer, opened in heads:
         around = outer[0] if outer and outer[0] != "{" else kinds.get(outer and outer[1])
         kind = kinds[at] = block_kind(head, family, around)
         if kind != "code":
             continue
+        # A branch's or a loop's head: the whole head's, or its last line's where a statement before it, after
+        # <?php or with no semicolon, starts the head.
         last_line = head.rstrip().rsplit("\n", 1)[-1]
-        if CONTROL_HEAD[family].match(head.strip() if family == "c" else last_line):
+        if CONTROL_HEAD[family].match(last_line) or family == "c" and CONTROL_HEAD["c"].match(head.strip()):
+            control.add(at)
             continue
         if declarative(flat[at + 1:closes[at]], head, outer, flat, family, opened, closes):
             continue
@@ -1659,11 +1669,21 @@ def brace_logic(code, family, php):
     # Where statements stand at the top: the file's own level, and a branch's or a loop's block there.
     contexts = {None: (0, len(flat))}
     for at, head, outer, _ in heads:
-        if kinds[at] == "code" and CONTROL_HEAD[family].match(head.strip()) and \
-                (outer[1] if outer and outer[0] == "{" else outer) in contexts:
+        if at in control and (outer[1] if outer and outer[0] == "{" else outer) in contexts:
             contexts[at] = (at + 1, closes[at])
     inner = sorted((at + 1, closes[at]) for at, kind in kinds.items() if kind != "data")
     return spans, (flat, list(contexts.values()), inner)
+
+
+def loop_names(head, family):
+    """The names a loop's head, or a with's or an except's in Python, gives values: worked out, as each turn
+    reads them."""
+    if family == "c":
+        found = re.match(r"\s*for\s*\(\s*(?:const|let|var)?\s*(\{[^}]*\}|\[[^\]]*\]|[\w$]+)", head) or \
+            re.match(r"\s*foreach\s*\((?:[^()]|\([^()]*\))*?\bas\s+(.*?)\)", head)
+    else:
+        found = re.match(r"\s*(?:async\s+)?for\s+(.+?)\s+in\b", head) or re.search(r"\bas\s+([\w, ()]+?):?\s*$", head)
+    return re.findall(r"\$?[A-Za-z_]\w*", found.group(1)) if found else []
 
 
 def top_logic(flat, contexts, inner):
@@ -1673,7 +1693,10 @@ def top_logic(flat, contexts, inner):
     made, spans, firsts = {}, [], [a for a, _ in inner]
     for s, e in statements:
         text = flat[s:e]
-        if CONTROL_HEAD["c"].match(text) or not runs(text, "c", made):
+        if CONTROL_HEAD["c"].match(text):
+            made.update(dict.fromkeys(loop_names(text, "c"), True))
+            continue
+        if not runs(text, "c", made):
             continue
         k = bisect.bisect_right(firsts, s)  # The blocks in it, not the one it's in.
         while k < len(inner) and inner[k][0] < e:
