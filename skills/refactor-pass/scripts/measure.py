@@ -38,7 +38,14 @@ Then, per file, longest first:
 
 --show FILE lists that file's functions instead: each one's first and last
 line, its code lines, deepest nesting and band. git log -L FIRST,LAST:FILE
-then lists the commits that changed that function.
+then lists the commits that changed that function. Before them, how much of
+it is logic: its lines in a function's or a closure's body, or with a word
+that branches or loops. Where that's a fifth of its lines at most, the file
+is nearly all declarations, as routes, config, a schema or types are, and
+its logic is listed by line. A route group's closure, holding only more
+routes, declares; an inline handler is logic. That's read for PHP,
+JavaScript, TypeScript, Go, Rust, Python and Ruby, not markup (Blade, Vue,
+ERB, HTML), and not where the brackets don't match.
 
 Functions are found by each language's definition keyword (def, func, fn,
 fun, function, and Swift's init, deinit and subscript), operators' too
@@ -111,6 +118,7 @@ Examples:
 """
 
 import argparse
+import bisect
 import os
 import re
 import sys
@@ -1420,6 +1428,382 @@ def functions(path, text):
     return sum(counted), found, name
 
 
+# What each code line does: declare something (a route, a key and its value, a field, a type, a schema's
+# column) or run (logic). A line is logic where it holds code in a function's body, a closure's or a method's,
+# or a word that branches or loops; any other is a declaration. Two closures are declarations all the same:
+# one passed to a call whose statements only go on with that call's list, each a call on the call's own
+# receiver or on the closure's parameter (Route::group's Route::get, create_table's t.string, a router
+# group's r.Get), and one that only names something (() => import("./Home.vue"), return view("welcome")).
+# A branch among such statements is logic on its own line, and the statements under it stay what they are.
+# Read for the languages below; in any other, and in markup (Blade, Vue, ERB, HTML), nothing is said.
+LINE_FAMILIES = {"PHP": "c", "JavaScript": "c", "TypeScript": "c", "Go": "go", "Rust": "rust", "Python": "py",
+                 "Ruby": "rb"}
+MARKUP = (".blade.php", ".vue", ".svelte", ".erb", ".html", ".htm")
+FLOW_WORDS = {
+    "c": "if|else|elseif|for|foreach|while|do|switch|case|try|catch|finally",
+    "php": "if|else|elseif|for|foreach|while|do|switch|case|try|catch|finally|match",
+    "go": "if|else|for|switch|case|select|go|defer",
+    "rust": "if|else|for|while|loop|match",
+    "py": "if|elif|else|for|while|try|except|finally|with|match|case",
+    "rb": "if|unless|elsif|else|while|until|case|when|begin|rescue|ensure|for",
+}
+FLOW_WORD = dict((family, re.compile(r"(?<![\w$.:>?@])(?:%s)(?![\w$?!])" % words))
+                 for family, words in FLOW_WORDS.items())
+# A block opened after a branch's or a loop's head, which is logic on its own line only.
+CONTROL_HEAD = {
+    "c": re.compile(r"\s*(?:\}\s*)?(?:else\s+)?(?:if|elseif|for|foreach|while|switch|try|catch|finally|do|else)\b"),
+    "go": re.compile(r"\s*(?:\}\s*)?(?:else\s+)?(?:if|for|switch|select|else)\b"),
+    "rust": re.compile(r"\s*(?:\}\s*)?(?:else\s+)?(?:if|for|while|loop|match|else)\b"),
+}
+TYPE_HEAD = {
+    "c": re.compile(r"\b(?:class|interface|enum|trait|namespace|module|declare)\b[^(){};=]*$"),
+    "go": re.compile(r"\b(?:struct|interface)\s*$"),
+    "rust": re.compile(r"\b(?:impl|trait|struct|enum|mod|union)\b"),
+}
+# What only names something: a call of a name or a chain of names with string literals for its arguments (as the
+# skeleton writes a string, its insides as s), a string, or a name.
+STRING = r"""(?:"s*"|'s*'|`s*`)"""
+NAMES = re.compile(r"(?:return\s+)?(?:[\w$\\]+(?:\s*(?:\.|::|->)\s*[\w$]+)*\s*\(\s*%s\s*(?:,\s*%s\s*)*\)|%s|"
+                   r"[\w$\\.:]+)\s*;?$" % (STRING, STRING, STRING))
+ASSIGNS = re.compile(r"(?<![=!<>+\-*/%&|^.?:])=(?![=>~])")
+ASSERTS = re.compile(r"(?:expect|assert\w*|refute\w*|should\w*|is_expected)\b")
+
+
+def line_kinds(path, text):
+    """Per line of a file, what it does: "logic", "declaration", or None where it holds no code (blank, or only a
+    comment); or None for the whole file where its language isn't read for this, as markup isn't."""
+    lower = path.lower()
+    language = BY_EXTENSION.get(os.path.splitext(lower)[1])
+    if lower.endswith(MARKUP) or not language or language[0] not in LINE_FAMILIES:
+        return None
+    family = LINE_FAMILIES[language[0]]
+    if text.startswith("﻿"):
+        text = text[1:]
+    lines = text.split("\n")
+    if family == "rb":
+        code, inside = ruby_skeleton(lines)
+    else:
+        code, inside = skeleton(lines, language[4], language[5], language[0] == "PHP", language[0])
+    kinds = ["declaration" if line.strip() else None for line in code]
+    if family in ("py", "rb"):
+        _, found, _ = functions(path, text)
+        for _, first, last, _, _ in found:
+            for k in range(first - 1, last):
+                kinds[k] = kinds[k] and "logic"
+        if family == "rb":
+            ruby_blocks(code, inside, [indent_of(line) for line in lines], kinds)
+    else:
+        spans = brace_logic(code, family, language[0] == "PHP")
+        if spans is None:
+            return None  # Brackets that don't match: what's inside what can't be told.
+        starts = [0]
+        for line in code:
+            starts.append(starts[-1] + len(line) + 1)
+        for first, last in spans:
+            for k in range(bisect.bisect_right(starts, first) - 1, bisect.bisect_right(starts, max(first, last - 1))):
+                part = code[k][max(0, first - starts[k]):max(0, last - starts[k])]
+                if part.strip():
+                    kinds[k] = "logic"
+    flow = FLOW_WORD["php" if language[0] == "PHP" else family]
+    for k, line in enumerate(code):
+        if kinds[k] and not inside[k] and flow.search(line):
+            kinds[k] = "logic"
+    return kinds
+
+
+def logic_islands(kinds):
+    """The runs of logic lines, as (first, last) line numbers from 1: logic lines with no declaration between
+    them, whatever blank or comment lines."""
+    runs = []
+    for k, kind in enumerate(kinds):
+        if kind == "logic":
+            if runs and runs[-1][2]:
+                runs[-1][1] = k + 1
+            else:
+                runs.append([k + 1, k + 1, True])
+        elif kind and runs:
+            runs[-1][2] = False
+    return [(first, last) for first, last, _ in runs]
+
+
+# A file nearly all of whose code lines declare things, as routes, config, a schema or types do: at most a fifth
+# of its lines are logic. Beyond that its logic is a share of it, not a few places in a list.
+DECLARATIONS = 0.2
+
+
+def logic_lines(kinds):
+    """A file's logic lines as ranges, as the output writes them: 23-31, 88."""
+    return ", ".join(str(a) if a == b else "%d-%d" % (a, b) for a, b in logic_islands(kinds))
+
+
+def logic_share(kinds):
+    """The share of a file's code lines that are logic."""
+    code = [kind for kind in kinds if kind]
+    return sum(1 for kind in code if kind == "logic") / float(max(1, len(code)))
+
+
+def outline(text):
+    """text with what's inside each bracket blanked, so its own level is left: newlines stay."""
+    out, depth = [], 0
+    for c in text:
+        if c in OPEN:
+            out.append(c if depth == 0 else " ")
+            depth += 1
+        elif c in CLOSE:
+            depth -= 1
+            out.append(c if depth == 0 else " ")
+        else:
+            out.append(c if depth == 0 or c == "\n" else " ")
+    return "".join(out)
+
+
+STRUCTURE = re.compile(r"[()\[\]{};,\n]")
+
+
+def brace_logic(code, family, php):
+    """The spans of a brace language's code that are logic, as (start, end) offsets in its lines joined by
+    newlines: the bodies of functions, methods and closures, but not a type's members, a literal's, a branch's
+    or a loop's own block, nor a closure that's a declaration (declarative). None where the brackets don't
+    match."""
+    flat = "\n".join(code)
+    heads, closes, stack, start = [], {}, [], 0
+    for mark in STRUCTURE.finditer(flat):  # Only what brackets and ends statements; the rest is skipped.
+        i, c = mark.start(), mark.group()
+        if c in OPEN:
+            if c == "{":
+                outer = stack[-1] if stack else None
+                heads.append((i, flat[start:i], outer))
+            stack.append((c, i, start))
+            start = i + 1
+        elif c in CLOSE:
+            if not stack or OPEN.index(stack[-1][0]) != CLOSE.index(c):
+                return None
+            _, at, outer_start = stack.pop()
+            closes[at] = i
+            start = i + 1 if c == "}" else outer_start
+        elif c == ";" or (c == "," and stack and stack[-1][0] != "{"):
+            start = i + 1
+        elif c == "\n" and family != "c" and (not stack or stack[-1][0] == "{"):
+            # Go and Rust end a statement at a line's end, unless the line goes on to the next.
+            ended = flat[start:i].rstrip()
+            if ended and ended[-1] not in ",([{=+-*/&|.:<>!":
+                start = i + 1
+    if stack:
+        return None
+    spans = []
+    for at, head, outer in heads:
+        if block_kind(head, family) != "code":
+            continue
+        last_line = head.rstrip().rsplit("\n", 1)[-1]
+        if CONTROL_HEAD[family].match(head.strip() if family == "c" else last_line):
+            continue
+        if declarative(flat[at + 1:closes[at]], head, outer, flat, family):
+            continue
+        spans.append((at + 1, closes[at] + 1))
+    if family == "c":
+        spans.extend(arrow_expressions(flat, php, spans))
+    return spans
+
+
+def block_kind(head, family):
+    """What a block opened after head holds: "code" (a function's, a closure's or a branch's body), "type" (a
+    class's or an interface's members) or "data" (a literal's). A brace that could be either is code."""
+    t = head.strip()
+    if family == "c":
+        if TYPE_HEAD["c"].search(t) and not t.endswith(")"):
+            return "type"
+        if t.endswith("=>") or t.endswith(")") or re.search(r"\)\s*:\s*[\w\\?|<>\[\], .&$]+$", t) or \
+                re.search(r"\buse\s*\([^()]*\)$", t) or re.search(r"(?<![\w$])(?:else|try|finally|do|static)$", t):
+            return "code"
+        if not t or t[-1] in "=(,[:?<|&!>" or \
+                re.search(r"(?<![\w$])(?:return|default|yield|in|of|new|throw|import|export|type|const|let|var)$", t):
+            return "data"
+        return "code"
+    t = t.rsplit("\n", 1)[-1].strip()
+    if family == "go":
+        if TYPE_HEAD["go"].search(t):
+            return "type"
+        if re.search(r"\bfunc\b", t) or re.match(r"(?:\}\s*)?(?:if|for|switch|select|else|go|defer)\b", t):
+            return "code"
+        return "data"
+    if re.search(r"\bfn\b", t) or re.search(r"\|[^|]*\|\s*(?:->\s*[^{]+)?$", t) or t.endswith(("=", "=>")) or \
+            re.match(r"(?:\}\s*)?(?:if|else|match|for|while|loop|unsafe|async|move)\b", t):
+        return "code"
+    return "type" if TYPE_HEAD["rust"].search(t) else "data"
+
+
+def declarative(body, head, outer, flat, family):
+    """Whether a closure's block is a declaration: it only names something, or it's passed to a call (outer, the
+    bracket around it, is that call's) and each of its statements is a call on the call's own receiver or on
+    the closure's parameter, or a branch, or in PHP a require."""
+    # A closure has no name: function (...) and fn (...) in PHP and JavaScript, an arrow, func(...) in Go,
+    # |...| in Rust. A named function's or a method's body is logic, however short.
+    marker = {"c": r"\b(?:function|fn)\s*&?\s*\(|=>\s*$", "go": r"\bfunc\s*\(", "rust": r"\|"}[family]
+    if not re.search(marker, head):
+        return False
+    statements = statements_of(body)
+    if len(statements) == 1 and NAMES.match(statements[0]):
+        return True
+    if not statements or not outer or outer[0] != "(":
+        return False
+    call = re.sub(r"^\s*<\?(?:php)?", "", flat[outer[2]:outer[1]])
+    root = re.match(r"\s*(?:return\s+|await\s+)?([$\w\\]+)", call)
+    if not root:
+        return False
+    names = {root.group(1).lstrip("\\")}
+    params = re.search(r"\|([^|]*)\|" if family == "rust" else r"\(([^()]*)\)", head)
+    for part in (params.group(1).split(",") if params else []):
+        word = re.match(r"\s*&?\s*(?:mut\s+)?([$\w]+)", part)
+        if word:
+            names.add(word.group(1))
+    single = re.search(r"([\w$]+)\s*=>\s*$", head)
+    if single:
+        names.add(single.group(1))
+    for statement in statements:
+        if re.match(r"(?:require|include)(?:_once)?\b", statement) or \
+                FLOW_WORD["php" if family == "c" else family].match(statement):
+            continue
+        lead = re.match(r"(?:await\s+)?([$\w\\]+)\s*(?:\.|->|::|\?->|\(|$)", statement)
+        if ASSIGNS.search(outline(statement)) or not lead or lead.group(1).lstrip("\\") not in names:
+            return False
+    return True
+
+
+def statements_of(body):
+    """A block's statements, at its own level: split at ; and at a line's end where the next line doesn't go on
+    from it."""
+    top = outline(body)
+    pieces, start = [], 0
+    for k, c in enumerate(top):
+        if c == ";":
+            pieces.append(body[start:k])
+            start = k + 1
+        elif c == "\n":
+            line, following = top[start:k].strip(), top[k + 1:k + 200].lstrip()
+            if line and line[-1] not in "=+-*/&|?:.,([{" and \
+                    not following.startswith((".", "->", "?", ":", "&&", "||", ")", "]", "}")):
+                pieces.append(body[start:k])
+                start = k + 1
+    pieces.append(body[start:])
+    return [p.strip() for p in pieces if p.strip()]
+
+
+def arrow_expressions(flat, php, blocks):
+    """The spans of arrow functions' bodies written as an expression, not a block: logic, unless the body only
+    names something. A function type's arrow, as TypeScript writes one, isn't a function's. One inside the
+    blocks already found to be logic is passed over: it can add nothing."""
+    spans, merged = [], []
+    for first, last in sorted(blocks):
+        if merged and first <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], last)
+        else:
+            merged.append([first, last])
+    firsts = [first for first, _ in merged]
+    for arrow in re.finditer(r"=>", flat):
+        j = arrow.end()
+        k = bisect.bisect_right(firsts, j) - 1
+        if k >= 0 and j < merged[k][1]:
+            continue
+        if flat[j:j + 200].lstrip().startswith("{"):
+            continue
+        before = flat[max(0, arrow.start() - 300):arrow.start()]
+        if php:  # PHP's arrow function is fn (...) =>; any other => pairs a key with its value.
+            if not re.search(r"\bfn\s*&?\s*\([^()]*\)\s*(?::\s*[\w\\?|]+\s*)?$", before):
+                continue
+        elif not re.search(r"(?:\)\s*(?::\s*[^=;{}]+)?|[\w$]+)\s*$", before) or arrow_is_type(flat, arrow.start()):
+            continue
+        end = expression_end(flat, j)
+        body = flat[j:end].strip()
+        if body and not NAMES.match(body):
+            spans.append((j, end))
+    return spans
+
+
+def arrow_is_type(flat, at):
+    """Whether the => at offset at is a function type's (onChange: (value: string) => void), not a function's."""
+    before = flat[max(0, at - 2000):at].rstrip()
+    if before.endswith(")"):
+        depth, k = 0, len(before) - 1
+        while k >= 0:
+            depth += {")": 1, "(": -1}.get(before[k], 0)
+            if depth == 0:
+                break
+            k -= 1
+        before = before[:k].rstrip()
+    else:
+        before = re.sub(r"[\w$]+$", "", before).rstrip()
+    if before.endswith((":", "<", "|", "&")) or re.search(r"(?<![\w$])new$", before):
+        return True
+    statement = re.split(r"[;\n]", before)[-1].strip()
+    return bool(re.match(r"(?:export\s+)?(?:declare\s+)?type\b", statement))
+
+
+def expression_end(flat, j):
+    """Where an arrow function's expression body, starting at j, ends: at a , ; or closing bracket at its own
+    level, or at a line's end that neither it nor the next line goes on from."""
+    depth = 0
+    for k in range(j, len(flat)):
+        c = flat[k]
+        if c in OPEN:
+            depth += 1
+        elif c in CLOSE:
+            if depth == 0:
+                return k
+            depth -= 1
+        elif depth == 0 and c in ",;":
+            return k
+        elif depth == 0 and c == "\n":
+            ended, following = flat[j:k].rstrip(), flat[k + 1:k + 200].lstrip()
+            if ended and ended[-1] not in "=+-*/&|?:.,(" and \
+                    not following.startswith((".", "?", ":", "&&", "||", "+", "-")):
+                return k
+    return len(flat)
+
+
+def ruby_blocks(code, inside, widths, kinds):
+    """Ruby's blocks (do ... end), whose lines are logic unless the block only goes on with its call's list:
+    each of its statements a call on no receiver (a DSL's, as routes' resources), the call's own or the block's
+    parameter, and none an assignment or an assertion. A block's end is found by indentation."""
+    continued, depth = [], 0  # A line that starts inside brackets left open goes on with a statement.
+    for line in code:
+        continued.append(depth > 0)
+        depth = max(0, depth + sum(line.count(c) for c in OPEN) - sum(line.count(c) for c in CLOSE))
+    for i, line in enumerate(code):
+        if inside[i] or not re.search(r"\bdo\s*(?:\|[^|]*\|)?\s*$", line):
+            continue
+        inner = []
+        for k in range(i + 1, len(code)):
+            if not code[k].strip() or inside[k]:
+                continue
+            if widths[k] <= widths[i]:
+                break
+            inner.append(k)
+        if not ruby_declarative(code, line.strip(), [k for k in inner if not continued[k]], widths):
+            for k in inner:
+                kinds[k] = kinds[k] and "logic"
+
+
+def ruby_declarative(code, head, inner, widths):
+    """Whether a Ruby block's statements, its lines inner, only go on with its call's list."""
+    names = {""}
+    params = re.search(r"\|([^|]*)\|\s*$", head)
+    if params:
+        names.update(p.strip().lstrip("*&") for p in params.group(1).split(","))
+    receiver = re.match(r"([\w:]+)\s*\.", head)
+    if receiver:
+        names.add(receiver.group(1))
+    level = min([widths[k] for k in inner] or [0])
+    for k in inner:
+        statement = code[k].strip()
+        if widths[k] != level or statement == "end" or FLOW_WORD["rb"].match(statement):
+            continue
+        lead = re.match(r"([\w:@]+)(\.|\s|\(|$)", statement)
+        if ASSIGNS.search(outline(statement)) or ASSERTS.match(statement) or not lead or \
+                (lead.group(1) if lead.group(2) == "." else "") not in names:
+            return False
+    return True
+
+
 def range_max(values):
     """A function that gives the largest of values[i:j], or -1 if there are none, at once, from the largest
     of each run of 1, 2, 4, 8... values from each place, worked out first."""
@@ -1541,7 +1925,7 @@ def main():
     doubts = scoping.doubtful_tests(tests, paths, args.test)
     paths = [p for p in paths if p not in tests]
 
-    measured, failed, unreadable, missing = {}, [], [], []
+    measured, failed, unreadable, missing, texts = {}, [], [], [], {}
     for path in sorted(set(paths + shows)):
         full = os.path.join(repo, path)
         if not os.path.isfile(full):
@@ -1555,6 +1939,8 @@ def main():
         if b"\0" in data[:8000]:  # Binary, by git's own test.
             continue
         text = data.decode("utf-8", errors="replace")
+        if path in shows:
+            texts[path] = text
         try:
             measured[path] = functions(path, text)
         except Exception:
@@ -1666,6 +2052,13 @@ def main():
                     (language,) + tuple(cuts[language][1]) + (
                         "; they lean on one function, so bands are by the reference points" if leans else "",))
                 if language in cuts else "no %s file in the scope, so no percentiles to compare with" % language))
+            kinds = line_kinds(path, texts[path])
+            if kinds is not None:
+                share = logic_share(kinds)
+                print("Declarations: all but %d%% of its code lines; its logic, by line: %s." % (
+                    round(share * 100), logic_lines(kinds) or "none") if share <= DECLARATIONS else
+                    "Logic: %d%% of its code lines, in a function's or a closure's body or on a branch's line."
+                    % round(share * 100))
             # The first and last lines, as git log -L FIRST,LAST:FILE takes them.
             spans = ["%d-%d" % (f[1], f[2]) for f in found]
             width = max([len("first-last")] + [len(s) for s in spans])

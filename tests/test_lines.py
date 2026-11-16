@@ -1,0 +1,72 @@
+"""What each code line does: measure.py's line kinds, which tell a line that declares something from one of logic."""
+
+import unittest
+
+try:
+    from . import support
+except ImportError:
+    import support
+
+# Per shape, a file and its logic lines, as the output writes them; None where nothing is said of its lines.
+SHAPES = [
+    # A route group's closure holds only more routes, and a branch picks one: the branch's line is logic. An
+    # inline handler is; a closure or an arrow function that only names a view isn't.
+    ("routes/web.php", "<?php\nRoute::prefix('admin')->middleware('auth')->group(function () {\n"
+     "    Route::get('users', [UserController::class, 'index']);\n    if (config('app.beta')) {\n"
+     "        Route::get('beta', BetaController::class);\n    }\n});\nRoute::get('up', function () {\n"
+     "    return response()->json(['status' => 'ok']);\n});\n"
+     "Route::get('/', function () { return view('welcome'); });\nRoute::get('home', fn () => view('home'));\n",
+     "4, 9-10"),
+    # A long array property and a short method: the method's body.
+    ("app/Rules/Domains.php", "<?php\nclass Domains implements Rule\n{\n    protected $domains = [\n"
+     + "        'a.com',\n" * 30 + "    ];\n\n    public function passes($attribute, $value)\n    {\n"
+     "        return in_array(substr($value, 1), $this->domains);\n    }\n}\n", "39-40"),
+    # Routes, each with its handler written inline: mostly logic.
+    ("server/routes/api/documents.ts", 'router.post("documents.list", auth(), async (ctx) => {\n'
+     "  const { sort } = ctx.input.body;\n  ctx.body = { data: await Document.findAll({ order: sort }) };\n});\n",
+     "2-4"),
+    # A spec's describe and it hold calls of other names than their own, and assertions: logic.
+    ("cart.spec.js", 'describe("cart", () => {\n  it("adds", () => {\n    expect(add(1, 2)).toBe(3);\n  });\n});\n',
+     "2-5"),
+    # Types, a function type's arrow and lazy imports declare; a function with a body is logic.
+    ("src/router.ts", 'import type { RouteRecordRaw } from "vue-router";\nexport interface Props {\n'
+     "  onChange: (value: string) => void;\n}\nexport type Handler = (e: Event) => void;\n"
+     "export const routes: RouteRecordRaw[] = [\n"
+     '  { path: "/", component: () => import("./Home.vue") },\n'
+     '  { path: "/about", component: () => import("./About.vue"), meta: { auth: true } },\n];\n'
+     'export const isAdmin = (user) => user.role === "admin";\n', "10"),
+    # Go's struct and composite literal declare; a list registered inside a function is that function's body.
+    ("routes.go", "package routes\n\ntype Route struct {\n\tPath string\n}\n\nvar all = []Route{\n\t{Path: \"/\"},\n}\n"
+     "\nfunc Mount(r chi.Router) {\n\tr.Route(\"/admin\", func(r chi.Router) {\n\t\tr.Get(\"/users\", users)\n"
+     "\t})\n}\n", "12-15"),
+    ("src/lib.rs", "pub struct Point {\n    x: i32,\n}\n\nimpl Point {\n    pub fn norm(&self) -> i32 {\n"
+     "        self.x.abs()\n    }\n}\n", "7-8"),
+    # Ruby's routes and a schema's columns, in blocks that go on with their call's list; a spec's block isn't.
+    ("config/routes.rb", 'Rails.application.routes.draw do\n  namespace :admin do\n'
+     '    resources :users, only: [:index]\n  end\n  if ENV["BETA"]\n    get "beta", to: "beta#index"\n  end\nend\n',
+     "5"),
+    ("db/schema.rb", 'ActiveRecord::Schema[7.1].define(version: 1) do\n  create_table "users" do |t|\n'
+     '    t.string "email", null: false\n  end\nend\n', ""),
+    ("spec/user_spec.rb", 'describe User do\n  it "is valid" do\n    user = build(:user)\n'
+     "    expect(user).to be_valid\n  end\nend\n", "3-4"),
+    ("settings.py", 'DEBUG = False\nAPPS = [\n    "admin",\n]\nif DEBUG:\n    APPS += ["toolbar"]\n\n\n'
+     'class Config:\n    name = "app"\n\n    def ready(self):\n        load()\n', "5, 12-13"),
+    # Markup, a language this doesn't read for its lines, and brackets that don't match: nothing said.
+    ("resources/views/index.blade.php", "@if ($x)\n<p>{{ $x }}</p>\n@endif\n", None),
+    ("App.java", "class App {}\n", None),
+    ("broken.ts", "export const x = {\n  a: 1,\n", None),
+]
+
+
+class Shapes(unittest.TestCase):
+
+    def test_each_shape(self):
+        measure = support.load("measure")
+        for path, text, logic in SHAPES:
+            with self.subTest(path=path):
+                kinds = measure.line_kinds(path, text)
+                self.assertEqual(None if kinds is None else measure.logic_lines(kinds), logic)
+
+
+if __name__ == "__main__":
+    unittest.main()

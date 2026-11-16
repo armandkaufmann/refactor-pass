@@ -4,6 +4,7 @@
                       for Python, against the ast module
   test_limits.py      the limits measure.py's help admits to, each as a test
   test_measure.py     percentiles, bands and the rest of measure.py's output
+  test_lines.py       which code lines declare things and which are logic, and the heatmap's mark
   test_heatmap.py     heatmap.py's columns, window and scopes
   test_pairs.py       files that change together, and the tests that change with several
   test_window.py      bots, reformats, asked commits and --since
