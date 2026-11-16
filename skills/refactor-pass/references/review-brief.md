@@ -43,9 +43,13 @@ window and in its newer half, the date of the last, churn, relative churn,
 size and growth; the pairs and groups that change together, with the date
 they last did; any test listed as changing with several of them, as a lead
 to check, not a finding; and the changes coming next, from the user, the
-project's plans or the commonest kinds in the commit messages.> A file that
-nearly every change edits, or two files that always change together, is
-where the next change will hurt. Find out why changes keep landing here.
+project's plans or the commonest kinds in the commit messages; for a file
+marked [declarations], its logic lines.> A file that nearly every change
+edits, or two files that always change together, is where the next change
+will hurt. Find out why changes keep landing here. A file of declarations
+(routes, config, types) changes as entries are added: read it for its logic
+lines, and for an entry outside its group, a duplicate or an order that
+matters.
 
 **The size of the codebase.** <measure.py's percentiles for this language:
 file and function length at the 70th, 80th and 90th, and any note that
