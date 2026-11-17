@@ -45,7 +45,11 @@ they last did; any test listed as changing with several of them, as a lead
 to check, not a finding; and the changes coming next, from the user, the
 project's plans or the commonest kinds in the commit messages.> A file that
 nearly every change edits, or two files that always change together, is
-where the next change will hurt. Find out why changes keep landing here.
+where the next change will hurt. Find out why changes keep landing here. A
+file that lists things by design (routes, config, types, translations)
+changes as entries are added: read it for the logic that isn't an entry,
+and for an entry outside its group, a duplicate, an order that matters or
+an entry naming something that doesn't exist.
 
 **The size of the codebase.** <measure.py's percentiles for this language:
 file and function length at the 70th, 80th and 90th, and any note that
