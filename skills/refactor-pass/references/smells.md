@@ -715,15 +715,16 @@ What hurts in one is the logic that isn't an entry.
     that only names a controller or a view;
   - a computed value, a loop or a branch among the entries.
 
-  `measure.py --show` lists the file's named functions with their lines, a
-  start in a table of them; a closure passed to a call, as an inline route
-  handler is, isn't among them.
+  `measure.py --show` lists the file's named functions with their lines,
+  which is a start where the list is a table of functions. A closure passed
+  to a call, as an inline route handler is, isn't among them, so
+  "0 functions" doesn't mean the file has no logic.
 - **Not a smell when:** the logic only picks between entries (a feature's
   routes registered when it's on) and reads as one line; or the project's
   convention is a small app's whole router in one file, its handlers a few
   lines each.
 - **Playbook:** Extract Function, then Move Function: the handler becomes a
-  named one where its siblings' live (a controller's action, an invokable
+  named one where its siblings live (a controller's action, an invokable
   class, a handler module), and the entry names it. A computed value moves
   to where the configuration is built, as a provider or a factory does,
   and the list reads the result. A branch around several entries becomes
