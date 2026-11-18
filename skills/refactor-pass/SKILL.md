@@ -110,6 +110,17 @@ what it said, and go on without it, from `git log` and the code.
   latest. Read both against the window's dates: eight `recent` commits, all
   on the day the newer half starts, are a burst that has cooled. A file
   that shrank may already have been dealt with.
+- **A list.** A hot file that lists things by design (routes, config, a
+  schema, types, a registry of handlers, translations) gets a commit for
+  each feature: its churn is entries added, so it isn't evidence on its
+  own. You tell such a file by reading it. Read it all the same, for what
+  goes wrong in a list: an entry outside the group or the guard its
+  neighbours sit in, a duplicate, an order that matters, an entry naming
+  something that doesn't exist (a route to a controller method nobody
+  wrote), a list long enough to split by area; and for logic that isn't an
+  entry, which is [Logic in a List](references/smells.md#logic-in-a-list)
+  where it does work. Where nothing turns up, it goes under left alone,
+  its reason saying what you read.
 - **Newest work.** Under the table, the files the window's newest commits
   kept changing that the table leaves out, as a wide window leaves out a
   new feature's small files. Step 6 accounts for every area on it.
@@ -339,7 +350,10 @@ nothing else, and says so. You write the `pass` block below it, whose
 - `left_alone`: each with `what` and `why`. Every area on the heatmap's
   newest-work list is in an item or here, its `why` saying whether you read
   the code: "small and new, under the floors, not read" is a `why`, and
-  "fine" for code you didn't read isn't;
+  "fine" for code you didn't read isn't. So is each hot file that's a list
+  by design where nothing turned up, its `why` saying what you read in it
+  ("routes, read in full; the two branches in it only pick a feature's
+  routes");
 - `checks`: the project's checks, from its instructions, or what you'll
   check by hand if it has none;
 - `earlier`: after an earlier pass, `checklist`, its path as
