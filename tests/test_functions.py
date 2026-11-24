@@ -248,7 +248,7 @@ RUST = ("pub fn add(a: i32) -> i32 {\n    a + 1\n}\n\n#[cfg(test)]\nmod tests {\
 
 
 class TestsInsideFiles(unittest.TestCase):
-    """Rust's modules compiled only for tests, set aside as test files are."""
+    """Rust's items compiled only for tests, set aside as test files are."""
 
     def test_a_test_module(self):
         self.assertEqual(set_aside(RUST), (3, [["add", 1, 3, 3]], [[5, 13, 8, 1]]))
@@ -278,10 +278,20 @@ class TestsInsideFiles(unittest.TestCase):
                  (2, [["b", 7, 8, 2]], [[1, 6, 6, 1]])),
                 # An inner attribute, first in its body.
                 ("mod t {\n    //! A.\n    #![cfg(test)]\n    fn a() {\n    }\n}\n", (0, [], [[1, 6, 5, 1]])),
-                # A declaration, whose module is a file of its own; an attribute of another item.
-                ("#[cfg(test)]\nmod t;\nmod a {\n}\n#[cfg(test)]\nuse b::c;\nmod d {\n}\n", (8, [], []))):
+                # A declaration, whose module is a file of its own; a use's attribute, not the module's after it.
+                ("#[cfg(test)]\nmod t;\nmod a {\n}\n#[cfg(test)]\nuse b::c;\nmod d {\n}\n", (6, [], [[5, 6, 2, 0]]))):
             with self.subTest(text=text):
                 self.assertEqual(set_aside(text), want)
+
+
+    def test_items_besides_modules(self):
+        # A function, an impl and its methods, a use, a constant and a struct; not a statement in a function's
+        # body, which is the function's.
+        text = ("fn keep() {\n    #[cfg(test)]\n    let x = 1;\n}\n#[cfg(test)]\npub fn mock() {\n    f();\n}\n"
+                "#[cfg(test)]\nimpl Store {\n    fn a() {}\n    fn b() {}\n}\n#[cfg(test)]\nuse std::fmt;\n"
+                "#[cfg(test)]\nconst SIZES: [u8; 3] = [1, 2, 3];\n#[cfg(test)]\nstruct Fake {\n    x: u8,\n}\n")
+        self.assertEqual(set_aside(text), (4, [["keep", 1, 4, 4]], [[5, 8, 4, 1], [9, 13, 5, 2], [14, 15, 2, 0],
+                                                                    [16, 17, 2, 0], [18, 21, 4, 0]]))
 
 
 class Strings(unittest.TestCase):
