@@ -76,6 +76,16 @@ class Samples(unittest.TestCase):
         self.assertIn("Main.cs: C#, 3 code lines, band -, 1 functions", result.out)
         self.assertRegex(result.out, r"(?m)^\s*1-3\s+3\s+0\s+-\s+Main$")
 
+    def test_cpp_by_its_other_extensions(self):
+        # Templates' and inline definitions, and modules; an .inl is C++ as a .h is, by what its code holds.
+        measure = support.load("measure")
+        text = "template <typename T>\nT twice(T v) {\n    return v + v;\n}\n"
+        for extension in (".inl", ".hxx", ".ipp", ".tpp", ".tcc", ".txx", ".h++", ".c++", ".ixx", ".cppm"):
+            with self.subTest(extension=extension):
+                _, functions, language = measure.functions("a" + extension, text)
+                self.assertEqual((language, [f[:3] for f in functions or []]), ("C++", [("twice", 2, 4)]))
+        self.assertEqual(measure.functions("a.inl", "static int one(void) {\n    return 1;\n}\n")[2], "C")
+
     def test_language_of_each_sample(self):
         measure = support.load("measure")
         names = {".vue": "Vue", ".svelte": "Vue", ".tsx": "TypeScript", ".mjs": "JavaScript", ".jsx": "JavaScript"}

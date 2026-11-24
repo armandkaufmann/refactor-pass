@@ -474,7 +474,7 @@ class Words(unittest.TestCase):
         heatmap, doc, chore = self.heatmap, "documentation", "CI, build or dependency files"
         for path, kind in [("docs/guide.md", doc), ("docs/images/flow.png", doc), ("docs/Makefile", doc),
                            ("doc/man_docs.go", None), ("tokio/src/doc/mod.rs", None), ("apps/docs/src/search.ts", None),
-                           ("docs/conf.py", None)]:
+                           ("docs/conf.py", None), ("docs/vec.inl", None), ("doc/io.cppm", None)]:
             self.assertEqual(heatmap.not_code(path, lambda p: False), kind, path)
         tops = heatmap.package_tops(["setup.py", "python/setup.py", "python/pyproject.toml", "sdk/setup.py",
                                      "sdk/client/__init__.py", "src/setup.py", "src/shop/__init__.py"])
