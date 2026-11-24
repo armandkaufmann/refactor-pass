@@ -368,12 +368,11 @@ nothing else, and says so. You write the `pass` block below it, whose
 After each edit, run `python3 <this skill's directory>/scripts/check_page.py
 <page>`, which catches a broken bracket, a misspelt field, a duplicate ID or
 an item whose first line isn't its ID and status, and warns of a field left
-empty. When the pass block is written and the check passes, show the page
-to the user, once: on their own machine, run the check again with `--open`,
-which opens it in their browser or says why it couldn't. Where you aren't on
-their machine, or it couldn't, publish the same file and give the link if
-your environment can publish or preview HTML pages; otherwise give the path
-to open in a browser.
+empty. When the pass block is written and the check passes, run the check
+once more with `--open`, unless you run in a cloud sandbox or CI: it tries
+to open the page in the user's browser, or says why it can't. If it didn't,
+and your environment can publish or preview HTML pages, publish the file and
+give the link.
 
 **Where it lives.** `.refactor-pass/` is at the repo's top, with a
 `.gitignore` the heatmap writes, so the folder is never committed and the
@@ -392,7 +391,8 @@ Then reply with:
   4's sentence), size, risk, and the next change's cost today and after;
 - the F and D items in brief;
 - what you left alone and why, in a line or two;
-- the suggested order, and where the checklist is;
+- the suggested order, and the checklist's path, with its link if you
+  published it;
 - a question: which item should you start with?
 
 Don't change any code until the user picks.
