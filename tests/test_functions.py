@@ -345,6 +345,16 @@ class Comments(unittest.TestCase):
                 self.assertEqual([f[:3] for f in found(name, text)], [["a", 1, 3], ["b", 4, 5]])
 
 
+    def test_an_inner_comment_that_opens_on_a_star(self):
+        # /*/ opens one, as the compiler reads from the left, so the first */ after it closes that one; /**/ opens
+        # one and closes it.
+        for name, word in (("a.rs", "fn"), ("a.swift", "func")):
+            with self.subTest(name=name):
+                text = "/* a src/*/\n   b */\n%s hidden() {\n}\n*/\n%s after() {\n}\n/* c /**/ d */\n%s two() {\n}\n"
+                self.assertEqual([f[:3] for f in found(name, text % (word, word, word))],
+                                 [["after", 6, 7], ["two", 9, 10]])
+
+
 class CodeLines(unittest.TestCase):
     """What counts as a code line in a file, in each kind of language."""
 
