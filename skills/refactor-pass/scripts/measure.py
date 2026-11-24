@@ -860,8 +860,10 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
                     i += 1
             elif state == "*/":
                 end = line.find("*/", i)
-                inner = line.find("/*", i, end if end >= 0 else len(line)) if nests else -1
-                if inner >= 0:  # A comment inside it, which closes first.
+                # A comment inside it, which closes first; one that starts before the */ is read, as a compiler
+                # reads from the left, so /*/ opens one.
+                inner = line.find("/*", i, end + 1 if end >= 0 else len(line)) if nests else -1
+                if inner >= 0:
                     i, nested = inner + 2, nested + 1
                 elif end < 0:
                     break
