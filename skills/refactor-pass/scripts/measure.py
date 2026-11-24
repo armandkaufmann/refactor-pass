@@ -53,8 +53,8 @@ destructor with no type, and a name qualified by its class (Session::run)
 at any indentation. A name is any the language allows, a word it
 doesn't reserve (delete in Java), and may carry type arguments (C#'s
 Get<T>, C++'s List<T>::Add, named Get and List::Add); a name in
-backquotes is a name in Kotlin and Swift; and a .h file is C++ when it
-holds a class, a namespace or a template. A signature may run over
+backquotes is a name in Kotlin and Swift; and a .h or .inl file is C++
+when it holds a class, a namespace or a template. A signature may run over
 several lines, and a body may sit on its signature's line. Each
 language's strings are read as it writes them (Ruby's regular
 expressions, % literals and heredocs, C#'s @"...", Rust's r#"..."#, C++'s
@@ -239,8 +239,8 @@ CPP_SHAPES = (r"^\s*" + TEMPLATE + MODIFIERS + r"(?:" + TYPE_WORD + r"\s+)*[*&]*
               not_a_type("C++") + not_a_name("C++") + r"(?![A-Z][A-Z0-9_]*\s*\()(~?[A-Za-z_]\w*)\s*\(" +
               SIGNATURE_REST + r"|^\s*" + TEMPLATE + not_a_type("C++") + r"((?!\d)\w+" + TYPE_ARGUMENTS +
               r"(?:::~?\w+" + TYPE_ARGUMENTS + r")+)\s*\((?!.*\)\s*,\s*$)[^;{=]*(?:\{.*)?$")
-# A .h file is C's header or C++'s: C++'s when its code holds what C has none of, as a class, a namespace, a
-# template, an access label or std::.
+# A .h file is C's header or C++'s, and an .inl file C's or C++'s inline definitions: C++'s when its code holds
+# what C has none of, as a class, a namespace, a template, an access label or std::.
 CPP_IN_HEADER = re.compile(r"^\s*(?:template\s*<|namespace(?:\s+[\w:]+)?\s*\{|(?:public|private|protected)\s*:|"
                            r"class\s+\w)|\bstd::", re.M)
 
@@ -673,8 +673,11 @@ LANGUAGES = [
      "brackets", "// /*", ""),
     ("Java", ".java", JAVA_SHAPES, "brackets", "// /*", "char"),
     ("C#", ".cs", CS_SHAPES, "brackets", "// /*", "char"),
-    ("C", ".c .h", c_shapes("C"), "brackets", "// /*", "char"),
-    ("C++", ".cpp .cc .cxx .hpp .hh", CPP_SHAPES, "brackets", "// /*", "char"),
+    # C++'s templates' and inline definitions (.ipp, .tpp, .tcc, .txx) and modules (.ixx, .cppm) too; an .inl, as
+    # a .h, is C's or C++'s by what it holds.
+    ("C", ".c .h .inl", c_shapes("C"), "brackets", "// /*", "char"),
+    ("C++", ".cpp .cc .cxx .c++ .hpp .hh .hxx .h++ .ipp .tpp .tcc .txx .ixx .cppm", CPP_SHAPES, "brackets", "// /*",
+     "char"),
 ]
 BY_EXTENSION = dict((ext, lang) for lang in LANGUAGES for ext in lang[1].split())
 OPEN, CLOSE = "([{", ")]}"
@@ -1474,7 +1477,8 @@ def functions(path, text, set_aside=None):
     else:
         code, inside = skeleton(lines, comments, language[5] if language else "", language and language[0] == "PHP",
                                 language and language[0])
-        if language and language[0] == "C" and path.lower().endswith(".h") and CPP_IN_HEADER.search("\n".join(code)):
+        if language and language[0] == "C" and path.lower().endswith((".h", ".inl")) and \
+                CPP_IN_HEADER.search("\n".join(code)):
             language = BY_EXTENSION[".hpp"]
             code, inside = skeleton(lines, comments, language[5], False, language[0])
     counted = [bool(c.strip()) for c in code]

@@ -695,9 +695,10 @@ CHORE_FILES = re.compile(
 
 # Code by its extension: in a docs folder, such a file is taken for code, as cobra's doc/ is a package of the
 # library and tokio's src/doc/ a module, though some are documentation's own scripts (docs/conf.py).
-CODE_EXTENSIONS = set(".c .cc .cpp .cxx .h .hh .hpp .hxx .m .mm .cs .fs .vb .java .kt .kts .scala .groovy .clj .go .rs "
-                      ".swift .py .pyx .rb .php .pl .pm .lua .js .jsx .mjs .cjs .ts .tsx .mts .cts .vue .svelte .dart "
-                      ".ex .exs .erl .hs .ml .elm .jl .r .zig .nim .cr .gd .sh .ps1 .sql".split())
+CODE_EXTENSIONS = set(".c .cc .cpp .cxx .c++ .h .hh .hpp .hxx .h++ .inl .ipp .tpp .tcc .txx .ixx .cppm .m .mm .cs .fs "
+                      ".vb .java .kt .kts .scala .groovy .clj .go .rs .swift .py .pyx .rb .php .pl .pm .lua .js .jsx "
+                      ".mjs .cjs .ts .tsx .mts .cts .vue .svelte .dart .ex .exs .erl .hs .ml .elm .jl .r .zig .nim .cr "
+                      ".gd .sh .ps1 .sql".split())
 
 
 def is_doc(path):
