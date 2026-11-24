@@ -16,4 +16,8 @@ fn chars() -> (char, u8) {
     ('\u{1F600}', b'\'')
 }
 
+fn c_escape() -> &'static CStr {
+    cr"\"
+}
+
 fn after() {}

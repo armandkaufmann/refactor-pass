@@ -25,6 +25,10 @@ public struct Request {
         return "{\(d.keys.joined(separator: "}"))}"
     }
 
+    func tag() -> String {
+        #"\#"#{"#
+    }
+
     func after() -> Int {
         1
     }

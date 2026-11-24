@@ -701,14 +701,17 @@ DOCSTRING = re.compile(r"""\s*[rRuUbBfF]{0,2}("{3}|'{3}|"|')""")
 CHARACTER = re.compile(r"'(?:\\(?:u\{[0-9a-fA-F]{1,6}\}|x[0-9a-fA-F]{1,2}|u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8}|"
                        r"[0-7]{1,3}|.)|[^\\'])'")
 # Per language, strings with no escapes, which can hold quotes and run over lines: how one opens, and its
-# closing text. C#'s verbatim @"..." (where "" is a quote), Rust's r"..." and r#"..."#, C++'s R"x(...)x",
-# Swift's #"..."#.
+# closing text. C#'s verbatim @"..." (where "" is a quote), Rust's r"..." and r#"..."# (and br"...", cr"..."),
+# C++'s R"x(...)x", Swift's #"..."# (where an escape is written \#, as \#" for a quote).
 RAW_STRING = {
     "C#": (re.compile(r'(?:\$+@|@\$*)"'), lambda opened: '"'),
-    "Rust": (re.compile(r'b?r(#*)"'), lambda opened: '"' + opened.group(1)),
+    "Rust": (re.compile(r'[bc]?r(#*)"'), lambda opened: '"' + opened.group(1)),
     "C++": (re.compile(r'(?:u8|[uUL])?R"([^()\\\s]{0,16})\('), lambda opened: ")" + opened.group(1) + '"'),
     "Swift": (re.compile(r'(#+)("""|")'), lambda opened: opened.group(2) + opened.group(1)),
 }
+# Per language, the quotes of a string read as the others are, holes and all, but with no escapes, so that a \
+# before its closing quote is a \: Go's `...`, Kotlin's """...""" and C#'s raw """...""".
+NO_ESCAPES = {"Go": "`", "Kotlin": '"""', "C#": '"""'}
 # Per language, a preprocessor directive's line and its word, and whether it goes on after a \ at the end.
 PREPROCESSED = {
     "C": (re.compile(r"\s*#\s*(\w*)"), True),
@@ -784,8 +787,8 @@ def string_holes(language, quotes, quote, before):
 
 
 # Characters that start nothing outside a string or a comment, in any language: not a comment's start (# or
-# /), a quote, a raw string's start ($ @ #, or b r R u U L at the start of a word) or a regular expression's.
-PLAIN = re.compile(r"(?:[^/#\"'`$@brRuUL]|(?<=[\w$@])[brRuUL])+")
+# /), a quote, a raw string's start ($ @ #, or b c r R u U L at the start of a word) or a regular expression's.
+PLAIN = re.compile(r"(?:[^/#\"'`$@bcrRuUL]|(?<=[\w$@])[bcrRuUL])+")
 
 
 def skeleton(lines, comments, quotes, attributes=False, language=None):
@@ -817,6 +820,10 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
                 if raw == '"' and language == "C#" and line.startswith('""', i):  # A verbatim string's quote.
                     code.append("ss")
                     i += 2
+                elif language == "Swift" and line.startswith("\\" + raw.strip('"'), i):  # An escape, as \#".
+                    escape = len(raw.strip('"')) + 2
+                    code.append("s" * escape)
+                    i += escape
                 elif line.startswith(raw, i):
                     code.append('"')
                     i, raw = i + len(raw), None
@@ -836,7 +843,7 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
                     code.append("s" * len(holes))  # The hole's own brackets aren't the code's.
                     templates.append([0, holes[-1], ")" if holes[-1] == "(" else "}", state, holes])
                     i, state, holes = i + len(holes), None, None
-                elif line[i] == "\\":
+                elif line[i] == "\\" and state != NO_ESCAPES.get(language):
                     i += 2
                 elif line.startswith(state, i):
                     code.append(state)

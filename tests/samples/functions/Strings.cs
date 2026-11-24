@@ -34,3 +34,8 @@ public class Action(int id) : IDisposable
 }
 
 public record Point(int X, int Y) { }
+
+public class Paths
+{
+    public string Root() { return """C:\"""; }
+}
