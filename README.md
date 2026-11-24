@@ -36,8 +36,10 @@ fix.
   the repo (kept out of commits by a `.gitignore` inside that folder, so
   your own `.gitignore` is left alone). It holds
   refactors, small fixes, items for later, decisions for you, and what was
-  left alone and why. Your agent works through it one item at a time, when
-  you name an item, and changes no code until you do.
+  left alone and why, and it opens in your browser when the pass is done,
+  if your agent runs on your machine (a refresh shows its later updates).
+  Your agent works through it one item at a time, when you name an item,
+  and changes no code until you do.
 - **Later passes** build on the last checklist and check its predictions
   against what happened: for each finished refactor, what the next change
   of the kind it eased actually touched.
@@ -165,6 +167,11 @@ Ask your agent things like:
 Or call it by name: `/refactor-pass` in Claude Code, Cursor or Copilot CLI,
 `$refactor-pass` in Codex, `@refactor-pass` in opencode.
 
+The checklist opens with the program your system opens HTML files with, or
+with the command `BROWSER` names, if it's set. To choose another, or none,
+set `REFACTOR_PASS_BROWSER` where the agent runs to a command (`%s` in it
+stands for the page) or to `none`; or ask the agent not to open it.
+
 ## The scripts on their own
 
 They're in the skill's `scripts/` folder, need no agent, only Python and
@@ -181,7 +188,8 @@ python3 skills/refactor-pass/scripts/heatmap.py -C ~/code/my-app src tests
   against the codebase itself. It finds functions in Python, JavaScript,
   TypeScript, Vue, Svelte, PHP, Go, Ruby, Java, C#, C, C++, Kotlin, Swift,
   Rust and GDScript; other files get their lines only.
-- `scripts/check_page.py`: checks a checklist page after an edit.
+- `scripts/check_page.py`: checks a checklist page after an edit; with
+  `--open`, opens it in the browser too, if it has no errors.
 
 `scripts/scoping.py` is the module the first two share, for which files
 count and which are tests.
