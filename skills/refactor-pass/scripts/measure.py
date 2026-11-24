@@ -1347,6 +1347,9 @@ RUST_OUTER = re.compile(r"#\s*\[")
 RUST_INNER = re.compile(r"#\s*!\s*\[")
 RUST_CFG = re.compile(r"#\s*!?\s*\[\s*cfg\s*\(")
 ITEM_STOPS = re.compile(r"[(){}\[\];]")
+# What comes before a macro's brackets: an invocation's name and its ! (quote! {...}, vec![...]), or a macro_rules!
+# definition's name.
+RUST_MACRO_BEFORE = re.compile(r"(?:\w!|macro_rules\s*!\s*(?:r#)?\w+)\s*$")
 
 
 def cfg_needs_test(attribute):
@@ -1410,6 +1413,27 @@ def rust_item_end(code, i, j):
     return None
 
 
+def rust_in_macro(code, i, col, memo):
+    """Whether code[i][col] is in a macro's brackets, an invocation's or a macro_rules! definition's, whose text is
+    the macro's, not code of its own. memo keeps the answer per bracket, so however deep a file's brackets nest,
+    each is looked at once."""
+    stack = brackets_of(code)["stacks"][i]
+    for at, c in enumerate(code[i][:col]):
+        if c in OPEN:
+            stack = ((i, at, c), stack)
+        elif c in CLOSE and stack is not None:
+            stack = stack[1]
+    path = []
+    while stack is not None and stack[0][:2] not in memo:
+        path.append(stack[0])
+        stack = stack[1]
+    inside = memo[stack[0][:2]] if stack is not None else False
+    for line, at, _ in reversed(path):
+        inside = inside or bool(RUST_MACRO_BEFORE.search(code[line], 0, at))
+        memo[(line, at)] = inside
+    return inside
+
+
 def rust_test_items(code):
     """Rust's items compiled only for tests, in the skeleton's lines (code), as (first, last) indexes of lines, the
     outermost only: an item, whatever it is (a module, a function, an impl, a struct, a use...), whose cfg needs
@@ -1417,14 +1441,15 @@ def rust_test_items(code):
     ends it, but for a line it shares with other code. The cfg is among the attributes before it, or for a module
     first in its body (#![cfg(test)]). A module declared with mod tests; is a file of its own and sets nothing
     aside here; a cfg on what isn't an item, as a statement in a function's body or a struct's field, is that
-    code's."""
+    code's, and so is one in a macro's text (rust_in_macro)."""
     closes = brackets_of(code)["closes"]
     opening = None  # Where each closing bracket's opening one is, worked out when first needed.
-    found = set()
+    found, macros = set(), {}
     for i, line in enumerate(code):
         for cfg in RUST_CFG.finditer(line) if "cfg" in line else ():
             end = closes.get((i, line.index("[", cfg.start())))
-            if end is None or not cfg_needs_test(joined(code, (i, cfg.start()), (end[0], end[1] - 1))):
+            if end is None or not cfg_needs_test(joined(code, (i, cfg.start()), (end[0], end[1] - 1))) or \
+                    rust_in_macro(code, i, cfg.start(), macros):
                 continue
             if RUST_INNER.match(line, cfg.start()):  # The module's whose body it's first in.
                 opener = js_opener(code, i, cfg.start())
