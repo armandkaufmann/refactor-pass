@@ -300,6 +300,18 @@ class Strings(unittest.TestCase):
                 self.assertEqual([f[:3] for f in found("R.cs", text)], [["A", 2, 4 + n], ["B", 5 + n, 7 + n]])
 
 
+class Comments(unittest.TestCase):
+
+    def test_block_comments_that_nest(self):
+        # Rust's, Swift's and Kotlin's, as C's don't: a brace after the inner one's end is the comment's.
+        for name, text in (("a.rs", "fn a() {\n    /* a /* b */ { */\n}\nfn b() {\n}\n"),
+                           ("a.swift", "func a() {\n    /* a /* b */ { */\n}\nfunc b() {\n}\n"),
+                           ("a.kt", "fun a() {\n    /* a /* b */ { */\n}\nfun b() {\n}\n"),
+                           ("a.c", "int a(void) {\n    /* a /* b */\n}\nint b(void) {\n}\n")):
+            with self.subTest(name=name):
+                self.assertEqual([f[:3] for f in found(name, text)], [["a", 1, 3], ["b", 4, 5]])
+
+
 class CodeLines(unittest.TestCase):
     """What counts as a code line in a file, in each kind of language."""
 
