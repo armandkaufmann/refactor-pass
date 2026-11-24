@@ -847,6 +847,7 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
                     templates.append([0, holes[-1], ")" if holes[-1] == "(" else "}", state, holes])
                     i, state, holes = i + len(holes), None, None
                 elif line[i] == "\\" and state != NO_ESCAPES.get(language):
+                    code.append("s" * len(line[i:i + 2]))  # The string's, as its other characters are.
                     i += 2
                 elif line.startswith(state, i):
                     code.append(state)
