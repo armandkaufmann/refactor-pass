@@ -54,7 +54,8 @@ at any indentation. A name is any the language allows, a word it
 doesn't reserve (delete in Java), and may carry type arguments (C#'s
 Get<T>, C++'s List<T>::Add, named Get and List::Add); a name in
 backquotes is a name in Kotlin and Swift; and a .h or .inl file is C++
-when it holds a class, a namespace or a template. A signature may run over
+when it holds a class, a namespace, a template or a name qualified by
+its class. A signature may run over
 several lines, and a body may sit on its signature's line. Each
 language's strings are read as it writes them (Ruby's regular
 expressions, % literals and heredocs, C#'s @"...", Rust's r#"..."#, C++'s
@@ -242,9 +243,27 @@ CPP_SHAPES = (r"^\s*" + TEMPLATE + MODIFIERS + r"(?:" + TYPE_WORD + r"\s+)*[*&]*
               SIGNATURE_REST + r"|^\s*" + TEMPLATE + not_a_type("C++") + r"((?!\d)\w+" + TYPE_ARGUMENTS +
               r"(?:::~?\w+" + TYPE_ARGUMENTS + r")+)\s*\((?!.*\)\s*,\s*$)[^;{=]*(?:\{.*)?$")
 # A .h file is C's header or C++'s, and an .inl file C's or C++'s inline definitions: C++'s when its code holds
-# what C has none of, as a class, a namespace, a template, an access label or std::.
+# what C has none of, as a class, a namespace, a template, an access label or std::; or, in code outside the
+# preprocessor's lines and C23's attributes ([[gnu::...]]), a name qualified by its class, an operator's
+# definition or noexcept, as definitions written out of their class are, in a namespace that the header including
+# them opens (cpp_header).
 CPP_IN_HEADER = re.compile(r"^\s*(?:template\s*<|namespace(?:\s+[\w:]+)?\s*\{|(?:public|private|protected)\s*:|"
                            r"class\s+\w)|\bstd::", re.M)
+CPP_IN_CODE = re.compile(r"\w\s*::\s*~?\w|\bnoexcept\b|\boperator\s*(?:\(\)|[^\w\s(]+|\w+)\s*\(")
+C23_ATTRIBUTE = re.compile(r"\[\[.*?\]\]")
+
+
+def cpp_header(code):
+    """Whether a .h or an .inl file, as C's skeleton has its lines (code), is C++'s: by CPP_IN_HEADER, or by
+    CPP_IN_CODE in its code, not in a macro, which a C header can define for C++, nor in a C23 attribute."""
+    if CPP_IN_HEADER.search("\n".join(code)):
+        return True
+    kept, going_on = [], False
+    for line in code:
+        directive = going_on or line.lstrip().startswith("#")
+        going_on = directive and line.rstrip().endswith("\\")
+        kept.append("" if directive else C23_ATTRIBUTE.sub("", line))
+    return bool(CPP_IN_CODE.search("\n".join(kept)))
 
 # JavaScript and TypeScript: how a definition's line starts, up to the bracket that opens its parameters
 # (or its type parameters). What follows the parameters then says whether it's a function (js_function).
@@ -1561,7 +1580,7 @@ def functions(path, text, set_aside=None):
         code, inside = skeleton(lines, comments, language[5] if language else "", language and language[0] == "PHP",
                                 language and language[0])
         if language and language[0] == "C" and path.lower().endswith((".h", ".inl")) and \
-                CPP_IN_HEADER.search("\n".join(code)):
+                cpp_header(code):
             language = BY_EXTENSION[".hpp"]
             code, inside = skeleton(lines, comments, language[5], False, language[0])
     counted = [bool(c.strip()) for c in code]
