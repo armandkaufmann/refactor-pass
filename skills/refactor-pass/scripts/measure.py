@@ -1615,9 +1615,16 @@ def functions(path, text, set_aside=None):
         deepest = deepest_in(start + 1, last + 1)
         found.append((defined[0], start + 1, last + 1, before[last + 1] - before[start],
                       max(0, (deepest - widths[start]) // unit - 1) if deepest >= 0 else 0))
-    for first, last, lines in parts:
-        set_aside.append((first + 1, last + 1, lines, sum(1 for f in found if first < f[1] <= last + 1)))
-        found = [f for f in found if not first < f[1] <= last + 1]
+    if parts:  # Each function that starts in a part is that part's, found in one pass however many parts there are.
+        part_of = [None] * len(code)
+        for n, (first, last, _) in enumerate(parts):
+            part_of[first:last + 1] = [n] * (last + 1 - first)
+        counts = [0] * len(parts)
+        for f in found:
+            if part_of[f[1] - 1] is not None:
+                counts[part_of[f[1] - 1]] += 1
+        found = [f for f in found if part_of[f[1] - 1] is None]
+        set_aside.extend((first + 1, last + 1, lines, count) for (first, last, lines), count in zip(parts, counts))
     return sum(counted), found, name
 
 
