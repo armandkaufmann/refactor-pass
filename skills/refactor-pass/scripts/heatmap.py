@@ -676,9 +676,10 @@ DOC_FILES = re.compile(r".*\.(?:md|markdown|rst|adoc|asciidoc|rdoc)$", re.I)
 
 # CI, build and dependency files: what a project runs its checks with, builds and packages itself with, and
 # names its dependencies in. A fix in them isn't a fix of the project's code.
-CI_FOLDERS = {".github", ".circleci", ".buildkite", ".gitlab", ".azure-pipelines"}
+CI_FOLDERS = {".github", ".circleci", ".buildkite", ".gitlab", ".azure-pipelines", ".forgejo", ".gitea", ".woodpecker"}
 CHORE_FILES = re.compile(
     r"(?:\.gitlab-ci\.yml|\.travis\.yml|appveyor\.yml|\.appveyor\.yml|azure-pipelines\.yml|Jenkinsfile|\.cirrus\.yml|"
+    r"\.woodpecker\.ya?ml|"
     r"\.pre-commit-config\.yaml|\.?codecov\.ya?ml|renovate\.json5?|\.readthedocs\.ya?ml|"
     r"Makefile|makefile|GNUmakefile|[\w.-]+\.mk|CMakeLists\.txt|[\w.-]+\.cmake|meson\.build|BUILD(?:\.bazel)?|"
     r"WORKSPACE|"
