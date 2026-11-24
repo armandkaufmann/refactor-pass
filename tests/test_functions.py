@@ -306,6 +306,17 @@ class TestsInsideFiles(unittest.TestCase):
                 self.assertEqual(set_aside(text), want)
 
 
+    def test_not_in_a_macros_text(self):
+        # Code that a macro writes, as quote! {...} and macro_rules! hold it, is the text of the code around it.
+        for text, want in (("fn quoting() -> Tokens {\n    quote! {\n        #[cfg(test)]\n        mod tests {\n"
+                             "            fn t() {}\n        }\n    }\n}\n",
+                            (8, [["quoting", 1, 8, 8], ["t", 5, 5, 1]], [])),
+                           ("macro_rules! tests {\n    () => {\n        #[cfg(test)]\n        mod t {}\n    };\n}\n",
+                            (6, [], []))):
+            with self.subTest(text=text):
+                self.assertEqual(set_aside(text), want)
+
+
 class Strings(unittest.TestCase):
     """Strings, which can hold brackets and quotes, read as each language writes them."""
 
