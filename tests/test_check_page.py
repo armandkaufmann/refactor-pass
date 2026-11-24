@@ -8,6 +8,7 @@ are worked out without running them, and the runs name a stub, or none, as suppo
 
 import json
 import os
+import subprocess
 import sys
 import time
 import unittest
@@ -632,6 +633,21 @@ class Open(unittest.TestCase):
     def setUp(self):
         self.folder = support.new_folder("open café")
         self.page = support.write_text(os.path.join(self.folder, "checklists", "2026-11-23.html"), page())
+
+    def tearDown(self):
+        self.assertEqual(support.net_record(), [])
+
+    def test_the_net_holds_where_the_variable_is_ignored(self):
+        # A copy of the script that reads another name goes to the system's own opener: the net stops it.
+        scripts = support.new_folder("ignoring")
+        for name in ("check_page.py", "scoping.py"):
+            with open(os.path.join(support.SCRIPTS, name), encoding="utf-8") as f:
+                support.write_text(os.path.join(scripts, name), f.read().replace("REFACTOR_PASS_BROWSER", "IGNORED"))
+        unset = dict((v, "") for v in ("SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY", "WSL_DISTRO_NAME", "WSL_INTEROP"))
+        result = subprocess.run([sys.executable, os.path.join(scripts, "check_page.py"), "--open", self.page],
+                                capture_output=True, env=support.environment(DISPLAY=":0", **unset))
+        self.assertNotIn(b"Opened", result.stdout)
+        self.assertEqual(len(support.net_record()), 1, result)
 
     def run_open(self, browser, page=None, **options):
         return support.run("check_page.py", "--open", page or self.page, env={"REFACTOR_PASS_BROWSER": browser},
