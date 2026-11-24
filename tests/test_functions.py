@@ -274,6 +274,22 @@ class TestsInsideFiles(unittest.TestCase):
                 self.assertEqual(set_aside(text), want)
 
 
+class Strings(unittest.TestCase):
+    """Strings, which can hold brackets and quotes, read as each language writes them."""
+
+    def test_cs(self):
+        # Each in A's body, before B: A ends at its own brace. Raw strings that open with four quotes or more,
+        # holes of two braces, quotes in a verbatim string's holes.
+        for string in ('""""\n        has """ in it {\n        """"', '$$"""\n        {"a": {{x}}\n        """',
+                       '$"""\n        a {F("}")} b\n        """', '$@"a {d["}"]} b"', '@$"a {d["}"]} b"',
+                       '$@"a\n{d["}"]} "" }} b"', '$@"x {d["k"]} {{ y"', '$"a {d["}"]} b"', '$@"{F(@"}""")}"'):
+            with self.subTest(string=string):
+                n = string.count("\n")
+                text = "class R {\n    string A() {\n        return %s;\n    }\n    int B() {\n        return 1;\n" \
+                       "    }\n}\n" % string
+                self.assertEqual([f[:3] for f in found("R.cs", text)], [["A", 2, 4 + n], ["B", 5 + n, 7 + n]])
+
+
 class CodeLines(unittest.TestCase):
     """What counts as a code line in a file, in each kind of language."""
 
