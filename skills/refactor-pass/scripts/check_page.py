@@ -36,8 +36,10 @@ for HTML files: open on macOS, Windows' own on Windows, wslview or else
 explorer.exe on WSL, and xdg-open elsewhere. REFACTOR_PASS_BROWSER, where
 it's set, names one command to run instead, even over SSH or with no
 display: %s in it stands for the page, which otherwise goes at its end,
-and its words are split as Windows or a POSIX shell splits them. none
-opens nothing. A program is found on PATH, never in the current folder,
+and its words are split as Windows or a POSIX shell splits them. The
+first is the program, unless the whole value is a whole path to one,
+spaces and all, and a ~ before a path is the home folder. none opens
+nothing. A program is found on PATH, never in the current folder,
 or by the path written; on Windows, where browsers aren't on PATH, give a
 browser's whole path. A browser that runs in a terminal, as lynx does, is
 never run: what --open starts has no terminal, so it would show nothing.
@@ -373,7 +375,7 @@ def opener(page, environ, system, release, which, windows_path):
                                            any(environ.get(v) for v in ("WSL_DISTRO_NAME", "WSL_INTEROP")))
     named = environ.get("REFACTOR_PASS_BROWSER", "").strip()
     if named:
-        return named_browser(named, page, system, wsl, which, windows_path)
+        return named_browser(named, page, system, environ, wsl, which, windows_path)
     if any(environ.get(v) for v in ("SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY")):
         return None, "this is a session over SSH, so a browser here isn't in front of the user"
     if system == "darwin":
@@ -401,32 +403,46 @@ def on_path(name, which, *args):
     return ((name, [program] + list(args)), None) if program else (None, "there's no %s on PATH to hand it to" % name)
 
 
-def named_browser(value, page, system, wsl, which, windows_path):
+def named_browser(value, page, system, environ, wsl, which, windows_path):
     """The command REFACTOR_PASS_BROWSER names, as opener gives it: %s in it stands for the page, which otherwise
-    goes at its end; none names none."""
+    goes at its end; none names none. Its first word is the program, unless the whole value is a whole path to
+    one, spaces and all: a / in an argument doesn't make a path from the current folder of the rest."""
     if value.lower() == "none":
         return None, "REFACTOR_PASS_BROWSER is none"
-    whole = which(value)  # A program's path with spaces, unquoted, is one word.
+    windows = system.startswith("win")
+    path = home(value, environ, windows)
+    whole = which(path) if re.match(r"[A-Za-z]:[\\/]|[\\/]" if windows else "/", path) else None
     try:
-        words = [value] if whole else command_words(value, system.startswith("win"))
+        words = [path] if whole else command_words(value, windows)
     except ValueError as e:
         return None, "REFACTOR_PASS_BROWSER's %r can't be read: %s" % (value, e)
     if not words or not words[0] or "%s" in words[0]:
         return None, "REFACTOR_PASS_BROWSER's %r names no browser" % value
-    name = re.split(r"[\\/]", words[0])[-1]
+    first = home(words[0], environ, windows)
+    if first.startswith("~"):
+        return None, "REFACTOR_PASS_BROWSER's %s starts with a ~ that names no home folder here: give its whole path" \
+            % first
+    name = re.split(r"[\\/]", first)[-1]
     if re.sub(r"(?i)\.exe$", "", name).lower() in TERMINAL_BROWSERS:
         return None, ("REFACTOR_PASS_BROWSER's %s runs in a terminal, and what --open starts has none, so it'd show "
                       "nothing" % name)
-    program = whole or which(words[0])
+    program = whole or which(first)
     if not program:
-        return None, ("there's no program at %s" % words[0] if re.search(r"[\\/]", words[0]) else
-                      "there's no %s on PATH: give REFACTOR_PASS_BROWSER the browser's whole path" % words[0])
+        return None, ("there's no program at %s" % first if re.search(r"[\\/]", first) else
+                      "there's no %s on PATH: give REFACTOR_PASS_BROWSER the browser's whole path" % first)
     target = windows_path(page) if wsl and name.lower().endswith(".exe") else page  # A Windows program, on WSL.
     if not target:
         return None, "wslpath couldn't give its path as Windows knows it, for %s" % name
     args = words[1:]
     args = [a.replace("%s", target) for a in args] if any("%s" in a for a in args) else args + [target]
     return (name, [program] + args), None
+
+
+def home(word, environ, windows):
+    """word with a ~ alone or before its first separator as the home folder (HOME, or USERPROFILE on Windows), as
+    a shell gives it; else word as it is."""
+    folder = environ.get("USERPROFILE" if windows else "HOME")
+    return folder + word[1:] if folder and re.match(r"~(?:$|[\\/])" if windows else r"~(?:$|/)", word) else word
 
 
 def command_words(command, windows):
