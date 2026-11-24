@@ -294,6 +294,18 @@ class TestsInsideFiles(unittest.TestCase):
                                                                     [16, 17, 2, 0], [18, 21, 4, 0]]))
 
 
+    def test_a_line_it_shares_with_other_code(self):
+        # Stays counted, with its functions, whether that code comes before the item's attribute or after its end.
+        for text, want in (("fn b() {} #[cfg(test)]\nmod t {\n    fn c() {}\n}\nfn d() {}\n",
+                            (2, [["b", 1, 1, 1], ["d", 5, 5, 1]], [[2, 4, 3, 1]])),
+                           ("mod a {\n} #[cfg(test)] mod u {\n    fn x() {}\n}\nfn d() {}\n",
+                            (3, [["d", 5, 5, 1]], [[3, 4, 2, 1]])),
+                           ("#[cfg(test)]\nmod t {\n    fn c() {}\n} fn d() {}\n",
+                            (1, [], [[1, 3, 3, 1]]))):
+            with self.subTest(text=text):
+                self.assertEqual(set_aside(text), want)
+
+
 class Strings(unittest.TestCase):
     """Strings, which can hold brackets and quotes, read as each language writes them."""
 
