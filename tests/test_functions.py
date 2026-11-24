@@ -312,6 +312,9 @@ class TestsInsideFiles(unittest.TestCase):
                 "#[cfg(test)]\nconst SIZES: [u8; 3] = [1, 2, 3];\n#[cfg(test)]\nstruct Fake {\n    x: u8,\n}\n")
         self.assertEqual(set_aside(text), (4, [["keep", 1, 4, 4]], [[5, 8, 4, 1], [9, 13, 5, 2], [14, 15, 2, 0],
                                                                     [16, 17, 2, 0], [18, 21, 4, 0]]))
+        # A use's group and a constant's struct, whose } the item's ; follows on its line.
+        text = "#[cfg(test)]\nuse a::{b, c};\n#[cfg(test)]\nconst S: Size = Size {\n    w: 1,\n};\n"
+        self.assertEqual(set_aside(text)[2], [[1, 2, 2, 0], [3, 6, 4, 0]])
 
 
     def test_a_line_it_shares_with_other_code(self):
