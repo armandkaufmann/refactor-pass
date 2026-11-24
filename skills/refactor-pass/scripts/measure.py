@@ -913,7 +913,9 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
         if state in ('"', "'") and quotes != "spans" and not line.rstrip().endswith("\\") and not (
                 language == "Rust" and state == '"'):
             state = holes = None  # Most languages end a one-quote string at the line's end; Rust's go on.
-        out.append("".join(code))
+        # A line blank in the file is blank, in a string too, where its spaces, and the \r of a line a Windows
+        # checkout ends with \r\n, would be s.
+        out.append("".join(code) if line.strip() else "")
     if language in PREPROCESSED:
         out = preprocessed(lines, out, began_inside, *PREPROCESSED[language])
     return out, began_inside
@@ -1096,7 +1098,7 @@ def ruby_skeleton(lines):
             began_inside[-1] = True  # A heredoc's opening that starts its line, at any indentation, goes on.
         heredocs.extend(waiting)
         waiting = []
-        out.append("".join(code))
+        out.append("".join(code) if line.strip() else "")  # Blank, in a string too, as skeleton's are.
     return out, began_inside
 
 
