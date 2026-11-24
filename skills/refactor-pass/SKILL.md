@@ -368,8 +368,11 @@ nothing else, and says so. You write the `pass` block below it, whose
 After each edit, run `python3 <this skill's directory>/scripts/check_page.py
 <page>`, which catches a broken bracket, a misspelt field, a duplicate ID or
 an item whose first line isn't its ID and status, and warns of a field left
-empty. If your environment can publish or preview HTML pages, publish the
-same file and give the link; otherwise give the path to open in a browser.
+empty. When the pass block is written and the check passes, run the check
+once more with `--open`, unless you run in a cloud sandbox or CI: it tries
+to open the page in the user's browser, or says why it can't. If it didn't,
+and your environment can publish or preview HTML pages, publish the file and
+give the link.
 
 **Where it lives.** `.refactor-pass/` is at the repo's top, with a
 `.gitignore` the heatmap writes, so the folder is never committed and the
@@ -388,7 +391,8 @@ Then reply with:
   4's sentence), size, risk, and the next change's cost today and after;
 - the F and D items in brief;
 - what you left alone and why, in a line or two;
-- the suggested order, and where the checklist is;
+- the suggested order, and the checklist's path, with its link if you
+  published it;
 - a question: which item should you start with?
 
 Don't change any code until the user picks.
@@ -434,8 +438,8 @@ Don't change any code until the user picks.
   keeps (after a squash merge or a rebase, the new hashes), so a later pass
   can leave them out; its outcome, with the checks' numbers and the next
   change's cost now; a dated log entry; `updated`; and any `file:line` in
-  other items that the step moved. Then run `check_page.py`, and republish
-  the page if it was published.
+  other items that the step moved. Then run `check_page.py` (not `--open`:
+  a refresh shows the edit), and republish the page if it was published.
 - **Asked "what's next?"**, answer from the checklist. Don't start the work.
 
 ## After an earlier pass

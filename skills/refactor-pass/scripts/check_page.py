@@ -25,16 +25,41 @@ missing or left empty, such as a refactor's plan, an item's note or the
 whole pass block, or more than one item in progress). It exits 1 on an
 error, and
 says so plainly for a page that doesn't exist or is still the blank
-template, which heatmap.py --page fills in. Reads the page only.
+template, which heatmap.py --page fills in. Without --open, it reads the
+page only.
+
+With --open, a page named .html or .htm, with no errors and its pass
+block written, is then opened in the browser, and a last line says so, or
+why it wasn't: over SSH, with no display, or with nothing here to open it
+with. That never fails the check. The page goes to the system's program
+for HTML files: open on macOS, Windows' own on Windows, wslview or else
+explorer.exe on WSL, and xdg-open elsewhere. REFACTOR_PASS_BROWSER, where
+it's set, names one command to run instead, even over SSH or with no
+display: %s in it stands for the page, which otherwise goes at its end,
+and its words are split as Windows or a POSIX shell splits them. The
+first is the program, unless the whole value is a whole path to one,
+spaces and all, and a ~ before a path is the home folder. none opens
+nothing. A program is found on PATH, never in the current folder,
+or by the path written; on Windows, where browsers aren't on PATH, give a
+browser's whole path. A browser that runs in a terminal, as lynx does, is
+never run: what --open starts has no terminal, so it would show nothing.
+BROWSER isn't read, nor passed on: tools set it to hand links on to
+another machine, as VS Code does in a dev container or a Codespace, where
+this page's path means nothing. It waits up to 5 seconds for the command
+to finish. One still running then, as xdg-open or a browser can be, is
+left to run, and taken to have opened the page.
 
 Usage:
   check_page.py PAGE
+  check_page.py --open PAGE
 """
 
 import argparse
 import json
 import os
 import re
+import shlex
+import subprocess
 import sys
 from datetime import datetime
 
@@ -69,6 +94,12 @@ FIX_FACTS = {"fixes": int, "revert": int, "type": int, "words": int, "typed": (i
 KIND_NAMES = {"R": "refactors", "F": "small fixes", "L": "later", "D": "your call"}
 WORDS = {str: "text", list: "a list", dict: "an object", int: "a whole number", bool: "true or false",
          (int, float): "a number", (int, type(None)): "a whole number or null"}
+# The warning for a page whose pass block isn't written yet, which --open doesn't open.
+UNWRITTEN = "The pass block isn't written yet: it has no summary and no items. SKILL.md step 6 says what goes in it."
+# --open: the browsers that run in a terminal, never run, as what --open starts has none to show them in; and how
+# long to wait for the command that opens the page before leaving it to run.
+TERMINAL_BROWSERS = ("lynx", "w3m", "links", "links2", "elinks", "www-browser", "browsh", "carbonyl")
+WAIT = 5
 
 
 def parse(text, name, errors):
@@ -293,8 +324,7 @@ def check(text):
     if not fields("The pass block", data, PASS, errors):
         return errors, warnings, []
     if not filled(data.get("summary")) and not data.get("items"):
-        warnings.append("The pass block isn't written yet: it has no summary and no items. SKILL.md step 6 says "
-                        "what goes in it.")
+        warnings.append(UNWRITTEN)
     elif not filled(data.get("summary")):
         warnings.append("The pass block has no summary: say the overall state in two or three sentences.")
     texts("The checks", data.get("checks"), errors)
@@ -334,12 +364,173 @@ def check(text):
     return errors, warnings, [i for i in items if isinstance(i, dict)]
 
 
+def opener(page, environ, system, release, which, windows_path):
+    """What --open runs to open page, a whole path, in a browser: a name and a command whose program is a whole
+    path, and None; or None and why not. The command REFACTOR_PASS_BROWSER names, where it's set; else, where a
+    browser here would be in front of the user, the system's own way to open an HTML file. system is as
+    sys.platform gives it, release the kernel's, which finds a program as find_program does, and windows_path
+    gives a path as Windows knows it, on WSL. BROWSER isn't read: tools set it to hand links on to the machine in
+    front of the user, where this page's path means nothing."""
+    wsl = system.startswith("linux") and ("microsoft" in release.lower() or
+                                           any(environ.get(v) for v in ("WSL_DISTRO_NAME", "WSL_INTEROP")))
+    named = environ.get("REFACTOR_PASS_BROWSER", "").strip()
+    if named:
+        return named_browser(named, page, system, environ, wsl, which, windows_path)
+    if any(environ.get(v) for v in ("SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY")):
+        return None, "this is a session over SSH, so a browser here isn't in front of the user"
+    if system == "darwin":
+        return on_path("open", which, page)
+    if system.startswith("win"):  # -I: that Python imports nothing from the folder it starts in.
+        return ("os.startfile", [sys.executable or "python", "-I", "-c", "import os, sys; os.startfile(sys.argv[1])",
+                                 page]), None
+    if wsl:  # Windows' browser, not a Linux one WSLg's display would show.
+        if which("wslview"):
+            return on_path("wslview", which, page)
+        if not which("explorer.exe"):
+            return None, "this looks like WSL, but there's no wslview or explorer.exe on PATH to hand it to Windows"
+        windows = windows_path(page)
+        if not windows:
+            return None, "wslpath couldn't give its path as Windows knows it"
+        return on_path("explorer.exe", which, windows)
+    if not (environ.get("DISPLAY") or environ.get("WAYLAND_DISPLAY")):
+        return None, "there's no display here (DISPLAY and WAYLAND_DISPLAY aren't set), so no browser to show it"
+    return on_path("xdg-open", which, page)
+
+
+def on_path(name, which, *args):
+    """The system's own command, name and args, as opener gives it."""
+    program = which(name)
+    return ((name, [program] + list(args)), None) if program else (None, "there's no %s on PATH to hand it to" % name)
+
+
+def named_browser(value, page, system, environ, wsl, which, windows_path):
+    """The command REFACTOR_PASS_BROWSER names, as opener gives it: %s in it stands for the page, which otherwise
+    goes at its end; none names none. Its first word is the program, unless the whole value is a whole path to
+    one, spaces and all: a / in an argument doesn't make a path from the current folder of the rest."""
+    if value.lower() == "none":
+        return None, "REFACTOR_PASS_BROWSER is none"
+    windows = system.startswith("win")
+    path = home(value, environ, windows)
+    whole = which(path) if re.match(r"[A-Za-z]:[\\/]|[\\/]" if windows else "/", path) else None
+    try:
+        words = [path] if whole else command_words(value, windows)
+    except ValueError as e:
+        return None, "REFACTOR_PASS_BROWSER's %r can't be read: %s" % (value, e)
+    if not words or not words[0] or "%s" in words[0]:
+        return None, "REFACTOR_PASS_BROWSER's %r names no browser" % value
+    first = home(words[0], environ, windows)
+    if first.startswith("~"):
+        return None, "REFACTOR_PASS_BROWSER's %s starts with a ~ that names no home folder here: give its whole path" \
+            % first
+    name = re.split(r"[\\/]", first)[-1]
+    if re.sub(r"(?i)\.exe$", "", name).lower() in TERMINAL_BROWSERS:
+        return None, ("REFACTOR_PASS_BROWSER's %s runs in a terminal, and what --open starts has none, so it'd show "
+                      "nothing" % name)
+    program = whole or which(first)
+    if not program:
+        return None, ("there's no program at %s" % first if re.search(r"[\\/]", first) else
+                      "there's no %s on PATH: give REFACTOR_PASS_BROWSER the browser's whole path" % first)
+    target = windows_path(page) if wsl and name.lower().endswith(".exe") else page  # A Windows program, on WSL.
+    if not target:
+        return None, "wslpath couldn't give its path as Windows knows it, for %s" % name
+    args = words[1:]
+    args = [a.replace("%s", target) for a in args] if any("%s" in a for a in args) else args + [target]
+    return (name, [program] + args), None
+
+
+def home(word, environ, windows):
+    """word with a ~ alone or before its first separator as the home folder (HOME, or USERPROFILE on Windows), as
+    a shell gives it; else word as it is."""
+    folder = environ.get("USERPROFILE" if windows else "HOME")
+    return folder + word[1:] if folder and re.match(r"~(?:$|[\\/])" if windows else r"~(?:$|/)", word) else word
+
+
+def command_words(command, windows):
+    """A command's words: as Windows splits a command line, where " groups them and \\ is a character, or else as
+    a POSIX shell does."""
+    if windows:
+        return [w.replace('"', "") for w in re.findall(r'(?:[^\s"]|"[^"]*(?:"|$))+', command)]
+    return shlex.split(command)
+
+
+def find_program(name, environ=None, windows=os.name == "nt"):
+    """name's program as a whole path, or None. A name with a folder in it is a path as written, from the current
+    folder; any other is looked for in the folders PATH names by their whole paths, and nowhere else: not in the
+    current folder, where Windows looks first, nor a folder named from it, so nothing in the repo the agent is in
+    runs unless its path is written. On Windows a name without one of PATHEXT's extensions takes each in turn."""
+    environ = os.environ if environ is None else environ
+    if re.search(r"[\\/]" if windows else "/", name):
+        candidates = [os.path.abspath(name)]
+    else:
+        extensions = [""]
+        if windows:
+            extensions = [e.lower() for e in environ.get("PATHEXT", ".COM;.EXE;.BAT;.CMD").split(";") if e]
+            extensions = [""] if os.path.splitext(name)[1].lower() in extensions else extensions
+        candidates = [os.path.join(folder, name + e) for folder in environ.get("PATH", os.defpath).split(os.pathsep)
+                      if os.path.isabs(folder) for e in extensions]
+    return next((c for c in candidates if os.path.isfile(c) and (windows or os.access(c, os.X_OK))), None)
+
+
+def launch(name, command, environ):
+    """Start command, its program a whole path, on its own, and None where it finished well, or still runs after
+    WAIT seconds, as xdg-open or a browser can; else why not. It reads and writes nothing, so nothing it starts can
+    take the terminal or keep the output open; it runs without BROWSER, which xdg-open would follow; in the file
+    system's top folder, so a browser it starts holds no folder of the user's (which Windows won't remove while
+    it's in use); and the shell's end doesn't end it."""
+    own = {"creationflags": subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt" \
+        else {"start_new_session": True}
+    try:
+        started = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                   stderr=subprocess.DEVNULL, cwd=os.path.abspath(os.sep),
+                                   env=dict((k, v) for k, v in environ.items() if k.upper() != "BROWSER"), **own)
+    except (OSError, ValueError) as e:
+        return "couldn't run %s: %s" % (name, getattr(e, "strerror", None) or e)
+    try:
+        code = started.wait(WAIT)
+    except subprocess.TimeoutExpired:
+        return None
+    # explorer.exe exits with 1 whether it opened the file or not.
+    if code == 0 or code == 1 and re.sub(r"(?i)\.exe$", "", name).lower() == "explorer":
+        return None
+    return "%s stopped with exit code %d" % (name, code)
+
+
+def wsl_path(page):
+    """page's path as Windows knows it, from WSL's wslpath, or None."""
+    program = find_program("wslpath")
+    if not program:
+        return None
+    try:
+        found = subprocess.run([program, "-w", page], stdin=subprocess.DEVNULL, capture_output=True, timeout=WAIT)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    path = found.stdout.decode("utf-8", "replace").strip()
+    return path if found.returncode == 0 and path else None
+
+
+def open_page(page, errors, warnings):
+    """--open's last line: page opened in the browser, or why not."""
+    if errors:
+        return "Not opened: it has errors. Fix them, then run this again with --open."
+    if not re.search(r"(?i)\.html?$", page):
+        return "Not opened: its name doesn't end in .html or .htm, so the system might run it rather than show it."
+    if UNWRITTEN in warnings:
+        return "Not opened: its pass block isn't written yet."
+    page = os.path.abspath(page)
+    release = os.uname().release if hasattr(os, "uname") else ""
+    command, why = opener(page, os.environ, sys.platform, release, find_program, wsl_path)
+    why = launch(command[0], command[1], os.environ) if command else why
+    return "Not opened: %s." % why if why else "Opened %s in the browser (REFACTOR_PASS_BROWSER=none turns this off)." \
+        % page
+
+
 def main():
     scoping.safe_output()
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0],
                                      formatter_class=argparse.RawDescriptionHelpFormatter,
                                      epilog=__doc__.split("\n\n", 1)[1])
     parser.add_argument("page", help="the checklist page")
+    parser.add_argument("--open", action="store_true", help="then open it in the browser, if it has no errors")
     args = parser.parse_args()
     try:
         text = open(args.page, encoding="utf-8").read()
@@ -362,6 +553,8 @@ def main():
         print("warning: " + message)
     if not errors:
         print("OK")
+    if args.open:
+        print(open_page(args.page, errors, warnings))
     sys.exit(1 if errors else 0)
 
 

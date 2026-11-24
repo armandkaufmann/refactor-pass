@@ -16,6 +16,7 @@ import importlib
 import json
 import os
 import re
+import shlex
 import shutil
 import stat
 import subprocess
@@ -97,10 +98,62 @@ def git_folder():
     return _temp["git_folder"]
 
 
+# The net: the programs that open a page in a real browser, and a stand-in for each that writes down what it was
+# asked and fails; and an audit hook that does the same for a Python starting one, or os.startfile, Windows' way.
+OPENERS = ("open", "xdg-open", "wslview", "explorer.exe")
+FAKE = "#!/bin/sh\necho \"$0 $*\" >> %s\necho \"the suite's net stopped $0: no test opens a browser\" >&2\nexit 97\n"
+HOOK = r'''
+import os, sys
+
+def stop(event, args):
+    if event == "subprocess.Popen":
+        words = [str(w) for w in (args[1] if isinstance(args[1], (list, tuple)) else [args[1]])]
+        if not words or os.path.basename(words[0]).lower() not in OPENERS and not any("startfile" in w for w in words):
+            return
+    elif event != "os.startfile":
+        return
+    with open(RECORD, "a", encoding="utf-8") as f:
+        f.write("%s %r\n" % (event, args))
+    raise OSError("the suite's net stopped %s: no test opens a browser" % event)
+
+if hasattr(sys, "addaudithook"):
+    sys.addaudithook(stop)
+'''
+
+
+def net():
+    """The run's net, a folder put first on the PATH and PYTHONPATH environment() gives: a stand-in there for
+    each of OPENERS (on Windows, which runs none of them, none), and a sitecustomize that every Python started
+    with that environment imports, holding the audit hook. Each writes to the record net_record() reads. So no
+    test opens a browser, whatever check_page.py does with REFACTOR_PASS_BROWSER."""
+    if "net" not in _temp:
+        folder = os.path.join(temp_root(), "net")
+        os.makedirs(folder)
+        record = os.path.join(temp_root(), "net.txt")
+        for name in OPENERS if not WINDOWS else ():
+            write_text(os.path.join(folder, name), FAKE % shlex.quote(record))
+            os.chmod(os.path.join(folder, name), 0o755)
+        write_text(os.path.join(folder, "sitecustomize.py"), "RECORD = %r\nOPENERS = %r\n" % (record, OPENERS) + HOOK)
+        _temp["net"] = folder
+    return _temp["net"]
+
+
+def net_record():
+    """What the net has stopped since it was last asked, a line each."""
+    path = os.path.join(temp_root(), "net.txt")
+    if not os.path.exists(path):
+        return []
+    with open(path, encoding="utf-8") as f:
+        lines = f.read().splitlines()
+    os.remove(path)
+    return lines
+
+
 def environment(**extra):
     """The environment the scripts and git run in: UTF-8 output, no bytecode written, no git configuration
     but the run's own empty one, no repo found above the temporary folder, git itself first on the PATH
-    (git_folder), and now, for the heatmap, 2026-11-13 at noon UTC (NOW), so no test reads the clock."""
+    (git_folder), now, for the heatmap, 2026-11-13 at noon UTC (NOW), so no test reads the clock, and no
+    browser for check_page.py --open, so none opens unless a test names its own; and the net before all."""
     env = dict(os.environ)
     for key in list(env):
         if key.startswith("GIT_") or key in ("REFACTOR_PASS_SCRIPTS",):
@@ -108,9 +161,11 @@ def environment(**extra):
     root = temp_root()
     env.update(PYTHONIOENCODING="utf-8", PYTHONDONTWRITEBYTECODE="1", GIT_CONFIG_NOSYSTEM="1",
                GIT_CONFIG_GLOBAL=os.path.join(root, "gitconfig"), GIT_CEILING_DIRECTORIES=os.path.dirname(root),
-               GIT_TERMINAL_PROMPT="0", REFACTOR_PASS_NOW=str(NOW))
+               GIT_TERMINAL_PROMPT="0", REFACTOR_PASS_NOW=str(NOW), REFACTOR_PASS_BROWSER="none")
     if git_folder():
         env["PATH"] = git_folder() + os.pathsep + env.get("PATH", "")
+    env["PATH"] = net() + os.pathsep + env.get("PATH", "")
+    env["PYTHONPATH"] = net() + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
     env.update(extra)
     return env
 
@@ -131,20 +186,21 @@ def _text(data):
 
 def run(script, *args, **options):
     """Run one of the scripts (heatmap.py, measure.py, check_page.py) with this Python. Options: cwd, env
-    (added to the environment above), timeout (seconds, default 60)."""
+    (added to the environment above), timeout (seconds, default 60), input (bytes to read, through a pipe)."""
     command = [sys.executable, os.path.join(SCRIPTS, script)] + [str(a) for a in args]
     result = subprocess.run(command, cwd=options.get("cwd") or temp_root(), capture_output=True,
-                            env=environment(**options.get("env", {})), timeout=options.get("timeout", 60))
+                            env=environment(**options.get("env", {})), timeout=options.get("timeout", 60),
+                            input=options.get("input"))
     return Result(result.returncode, _text(result.stdout), _text(result.stderr))
 
 
 def run_python(code, *args, **options):
     """Run Python code in a new process, with the scripts' folder first on its path: for a test that
-    changes one of the scripts' functions before running its main."""
+    changes one of the scripts' functions before running its main. Options as run's."""
     command = [sys.executable, "-c", code] + [str(a) for a in args]
     result = subprocess.run(command, cwd=options.get("cwd") or temp_root(), capture_output=True,
                             env=environment(REFACTOR_PASS_SCRIPTS=SCRIPTS, **options.get("env", {})),
-                            timeout=options.get("timeout", 60))
+                            timeout=options.get("timeout", 60), input=options.get("input"))
     return Result(result.returncode, _text(result.stdout), _text(result.stderr))
 
 
