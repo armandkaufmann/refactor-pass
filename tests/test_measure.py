@@ -230,8 +230,8 @@ class Sizes(unittest.TestCase):
         code = ("import os, sys\nsys.dont_write_bytecode = True\n"
                 "sys.path.insert(0, os.environ['REFACTOR_PASS_SCRIPTS'])\n"
                 "import measure\nreal = measure.functions\n"
-                "def broken(path, text):\n    if path == 'src/b.py':\n        raise IndexError('planted')\n"
-                "    return real(path, text)\n"
+                "def broken(path, text, *rest):\n    if path == 'src/b.py':\n        raise IndexError('planted')\n"
+                "    return real(path, text, *rest)\n"
                 "measure.functions = broken\nsys.argv = ['measure.py'] + sys.argv[1:]\nmeasure.main()\n")
         result = support.run_python(code, "-C", self.repo)
         self.assertEqual(result.code, 0, result)

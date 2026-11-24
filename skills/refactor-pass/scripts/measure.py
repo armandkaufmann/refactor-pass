@@ -101,9 +101,12 @@ app/sub/deep.py; and **/ matches any number of folders, none included, so
 'app/**/*.py' takes app/main.py too. Use the same scope as the heatmap.
 Test files are set aside as the heatmap sets them aside, by name or folder,
 so they stay out of the percentiles, and the output names any set aside in
-doubt; --test and --not-test correct it, and --keep-tests measures them
-all. Any copy of this skill a project keeps in the repo is left out, unless
-a scope names its folder. Reads the working tree's tracked files only.
+doubt; --test and --not-test correct it. So are the tests inside a file,
+Rust's modules compiled only for tests (#[cfg(test)] mod tests {...}),
+which the heatmap counts in the file: the output says how many lines and
+in which files, and --show which lines. --keep-tests measures them all.
+Any copy of this skill a project keeps in the repo is left out, unless a
+scope names its folder. Reads the working tree's tracked files only.
 
 Examples:
   measure.py src tests
@@ -1306,6 +1309,91 @@ def docstrings(code, inside, continued):
     return found
 
 
+# Rust's module, after its visibility (pub, pub(crate)), up to its body's bracket or a declaration's ;; an
+# attribute's opening, outer (#[...]) or inner (#![...]); and a cfg attribute's.
+RUST_MODULE = re.compile(r"(?<![\w#])(?:pub(?:\s*\([^()]*\))?\s+)?mod\s+(?:r#)?\w+\s*")
+RUST_INNER = re.compile(r"#\s*!\s*\[")
+RUST_CFG = re.compile(r"#\s*!?\s*\[\s*cfg\s*\(")
+
+
+def cfg_needs_test(attribute):
+    """Whether a Rust attribute, as the skeleton has it, is a cfg that holds only where test is set: cfg(test),
+    or test among all()'s predicates; not under not(), nor under any() unless each of its predicates needs
+    test too."""
+    match = RUST_CFG.match(attribute)
+    words = re.findall(r'\w+|"s*"|[(),=]', attribute[match.end():]) if match else []
+    frames = [("all", [])]  # Per bracket open, its operator and whether each of its predicates needs test.
+    for k, word in enumerate(words):
+        if words[k + 1:k + 2] == ["("]:
+            frames.append((word, []))
+        elif word == ")":
+            operator, needs = frames.pop()
+            need = any(needs) if operator == "all" else operator == "any" and bool(needs) and all(needs)
+            if not frames:
+                return need
+            frames[-1][1].append(need)
+        elif re.match(r"\w", word) and words[k - 1:k] != ["="]:  # A name, or a key given a value (feature = "x").
+            frames[-1][1].append(word == "test" and words[k + 1:k + 2] != ["="])
+    return False
+
+
+def before_space(code, i, j):
+    """The line and column of the last character before code[i][j] that isn't a space, or None."""
+    while i >= 0:
+        text = code[i][:j].rstrip()
+        if text:
+            return i, len(text) - 1
+        i -= 1
+        j = len(code[i]) if i >= 0 else 0
+    return None
+
+
+def joined(code, start, end):
+    """The skeleton's text from code[start] to code[end], both included, its lines joined by spaces."""
+    (i, j), (k, m) = start, end
+    return code[i][j:m + 1] if i == k else " ".join([code[i][j:]] + code[i + 1:k] + [code[k][:m + 1]])
+
+
+def rust_test_modules(code):
+    """Rust's modules compiled only for tests, in the skeleton's lines (code), as (first, last) indexes of
+    lines, the outermost only: from the first of a module's attributes to its body's closing bracket. A
+    module is when a cfg among its attributes, before it or first in its body (#![cfg(test)]), needs test
+    (cfg_needs_test). A declaration (mod tests;), whose module is a file of its own, sets nothing aside."""
+    closes = brackets_of(code)["closes"]
+    opening = None  # Where each closing bracket's opening one is, worked out when first needed.
+    found = []
+    for i, line in enumerate(code):
+        for module in RUST_MODULE.finditer(line) if "mod" in line else ():
+            body = js_next(code, i, module.end())
+            end = closes.get(body) if body and code[body[0]][body[1]] == "{" else None
+            if end is None:
+                continue
+            first, attributes = i, []
+            at = before_space(code, i, module.start())
+            while at and code[at[0]][at[1]] == "]":  # The attributes before it, the nearest first.
+                if opening is None:
+                    opening = dict(((k, c - 1), start) for start, (k, c) in closes.items())
+                start = before_space(code, *opening[at]) if at in opening else None
+                if not start or code[start[0]][start[1]] != "#":  # Not one, or an inner one: the enclosing code's.
+                    break
+                attributes.append(joined(code, start, at))
+                first, at = start[0], before_space(code, *start)
+            at = js_next(code, body[0], body[1] + 1, limit=50)
+            inner = RUST_INNER.match(code[at[0]], at[1]) if at else None
+            while inner and (at[0], inner.end() - 1) in closes:  # Those first in its body.
+                k, c = closes[(at[0], inner.end() - 1)]
+                attributes.append(joined(code, at, (k, c - 1)))
+                at = js_next(code, k, c, limit=50)
+                inner = RUST_INNER.match(code[at[0]], at[1]) if at else None
+            if any(cfg_needs_test(a) for a in attributes):
+                found.append((first, end[0]))
+    outermost = []
+    for first, last in sorted(found):
+        if not outermost or first > outermost[-1][1]:
+            outermost.append((first, last))
+    return outermost
+
+
 TYPE_ARGUMENTS_IN = re.compile(r"(?<=\w)" + ANGLED)
 
 
@@ -1360,8 +1448,11 @@ FIND["Java"], FIND["C#"] = [by_pattern(dict((lang[0], lang[2]) for lang in LANGU
                             for name in ("Java", "C#")]
 
 
-def functions(path, text):
-    """The file's code lines, its functions as (name, first line, last line, code lines, deepest), and its language."""
+def functions(path, text, set_aside=None):
+    """The file's code lines, its functions as (name, first line, last line, code lines, deepest), and its language.
+    With set_aside, a list, the code compiled only for tests (Rust's #[cfg(test)] mod tests { ... }) is left out,
+    as test files are: its lines are in neither the file's nor a function's, and no function in it is found.
+    Each part left out is added to set_aside, as (first line, last line, code lines, functions)."""
     language = BY_EXTENSION.get(os.path.splitext(path)[1].lower())
     if text.startswith("\ufeff"):  # A byte-order mark, as Visual Studio starts a file with: not code.
         text = text[1:]
@@ -1392,6 +1483,10 @@ def functions(path, text):
     if name == "Python":  # Docstrings are documentation, as comments are.
         for i in docstrings(code, inside, continued):
             counted[i] = False
+    parts = [(first, last, sum(counted[first:last + 1])) for first, last in rust_test_modules(code)] \
+        if set_aside is not None and name == "Rust" else []
+    for first, last, _ in parts:
+        counted[first:last + 1] = [False] * (last + 1 - first)
     skip = [a or b for a, b in zip(inside, continued)]
     unit = indent_unit(lines, code, skip)
     widths = [indent_of(line) for line in lines]
@@ -1424,6 +1519,9 @@ def functions(path, text):
         deepest = deepest_in(start + 1, last + 1)
         found.append((defined[0], start + 1, last + 1, before[last + 1] - before[start],
                       max(0, (deepest - widths[start]) // unit - 1) if deepest >= 0 else 0))
+    for first, last, lines in parts:
+        set_aside.append((first + 1, last + 1, lines, sum(1 for f in found if first < f[1] <= last + 1)))
+        found = [f for f in found if not first < f[1] <= last + 1]
     return sum(counted), found, name
 
 
@@ -1525,7 +1623,8 @@ def main():
     parser.add_argument("--not-test", action="append", default=[], metavar="GLOB",
                         help="globs naming files that only look like tests, matched as --test's are, such as "
                              "'app/ABTest.php' or 'docs/spec/*': they're measured like the rest")
-    parser.add_argument("--keep-tests", action="store_true", help="measure test files like the rest")
+    parser.add_argument("--keep-tests", action="store_true",
+                        help="measure test files, and the tests inside files, like the rest")
     parser.add_argument("--top", type=scoping.count(0), default=25, help="files to print (default 25)")
     parser.add_argument("--show", action="append", default=[], metavar="FILE",
                         help="list this file's functions, with the first and last line of each for git log -L, "
@@ -1549,6 +1648,7 @@ def main():
     paths = [p for p in paths if p not in tests]
 
     measured, failed, unreadable, missing = {}, [], [], []
+    within = {}  # Per file, the tests inside it that are set aside (functions' set_aside), where it has any.
     for path in sorted(set(paths + shows)):
         full = os.path.join(repo, path)
         if not os.path.isfile(full):
@@ -1562,13 +1662,18 @@ def main():
         if b"\0" in data[:8000]:  # Binary, by git's own test.
             continue
         text = data.decode("utf-8", errors="replace")
+        # The tests inside a file are set aside as test files are; a test file, shown, is measured whole.
+        aside = None if args.keep_tests or scoping.is_test(path, args.test, args.not_test) else []
         try:
-            measured[path] = functions(path, text)
+            measured[path] = functions(path, text, aside)
         except Exception:
             # The last line of defence: one file this doesn't foresee never stops a run. It's measured as its
             # non-blank lines, and the output names it, so the bug shows and can be reported.
             measured[path] = (sum(1 for line in text.split("\n") if line.strip()), None, None)
             failed.append(path)
+            continue
+        if aside:
+            within[path] = aside
     in_paths = set(paths)
 
     by_language = defaultdict(lambda: ([], []))  # Per language, its files' lengths and its functions'.
@@ -1609,6 +1714,16 @@ def main():
     if not args.keep_tests:
         print("Test files: %s." % ("%d set aside from the percentiles and the table" % len(tests)
                                    if tests else "none in the scope"))
+    # The files in the scope with tests inside them, those with the most lines of them first.
+    inside = sorted(((sum(part[2] for part in parts), path) for path, parts in within.items() if path in in_paths),
+                    key=lambda kv: (-kv[0], kv[1]))
+    if inside:
+        count = sum(part[3] for _, path in inside for part in within[path])
+        print("Tests inside files, set aside as test files are: %d code lines and %d function%s of Rust's "
+              "#[cfg(test)] modules, in %s." % (
+                  sum(n for n, _ in inside), count, "" if count == 1 else "s",
+                  "%s (%d)" % inside[0][::-1] if len(inside) == 1 else "%d files: %s" % (
+                      len(inside), a_few(["%s (%d)" % (path, n) for n, path in inside]))))
     if doubts:
         print("Set aside as tests, but maybe not: %s%s. If one isn't a test, --not-test GLOB measures it." % (
             "; ".join("%s (%s)" % d for d in doubts[:5]), "; and %d more" % (len(doubts) - 5)
@@ -1673,6 +1788,14 @@ def main():
                     (language,) + tuple(cuts[language][1]) + (
                         "; they lean on one function, so bands are by the reference points" if leans else "",))
                 if language in cuts else "no %s file in the scope, so no percentiles to compare with" % language))
+            parts = within.get(path, [])
+            if parts:  # What its lines leave out, where, so the lines listed stay the file's own.
+                spans = ["%d-%d" % part[:2] for part in parts]
+                count = sum(part[3] for part in parts)
+                print("Set aside as tests: lines %s, %s of %d code lines and %d function%s; --keep-tests lists "
+                      "them." % (spans[0] if len(spans) == 1 else ", ".join(spans[:-1]) + " and " + spans[-1],
+                                 "a #[cfg(test)] module" if len(parts) == 1 else "#[cfg(test)] modules",
+                                 sum(part[2] for part in parts), count, "" if count == 1 else "s"))
             # The first and last lines, as git log -L FIRST,LAST:FILE takes them.
             spans = ["%d-%d" % (f[1], f[2]) for f in found]
             width = max([len("first-last")] + [len(s) for s in spans])
