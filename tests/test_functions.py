@@ -94,7 +94,7 @@ class Samples(unittest.TestCase):
         members = ("inline Path Path::operator/(const Path& p) const noexcept\n{\n    return Join(*this, p);\n}\n"
                    "inline bool Path::empty() const noexcept\n{\n    return size == 0;\n}\n")
         for name, text, want in (
-                ("a.inl", members, ("C++", 2)), ("a.h", members, ("C++", 2)),
+                ("a.inl", members, ("C++", 2)), ("a.h", members, ("C++", 2)), ("A.INL", members, ("C++", 2)),
                 ("b.inl", "inline float lerp(float a, float t) noexcept\n{\n    return a * t;\n}\n", ("C++", 1)),
                 ("m.h", "#ifdef __cplusplus\n#define CALL(x) ns::call(x)\n#endif\nint one(void) {\n    return 1;\n}\n",
                  ("C", 1)),
