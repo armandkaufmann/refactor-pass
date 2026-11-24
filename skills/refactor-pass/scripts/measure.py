@@ -1414,9 +1414,10 @@ def rust_test_items(code):
     """Rust's items compiled only for tests, in the skeleton's lines (code), as (first, last) indexes of lines, the
     outermost only: an item, whatever it is (a module, a function, an impl, a struct, a use...), whose cfg needs
     test (cfg_needs_test), from the line of its first attribute to the bracket that closes its body or the ; that
-    ends it. The cfg is among the attributes before it, or for a module first in its body (#![cfg(test)]). A
-    module declared with mod tests; is a file of its own and sets nothing aside here; a cfg on what isn't an item,
-    as a statement in a function's body or a struct's field, is that code's."""
+    ends it, but for a line it shares with other code. The cfg is among the attributes before it, or for a module
+    first in its body (#![cfg(test)]). A module declared with mod tests; is a file of its own and sets nothing
+    aside here; a cfg on what isn't an item, as a statement in a function's body or a struct's field, is that
+    code's."""
     closes = brackets_of(code)["closes"]
     opening = None  # Where each closing bracket's opening one is, worked out when first needed.
     found = set()
@@ -1431,7 +1432,7 @@ def rust_test_items(code):
                 body = closes.get(opener[:2]) if head else None
                 if body is None:
                     continue
-                start, last = (opener[0], head.start()), body[0]
+                start, end = (opener[0], head.start()), (body[0], body[1] - 1)
             else:  # The item after it, past any other attributes.
                 at = js_next(code, end[0], end[1], limit=50)
                 while at and RUST_OUTER.match(code[at[0]], at[1]):
@@ -1441,7 +1442,7 @@ def rust_test_items(code):
                 ends = rust_item_end(code, at[0], item.end()) if item else None
                 if ends is None or (ends[2] == ";" and item.group(1) == "mod"):
                     continue
-                start, last = (i, cfg.start()), ends[0]
+                start, end = (i, cfg.start()), ends[:2]
             at = before_space(code, *start)
             while at and code[at[0]][at[1]] == "]":  # The attributes before it, the nearest first.
                 if opening is None:
@@ -1450,7 +1451,12 @@ def rust_test_items(code):
                 if not begin or code[begin[0]][begin[1]] != "#":  # Not one, or an inner one: the enclosing code's.
                     break
                 start, at = begin, before_space(code, *begin)
-            found.add((start[0], last))
+            # Its lines, but for one it shares with other code, before its first attribute or after its end, which
+            # stays counted with that code's functions.
+            first = start[0] + bool(code[start[0]][:start[1]].strip())
+            last = end[0] - bool(code[end[0]][end[1] + 1:].strip())
+            if first <= last:
+                found.add((first, last))
     outermost = []
     for first, last in sorted(found):
         if not outermost or first > outermost[-1][1]:
