@@ -36,8 +36,9 @@ fix.
   the repo (kept out of commits by a `.gitignore` inside that folder, so
   your own `.gitignore` is left alone). It holds
   refactors, small fixes, items for later, decisions for you, and what was
-  left alone and why, and it opens in your browser when the pass is done,
-  if your agent runs on your machine (a refresh shows its later updates).
+  left alone and why. When the pass is done, your agent opens it with the
+  program your system opens HTML files with, normally your browser (a
+  refresh shows its later updates).
   Your agent works through it one item at a time, when you name an item,
   and changes no code until you do.
 - **Later passes** build on the last checklist and check its predictions
@@ -167,11 +168,17 @@ Ask your agent things like:
 Or call it by name: `/refactor-pass` in Claude Code, Cursor or Copilot CLI,
 `$refactor-pass` in Codex, `@refactor-pass` in opencode.
 
-The checklist opens with the program your system opens HTML files with. To
-choose another, or none, set `REFACTOR_PASS_BROWSER` where the agent runs
-to a command (`%s` in it stands for the page) or to `none`; or ask the
-agent not to open it. `BROWSER` isn't followed: tools such as VS Code set
-it to hand links on to another machine.
+When a pass is done, the agent opens the checklist with the program your
+system opens HTML files with, normally your browser, but not in a cloud
+sandbox, in CI, over SSH or where there's no display. For another browser,
+set `REFACTOR_PASS_BROWSER` to its command (`%s` in it stands for the
+page); on Windows, give the browser's whole path, as browsers aren't on
+`PATH` there. Asking the agent not to open it lasts the conversation;
+`REFACTOR_PASS_BROWSER=none` stops it for good. Set it where the agent's
+commands run: a variable in a shell profile doesn't reach an agent started
+from a desktop app, so use the agent's own settings for its environment
+where it has them. `BROWSER` isn't followed: tools such as VS Code set it
+to hand links on to another machine.
 
 ## The scripts on their own
 
@@ -190,7 +197,7 @@ python3 skills/refactor-pass/scripts/heatmap.py -C ~/code/my-app src tests
   TypeScript, Vue, Svelte, PHP, Go, Ruby, Java, C#, C, C++, Kotlin, Swift,
   Rust and GDScript; other files get their lines only.
 - `scripts/check_page.py`: checks a checklist page after an edit; with
-  `--open`, opens it in the browser too, if it has no errors.
+  `--open`, opens it too, once it passes.
 
 `scripts/scoping.py` is the module the first two share, for which files
 count and which are tests.
