@@ -574,6 +574,19 @@ class Opener(unittest.TestCase):
         chrome = "/mnt/c/Program Files/Google/Chrome/Application/chrome.exe"
         self.assertEqual(opener({"REFACTOR_PASS_BROWSER": chrome}, release=WSL, found=[chrome], windows=IN_WINDOWS),
                          ([chrome, IN_WINDOWS], None))
+        # The whole value is one program, spaces and all, only where it's a whole path, or one from the home folder
+        # (~/, as a shell gives it); else its first word is: a name on PATH, or a path as written, from here.
+        for named, command, system, home in [
+                ("/opt/My Browser/browser", ["/opt/My Browser/browser", PAGE], "linux", {}),
+                ("~/My Apps/browser", ["/home/ann/My Apps/browser", PAGE], "linux", {"HOME": "/home/ann"}),
+                ('"~/My Apps/browser" --x %s', ["/home/ann/My Apps/browser", "--x", PAGE], "linux",
+                 {"HOME": "/home/ann"}),
+                ("./tools/browser --x", ["./tools/browser", "--x", PAGE], "linux", {}),
+                ("~\\bin\\ff.exe", ["C:\\Users\\Ann\\bin\\ff.exe", PAGE], "win32",
+                 {"USERPROFILE": "C:\\Users\\Ann"})]:
+            with self.subTest(named=named):
+                self.assertEqual(opener(dict(home, REFACTOR_PASS_BROWSER=named), system=system, found=[command[0]]),
+                                 (command, None))
 
     def test_none_and_what_isnt_run(self):
         terminal = ("REFACTOR_PASS_BROWSER's %s runs in a terminal, and what --open starts has none, so it'd show "
@@ -594,6 +607,17 @@ class Opener(unittest.TestCase):
         chrome = "/mnt/c/Program Files/Google/Chrome/Application/chrome.exe"
         self.assertEqual(opener({"REFACTOR_PASS_BROWSER": chrome}, release=WSL, found=[chrome]),
                          (None, "wslpath couldn't give its path as Windows knows it, for chrome.exe"))
+        # A / in an argument doesn't make the whole value a path from here, as a folder in the repo could be named;
+        # nor is a ~ that names no home folder here.
+        home = "REFACTOR_PASS_BROWSER's %s starts with a ~ that names no home folder here: give its whole path"
+        for named, why in [
+                ("mybrowser --profile=/tmp/p", "there's no mybrowser on PATH: give REFACTOR_PASS_BROWSER the browser's "
+                                               "whole path"),
+                ("tools/my browser", "there's no program at tools/my"),
+                ("~ann/bin/browser", home % "~ann/bin/browser"),
+                ("~/bin/browser", home % "~/bin/browser")]:
+            with self.subTest(named=named):
+                self.assertEqual(opener({"REFACTOR_PASS_BROWSER": named}, found=[named]), (None, why))
 
     def test_a_program_is_found_on_path_never_in_the_current_folder(self):
         # Where Windows looks first, nor in a folder PATH names from it: the repo the agent is in.
@@ -731,6 +755,12 @@ class Open(unittest.TestCase):
         result = self.run_open("refactor-pass-stub", cwd=os.path.dirname(program))
         self.assertEqual((result.out.splitlines()[-1], pages(record)), ("Not opened: there's no refactor-pass-stub "
                          "on PATH: give REFACTOR_PASS_BROWSER the browser's whole path.", [self.page]), result)
+        # Nor is a name with an option holding a /, though a folder here could be named so.
+        program = os.path.join(self.folder, "mybrowser --profile=", "tmp", "p")
+        os.chmod(support.write_text(program, "#!/bin/sh\nexec %s \"$@\"\n" % command), 0o755)
+        result = self.run_open("mybrowser --profile=/tmp/p", cwd=self.folder)
+        self.assertEqual((result.out.splitlines()[-1], pages(record)), ("Not opened: there's no mybrowser on PATH: "
+                         "give REFACTOR_PASS_BROWSER the browser's whole path.", [self.page]), result)
 
     def test_what_isnt_opened(self):
         # A page with errors, or no pass block yet, or a name that isn't a page's, which the system might run.
