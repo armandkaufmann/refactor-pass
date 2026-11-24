@@ -167,10 +167,11 @@ Ask your agent things like:
 Or call it by name: `/refactor-pass` in Claude Code, Cursor or Copilot CLI,
 `$refactor-pass` in Codex, `@refactor-pass` in opencode.
 
-The checklist opens with the program your system opens HTML files with, or
-with the command `BROWSER` names, if it's set. To choose another, or none,
-set `REFACTOR_PASS_BROWSER` where the agent runs to a command (`%s` in it
-stands for the page) or to `none`; or ask the agent not to open it.
+The checklist opens with the program your system opens HTML files with. To
+choose another, or none, set `REFACTOR_PASS_BROWSER` where the agent runs
+to a command (`%s` in it stands for the page) or to `none`; or ask the
+agent not to open it. `BROWSER` isn't followed: tools such as VS Code set
+it to hand links on to another machine.
 
 ## The scripts on their own
 
