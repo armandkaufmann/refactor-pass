@@ -205,6 +205,14 @@ class Skill(unittest.TestCase):
                      "This checkout's history has gone quiet%s, but %s's newest commit"):
             self.assertIn(said, script)
 
+    def test_skill_md_opens_the_page_once(self):
+        # When the pass is done, on the user's machine; not after each later edit, which would open a tab each.
+        text = " ".join(read(os.path.join(SKILL, "SKILL.md")).split())
+        step_6, step_7 = text[text.index("## 6."):text.index("## 7.")], text[text.index("## 7."):]
+        self.assertIn("show the page to the user, once: on their own machine, run the check again with `--open`",
+                      step_6)
+        self.assertIn("Then run `check_page.py` (not `--open`: a refresh shows the edit)", step_7)
+
     def test_skill_md_accounts_for_the_newest_work(self):
         text = " ".join(read(os.path.join(SKILL, "SKILL.md")).split())
         self.assertIn("Every area on the heatmap's newest-work list is in an item or here", text)

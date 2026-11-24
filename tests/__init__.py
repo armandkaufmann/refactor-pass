@@ -12,7 +12,8 @@
   test_kinds.py       the whole heatmap over a repo with a file of each kind of path
   test_diffs.py       --show FILE --diffs: a file's changes in the commits given
   test_checklists.py  --checklists, --page, recorded commits, worktrees and a copy kept in a project
-  test_check_page.py  check_page.py's errors and warnings, and old checklists (fixtures/)
+  test_check_page.py  check_page.py's errors and warnings, old checklists (fixtures/), and --open, which
+                      never opens a browser here
   test_page.py        assets/page.html, read without a browser
   test_robustness.py  a short fuzz and extreme inputs, and the scripts' last line of defence
   test_documents.py   the documents against the scripts, and the code's hygiene

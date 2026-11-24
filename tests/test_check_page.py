@@ -1,12 +1,15 @@
 """check_page.py: a good page, every error and warning it can give from a small broken variant of that page,
-and the checklists agents wrote with earlier versions of the skill, which must still pass.
+the checklists agents wrote with earlier versions of the skill, which must still pass, and --open.
 
 Most variants go through check_page.check, the function that finds the problems; a few run the script, for
-its exit code and what it prints.
+its exit code and what it prints. --open never opens a browser here: the commands it would run on each system
+are worked out without running them, and the runs name a stub, or none, as support's environment does.
 """
 
 import json
 import os
+import sys
+import time
 import unittest
 
 try:
@@ -477,6 +480,199 @@ class TextBrowsersReadAsHtml(unittest.TestCase):
                                                               "subject": "odd <!-- <script>alert(1)"}})
         text = support.page_with(good(), heatmap_json=json.dumps(heat))
         self.assertTrue(any(e.startswith("The heatmap block can't be read by a browser") for e in problems(text)[0]))
+
+
+PAGE = "/home/ann/shop/.refactor-pass/2026-11-23.html"
+WINDOWS_PAGE = "C:\\Users\\Ann Dev\\shop\\.refactor-pass\\2026-11-23.html"
+WSL = "5.15.167.4-microsoft-standard-WSL2"  # The kernel's release, as WSL 2 gives it.
+IN_WINDOWS = "\\\\wsl.localhost\\Ubuntu\\home\\ann\\shop\\.refactor-pass\\2026-11-23.html"
+
+
+def openers(environ=(), system="linux", release="6.8.0-48-generic", found=(), windows=None, page=PAGE):
+    """The commands --open would run, and why there are none, on the system given, with the programs on its
+    PATH and the path wslpath gives: worked out, nothing run."""
+    commands, why = support.load("check_page").openers(page, dict(environ), system, release,
+                                                      lambda name: name if name in found else None,
+                                                      lambda path: windows)
+    return [command for _, command in commands], why
+
+
+class Openers(unittest.TestCase):
+
+    def test_each_systems_own(self):
+        self.assertEqual(openers(system="darwin"), ([["open", PAGE]], None))
+        self.assertEqual(openers({"DISPLAY": ":0"}, found=["xdg-open"]), ([["xdg-open", PAGE]], None))
+        self.assertEqual(openers({"WAYLAND_DISPLAY": "wayland-0"}, system="freebsd14", found=["xdg-open"]),
+                         ([["xdg-open", PAGE]], None))
+        (command,), why = openers(system="win32", page=WINDOWS_PAGE)
+        self.assertEqual((command[-1], why), (WINDOWS_PAGE, None))
+        self.assertIn("os.startfile(sys.argv[1])", command[-2])
+        # WSL: Windows' browser, through wslview, else explorer.exe given the path as Windows knows it; not the
+        # display and xdg-open WSLg can have, which would show a Linux one.
+        wsl = dict(environ={"DISPLAY": ":0"}, release=WSL, windows=IN_WINDOWS)
+        self.assertEqual(openers(found=["wslview", "explorer.exe", "xdg-open"], **wsl), ([["wslview", PAGE]], None))
+        self.assertEqual(openers(found=["explorer.exe", "xdg-open"], **wsl), ([["explorer.exe", IN_WINDOWS]], None))
+
+    def test_where_there_is_no_browser_to_open_it_in(self):
+        ssh = {"SSH_CONNECTION": "10.0.0.2 52000 10.0.0.1 22"}
+        for options, why in [
+                (dict(found=["xdg-open"]),
+                 "there's no display here (DISPLAY and WAYLAND_DISPLAY aren't set), so no browser to show it"),
+                (dict(environ={"DISPLAY": ":0"}), "there's no xdg-open here to hand it to a browser"),
+                (dict(environ=ssh, system="darwin"), "this is a session over SSH, so a browser here isn't in front "
+                                                     "of the user"),
+                (dict(environ=dict(ssh, DISPLAY="localhost:10.0"), found=["xdg-open"]), "this is a session over SSH"),
+                # Where BROWSER is often a tool's, handing a link to the machine in front of the user.
+                (dict(environ=dict(ssh, BROWSER="/home/ann/.vscode-server/bin/helpers/browser.sh")),
+                 "this is a session over SSH"),
+                (dict(environ={"SSH_CLIENT": "10.0.0.2 52000 22"}, system="win32"), "this is a session over SSH"),
+                (dict(environ={"DISPLAY": ":0"}, release=WSL, found=["xdg-open"]),
+                 "this is WSL, with no wslview or explorer.exe here to hand it to Windows"),
+                (dict(release=WSL, found=["explorer.exe"]), "wslpath couldn't give its path as Windows knows it")]:
+            with self.subTest(why=why):
+                commands, said = openers(**options)
+                self.assertEqual(commands, [])
+                self.assertTrue(said.startswith(why), said)
+
+    def test_the_browser_named(self):
+        # REFACTOR_PASS_BROWSER, else BROWSER: a command, %s in it for the page, else the page at its end, and
+        # several separated as PATH is, to try in turn. They run where there's no display; and over SSH,
+        # REFACTOR_PASS_BROWSER's.
+        for environ, commands in [
+                ({"BROWSER": "firefox"}, [["firefox", PAGE]]),
+                ({"BROWSER": "firefox --new-tab %s"}, [["firefox", "--new-tab", PAGE]]),
+                ({"BROWSER": " 'my browser' -x '%s' "}, [["my browser", "-x", PAGE]]),
+                ({"REFACTOR_PASS_BROWSER": "firefox", "SSH_CONNECTION": "10.0.0.2 52000 10.0.0.1 22"},
+                 [["firefox", PAGE]]),
+                ({"BROWSER": "lynx:firefox::chromium"}, [["firefox", PAGE], ["chromium", PAGE]]),
+                ({"BROWSER": "none", "REFACTOR_PASS_BROWSER": "chromium %s"}, [["chromium", PAGE]]),
+                ({"BROWSER": "firefox", "REFACTOR_PASS_BROWSER": " "}, [["firefox", PAGE]])]:
+            with self.subTest(environ=environ):
+                self.assertEqual(openers(environ), (commands, None))
+        # A program's path with spaces, unquoted; on Windows, separated by ;.
+        firefox = "C:\\Program Files\\Mozilla Firefox\\firefox.exe"
+        self.assertEqual(openers({"BROWSER": firefox + ";msedge"}, system="win32", found=[firefox], page=WINDOWS_PAGE),
+                         ([[firefox, WINDOWS_PAGE], ["msedge", WINDOWS_PAGE]], None))
+        # A Windows program on WSL is given the path as Windows knows it.
+        chrome = "/mnt/c/Program Files/Google/Chrome/Application/chrome.exe"
+        self.assertEqual(openers({"BROWSER": chrome}, release=WSL, found=[chrome], windows=IN_WINDOWS),
+                         ([[chrome, IN_WINDOWS]], None))
+
+    def test_none_and_what_isnt_run(self):
+        for environ, why in [({"BROWSER": " None "}, "BROWSER is none"),
+                             ({"BROWSER": "firefox", "REFACTOR_PASS_BROWSER": "none"}, "REFACTOR_PASS_BROWSER is none"),
+                             ({"BROWSER": "lynx"}, "BROWSER's lynx runs in the terminal, where it would take over this "
+                                                   "shell"),
+                             ({"BROWSER": "/usr/bin/w3m %s:lynx"}, "BROWSER's lynx runs in the terminal, where it "
+                                                                   "would take over this shell"),
+                             ({"BROWSER": "firefox 'oops"}, "BROWSER's \"firefox 'oops\" can't be read: No closing "
+                                                            "quotation"),
+                             ({"BROWSER": "''"}, "BROWSER's \"''\" names no command")]:
+            with self.subTest(environ=environ):
+                self.assertEqual(openers(environ), ([], why))
+        chrome = "/mnt/c/Program Files/Google/Chrome/Application/chrome.exe"
+        self.assertEqual(openers({"BROWSER": chrome}, release=WSL, found=[chrome]),
+                         ([], "wslpath couldn't give its path as Windows knows it, for chrome.exe"))
+        self.assertEqual(openers({"BROWSER": "LYNX.EXE"}, system="win32"), ([], "BROWSER's LYNX.EXE runs in the "
+                                                                              "terminal, where it would take over this "
+                                                                              "shell"))
+
+
+# A stand-in for a browser: it writes down the page it's given, waits and exits as it's told.
+STUB = """import sys, time
+with open(sys.argv[1], "a", encoding="utf-8") as f:
+    f.write(sys.argv[4] + "\\n")
+time.sleep(float(sys.argv[3]))
+sys.exit(int(sys.argv[2]))
+"""
+
+
+def stub(folder, code=0, seconds=0, page="%s"):
+    """REFACTOR_PASS_BROWSER naming the stub, and the file it writes to. page is %s, or "" to have the page go at
+    the command's end."""
+    record = os.path.join(folder, "opened.txt")
+    script = support.write_text(os.path.join(folder, "stub.py"), STUB)
+    return " ".join("'%s'" % p for p in (sys.executable, script, record)) + " %d %s %s" % (code, seconds, page), record
+
+
+def opened(record):
+    """The pages the stub was given, in order."""
+    if not os.path.exists(record):
+        return []
+    with open(record, encoding="utf-8") as f:
+        return f.read().splitlines()
+
+
+class Open(unittest.TestCase):
+    """--open runs, in a folder with a space and a letter outside ASCII in its name."""
+
+    def setUp(self):
+        self.folder = support.new_folder("open café")
+        self.page = support.write_text(os.path.join(self.folder, "checklists", "2026-11-23.html"), page())
+
+    def run_open(self, browser, page=None, **options):
+        return support.run("check_page.py", "--open", page or self.page, env={"REFACTOR_PASS_BROWSER": browser},
+                           **options)
+
+    def test_a_page_that_passes_opens_once_for_each_run(self):
+        browser, record = stub(self.folder)
+        for runs in (1, 2):
+            result = self.run_open(browser)
+            self.assertEqual(result.code, 0, result)
+            self.assertTrue(result.out.endswith("your call: 1 (1 waiting)\nOK\nOpened %s in the browser.\n"
+                                                % self.page), result)
+            self.assertEqual(opened(record), [self.page] * runs)
+
+    def test_a_relative_path_opens_as_its_whole_path(self):
+        browser, record = stub(self.folder, page="")
+        result = self.run_open(browser, os.path.join("checklists", "2026-11-23.html"), cwd=self.folder)
+        self.assertEqual((result.code, opened(record)), (0, [self.page]), result)
+
+    def test_a_page_with_errors_isnt_opened(self):
+        browser, record = stub(self.folder)
+        support.write_text(self.page, changed(lambda d: item(d, "R2").update(status="started")))
+        result = self.run_open(browser)
+        self.assertEqual(result.code, 1, result)
+        self.assertTrue(result.out.endswith("\nNot opened: it has errors. Fix them, then run this again with "
+                                            "--open.\n"), result)
+        for missing in (os.path.join(self.folder, "no-such-page.html"), support.TEMPLATE):
+            self.assertEqual(self.run_open(browser, missing).code, 1)
+        self.assertEqual(opened(record), [])
+
+    def test_none_opens_nothing(self):
+        result = self.run_open("none")
+        self.assertEqual((result.code, result.out.splitlines()[-1]), (0, "Not opened: REFACTOR_PASS_BROWSER is none."))
+
+    def test_a_browser_that_fails_never_fails_the_check(self):
+        browser, record = stub(self.folder, code=3)
+        result = self.run_open(browser)
+        self.assertEqual((result.code, result.out.splitlines()[-1]),
+                         (0, "Not opened: %s stopped with exit code 3." % os.path.basename(sys.executable)), result)
+        result = self.run_open("'%s' %%s" % os.path.join(self.folder, "no-such-browser"))
+        self.assertEqual(result.code, 0, result)
+        self.assertTrue(result.out.splitlines()[-1].startswith("Not opened: couldn't run no-such-browser: "), result)
+
+    def test_browsers_are_tried_in_turn(self):
+        failing, record = stub(self.folder, code=1)
+        browser, _ = stub(self.folder)
+        result = self.run_open(os.pathsep.join([failing, browser]))
+        self.assertTrue(result.out.endswith("OK\nOpened %s in the browser.\n" % self.page), result)
+        self.assertEqual(opened(record), [self.page] * 2)
+
+    def test_a_browser_still_running_is_left_to_run(self):
+        # As one the command started is: the check ends when it's done waiting, its output not held open.
+        browser, record = stub(self.folder, seconds=8)
+        code = ("import os, sys\nsys.path.insert(0, os.environ['REFACTOR_PASS_SCRIPTS'])\nimport check_page\n"
+                "check_page.WAIT = 0.5\nsys.argv[0] = 'check_page.py'\ncheck_page.scoping.guard(check_page.main)")
+        start = time.time()
+        result = support.run_python(code, "--open", self.page, env={"REFACTOR_PASS_BROWSER": browser})
+        self.assertLess(time.time() - start, 5, result)
+        self.assertTrue(result.out.endswith("OK\nOpened %s in the browser.\n" % self.page), result)
+        while not opened(record) and time.time() - start < 20:
+            time.sleep(0.1)
+        self.assertEqual(opened(record), [self.page])
+        check_page = support.load("check_page")
+        self.assertIn("It waits up to %d seconds" % check_page.WAIT, " ".join(check_page.__doc__.split()))
 
 
 if __name__ == "__main__":

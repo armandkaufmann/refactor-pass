@@ -100,7 +100,8 @@ def git_folder():
 def environment(**extra):
     """The environment the scripts and git run in: UTF-8 output, no bytecode written, no git configuration
     but the run's own empty one, no repo found above the temporary folder, git itself first on the PATH
-    (git_folder), and now, for the heatmap, 2026-11-13 at noon UTC (NOW), so no test reads the clock."""
+    (git_folder), now, for the heatmap, 2026-11-13 at noon UTC (NOW), so no test reads the clock, and no
+    browser for check_page.py --open, so none opens unless a test names its own."""
     env = dict(os.environ)
     for key in list(env):
         if key.startswith("GIT_") or key in ("REFACTOR_PASS_SCRIPTS",):
@@ -108,7 +109,7 @@ def environment(**extra):
     root = temp_root()
     env.update(PYTHONIOENCODING="utf-8", PYTHONDONTWRITEBYTECODE="1", GIT_CONFIG_NOSYSTEM="1",
                GIT_CONFIG_GLOBAL=os.path.join(root, "gitconfig"), GIT_CEILING_DIRECTORIES=os.path.dirname(root),
-               GIT_TERMINAL_PROMPT="0", REFACTOR_PASS_NOW=str(NOW))
+               GIT_TERMINAL_PROMPT="0", REFACTOR_PASS_NOW=str(NOW), REFACTOR_PASS_BROWSER="none")
     if git_folder():
         env["PATH"] = git_folder() + os.pathsep + env.get("PATH", "")
     env.update(extra)
