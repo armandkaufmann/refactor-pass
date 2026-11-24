@@ -440,6 +440,12 @@ class Words(unittest.TestCase):
                            ("lib/build.py", None), ("src/server.c", None), ("ci/check.py", None)]:
             self.assertEqual(not_code(path, test), kind, path)
 
+    def test_the_ci_of_forgejo_gitea_and_woodpecker(self):
+        # Their workflows, as .github's are; and Woodpecker's one file, as .travis.yml is.
+        for path in (".forgejo/workflows/ci.yml", ".gitea/workflows/ci.yaml", ".woodpecker/test.yml",
+                     ".woodpecker.yml"):
+            self.assertEqual(self.heatmap.not_code(path, lambda p: False), "CI, build or dependency files", path)
+
     def test_a_documentation_name_with_a_code_extension_is_code(self):
         not_code, doc, chore = self.heatmap.not_code, "documentation", "CI, build or dependency files"
         for path, kind in [("src/history.ts", None), ("news.py", None), ("lib/authors.rb", None), ("changes.js", None),
