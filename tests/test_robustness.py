@@ -96,11 +96,12 @@ class Limit(object):
         return False
 
 
-def check(test, name, text, seconds, what):
+def check(test, name, text, seconds, what, aside=None):
+    """With aside, a list, the code compiled only for tests is set aside in it, as measure.py's run asks."""
     measure = support.load("measure")
     try:
         with Limit(seconds) as limit:
-            lines, functions, language = measure.functions(name, text)
+            lines, functions, language = measure.functions(name, text, *([] if aside is None else [aside]))
     except TooSlow:
         test.fail("%s took over %ds: %s" % (name, seconds, what))
     except Exception as e:
@@ -111,6 +112,9 @@ def check(test, name, text, seconds, what):
     for found in functions or []:
         test.assertTrue(1 <= found[1] <= found[2] <= count and 0 <= found[3] <= found[2] - found[1] + 1,
                         "%s: %r (%s)" % (name, found, what))
+    for part in aside or []:
+        test.assertTrue(1 <= part[0] <= part[1] <= count and 0 <= part[2] <= part[1] - part[0] + 1,
+                        "%s: %r set aside (%s)" % (name, part, what))
 
 
 class Fuzz(unittest.TestCase):
@@ -151,12 +155,35 @@ EXTREMES = [
 ]
 
 
+# Rust's tests inside files, looked for where measure.py's run sets them aside: modules never closed, nested,
+# after thousands of attributes, and a cfg nested thousands deep.
+TESTS_INSIDE = [
+    ("open.rs", "#[cfg(test)]\nmod a {\n" * 5000),
+    ("nested.rs", "#[cfg(test)] mod a {\n" * 5000 + "}\n" * 5000),
+    ("attributes.rs", "#[a]\n" * 20000 + "mod a {\n}\n"),
+    ("cfg.rs", "#[cfg(" + "all(" * 5000 + "test" + ")" * 5001 + "]\nmod a {\n}\n"),
+]
+
+
 class Extremes(unittest.TestCase):
 
     def test_extremes(self):
         for name, text in EXTREMES:
             with self.subTest(case=name):
                 check(self, name, text, 10, "an extreme")
+
+    def test_tests_inside_files(self):
+        for name, text in TESTS_INSIDE:
+            with self.subTest(case=name):
+                check(self, name, text, 10, "an extreme", [])
+        rng = random.Random(SEED)
+        files = [f for f in samples() if f[0].endswith(".rs")] + [
+            ("lib.rs", "#[cfg(all(test, unix))]\nmod tests {\n    #![allow(unused)]\n    #[test]\n    fn a() {\n"
+                       "        let _ = ('}', \"{\");\n    }\n}\nfn b() {\n}\n")]
+        for n in range(100):
+            name, text = files[n % len(files)]
+            mutated, what = mutate(rng, name, text, files)
+            check(self, name, mutated, 5, what, [])
 
 
 # Lines of many generic types that aren't a definition, each of which once took a time that doubled with each

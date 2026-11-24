@@ -295,6 +295,41 @@ class Lopsided(unittest.TestCase):
         self.assertEqual(table(result.out)["src/f0.py"], ("300", "90th", "1", "300", "1", "0"))
 
 
+class TestsInsideFiles(unittest.TestCase):
+    """Rust's #[cfg(test)] modules, set aside as test files are, and the output says how much and where."""
+
+    @classmethod
+    def setUpClass(cls):
+        repo = support.Repo("inline")
+        # 5 code lines of its own, and a module of 68: lines 5-72, with a 61-line mock and a test.
+        repo.commit("2026-01-05", "Start", {"src/b.rs": "fn b() {\n}\n", "src/lib.rs": (
+            "pub fn small() -> i32 {\n    1\n}\n\n#[cfg(test)]\nmod tests {\n    fn mock() {\n" +
+            "        f();\n" * 59 + "    }\n    #[test]\n    fn it_works() {\n        f();\n    }\n}\n" +
+            "pub fn after() {\n}\n")})
+        repo.done()
+        cls.repo = repo.path
+
+    def test_out_of_the_table_and_the_percentiles(self):
+        result = support.run("measure.py", "-C", self.repo)
+        self.assertEqual(table(result.out)["src/lib.rs"], ("5", "-", "2", "3", "0", "0"))
+        self.assertRegex(result.out, r"(?m)^Rust\s+2\s+3\s+5\s+5\s+5\s+3\s+3\s+3$")
+        self.assertIn("Test files: none in the scope.\nTests inside files, set aside as test files are: 68 code lines "
+                      "and 2 functions of Rust's #[cfg(test)] modules, in src/lib.rs (68).\n", result.out)
+
+    def test_show_keeps_the_files_line_numbers(self):
+        result = support.run("measure.py", "-C", self.repo, "--show", "src/lib.rs")
+        self.assertIn("src/lib.rs: Rust, 5 code lines, band -, 2 functions", result.out)
+        self.assertIn("Set aside as tests: lines 5-72, a #[cfg(test)] module of 68 code lines and 2 functions; "
+                      "--keep-tests lists them.", result.out)
+        rows = [line.split() for line in result.out.splitlines() if re.match(r"\s*\d+-\d+ ", line)]
+        self.assertEqual(rows, [["1-3", "3", "0", "-", "small"], ["73-74", "2", "0", "-", "after"]])
+
+    def test_keep_tests_measures_them(self):
+        result = support.run("measure.py", "-C", self.repo, "--keep-tests", "--show", "src/lib.rs")
+        self.assertIn("src/lib.rs: Rust, 73 code lines, band -, 4 functions", result.out)
+        self.assertNotIn("set aside", result.out.lower())
+
+
 class Unusual(unittest.TestCase):
 
     def test_a_repo_with_no_files(self):

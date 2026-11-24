@@ -223,6 +223,57 @@ class TypeArguments(unittest.TestCase):
                 self.assertEqual(self.names(name, text), [want])
 
 
+def set_aside(text):
+    """measure.functions' answer for a Rust file with its tests set aside, as measure.py's run asks: its code
+    lines, its functions as [name, first, last, code lines], and each part set aside as [first, last, code lines,
+    functions]."""
+    aside = []
+    lines, functions, _ = support.load("measure").functions("lib.rs", text, aside)
+    return lines, [list(f[:4]) for f in functions], [list(part) for part in aside]
+
+
+# A library with its tests in a module, as cargo writes one: 11 code lines, 8 of them the module's.
+RUST = ("pub fn add(a: i32) -> i32 {\n    a + 1\n}\n\n#[cfg(test)]\nmod tests {\n    use super::*;\n\n    #[test]\n"
+        "    fn adds() {\n        assert_eq!(add(1), 2);\n    }\n}\n")
+
+
+class TestsInsideFiles(unittest.TestCase):
+    """Rust's modules compiled only for tests, set aside as test files are."""
+
+    def test_a_test_module(self):
+        self.assertEqual(set_aside(RUST), (3, [["add", 1, 3, 3]], [[5, 13, 8, 1]]))
+        # With nothing to set it aside in, it's measured, as with --keep-tests.
+        self.assertEqual(found("lib.rs", RUST), [["add", 1, 3, 3], ["adds", 10, 12, 3]])
+
+    def test_only_a_cfg_that_needs_test(self):
+        for cfg, aside in (('all(test, feature = "std")', 1), ("all(unix, all(not(miri), test))", 1),
+                           ("any(all(test, a), all(test, b))", 1), ("all(\n    test,\n)", 1), ("not(test)", 0),
+                           ('any(test, feature = "x")', 0), ("any()", 0), ('all(feature = "test")', 0)):
+            with self.subTest(cfg=cfg):
+                lines, _, parts = set_aside(RUST.replace("(test)", "(%s)" % cfg))
+                self.assertEqual((lines, len(parts)), (3, 1) if aside else (11 + cfg.count("\n"), 0))
+        self.assertEqual(set_aside(RUST.replace("cfg(test)", "cfg_attr(test, derive(Debug))"))[2], [])
+
+    def test_where_a_module_starts_and_ends(self):
+        for text, want in (
+                # Other attributes, comments and blank lines between; any name, after pub(crate).
+                (RUST.replace("mod tests", "#[allow(unused)]\n// A.\n\n/// B.\npub(crate) mod fakes"),
+                 (3, [["add", 1, 3, 3]], [[5, 17, 9, 1]])),
+                # Nested: the outermost.
+                ("mod a {\n    #[cfg(test)]\n    mod t {\n        #[cfg(test)]\n        mod u {\n"
+                 "            fn a() {}\n        }\n    }\n}\n", (2, [], [[2, 8, 7, 1]])),
+                # Past braces in strings, characters and comments, after a lifetime.
+                ("#[cfg(test)]\nmod t {\n    fn t<'a>(s: &'a str) {\n"
+                 "        f(\"}\", r#\"}\"#, b'}', '}'); /* } */ // }\n    }\n}\nfn b() {\n}\n",
+                 (2, [["b", 7, 8, 2]], [[1, 6, 6, 1]])),
+                # An inner attribute, first in its body.
+                ("mod t {\n    //! A.\n    #![cfg(test)]\n    fn a() {\n    }\n}\n", (0, [], [[1, 6, 5, 1]])),
+                # A declaration, whose module is a file of its own; an attribute of another item.
+                ("#[cfg(test)]\nmod t;\nmod a {\n}\n#[cfg(test)]\nuse b::c;\nmod d {\n}\n", (8, [], []))):
+            with self.subTest(text=text):
+                self.assertEqual(set_aside(text), want)
+
+
 class CodeLines(unittest.TestCase):
     """What counts as a code line in a file, in each kind of language."""
 
