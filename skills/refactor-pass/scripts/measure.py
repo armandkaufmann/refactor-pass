@@ -1413,8 +1413,8 @@ def joined(code, start, end):
 
 def rust_item_end(code, i, j):
     """Where the Rust item whose head goes on from code[i][j] ends, as its line, column and character: the bracket
-    that closes its body, the first { outside other brackets, or the ; that ends it, as a use's or a
-    declaration's; None if neither comes, as when the brackets around it close first."""
+    that closes its body, the first { outside other brackets, or the ; just after it (use a::{b, c};); or else the
+    ; that ends it, as a declaration's; None if neither comes, as when the brackets around it close first."""
     closes = brackets_of(code)["closes"]
     k, col = i, j
     while k < len(code) and k - i <= SIGNATURE_LINES:
@@ -1429,7 +1429,8 @@ def rust_item_end(code, i, j):
         if end is None:
             return None
         if c == "{":
-            return end[0], end[1] - 1, "}"
+            after = code[end[0]][end[1]:]
+            return end[0], end[1] + (len(after) - len(after.lstrip()) if after.lstrip()[:1] == ";" else -1), "}"
         k, col = end  # Brackets before the body, as parameters' or an array's type, [u8; 3], are passed whole.
     return None
 
