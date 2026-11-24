@@ -327,6 +327,14 @@ class CodeLines(unittest.TestCase):
             with self.subTest(name=name, text=text):
                 self.check(name, text, want)
 
+    def test_a_blank_line_in_a_string(self):
+        # Blank, as any other is, whatever ends it: a checkout on Windows ends each line with \r\n.
+        for name, text in (("a.py", 'x = """a\n   \nb"""\n'), ("a.js", "x = `a\n\nb`\n"), ("a.rb", 'x = "a\n  \nb"\n'),
+                           ("a.cs", 'var x = @"a\n\nb";\n'), ("a.rs", 'let x = r#"a\n\nb"#;\n')):
+            for end in ("\n", "\r\n"):
+                with self.subTest(name=name, end=end):
+                    self.check(name, text.replace("\n", end), 2)
+
     def test_a_language_with_no_rule_counts_lines(self):
         measure = support.load("measure")
         lines, functions, language = measure.functions("notes.txt", "a\n\n# b\n// c\nd\n")
