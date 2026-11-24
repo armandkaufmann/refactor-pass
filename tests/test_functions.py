@@ -293,8 +293,11 @@ class TestsInsideFiles(unittest.TestCase):
                 ("#[cfg(test)]\nmod t {\n    fn t<'a>(s: &'a str) {\n"
                  "        f(\"}\", r#\"}\"#, b'}', '}'); /* } */ // }\n    }\n}\nfn b() {\n}\n",
                  (2, [["b", 7, 8, 2]], [[1, 6, 6, 1]])),
-                # An inner attribute, first in its body.
+                # An inner attribute, first in its body, after others; a raw name; a function just before.
                 ("mod t {\n    //! A.\n    #![cfg(test)]\n    fn a() {\n    }\n}\n", (0, [], [[1, 6, 5, 1]])),
+                ("mod r#t {\n    //! A.\n    //! B.\n    //! C.\n    #![allow(unused)]\n    #![cfg(test)]\n}\n",
+                 (0, [], [[1, 7, 4, 0]])),
+                ("fn a() {}\n#[cfg(test)]\nmod r#tests {\n    fn b() {}\n}\n", (1, [["a", 1, 1, 1]], [[2, 5, 4, 1]])),
                 # A declaration, whose module is a file of its own; a use's attribute, not the module's after it.
                 ("#[cfg(test)]\nmod t;\nmod a {\n}\n#[cfg(test)]\nuse b::c;\nmod d {\n}\n", (6, [], [[5, 6, 2, 0]]))):
             with self.subTest(text=text):

@@ -331,6 +331,36 @@ class TestsInsideFiles(unittest.TestCase):
         self.assertNotIn("set aside", result.out.lower())
 
 
+class TestsInManyFiles(unittest.TestCase):
+    """The lines that say what's set aside, with seven files in the scope, one shown from outside it, and a test
+    file shown, which is measured whole."""
+
+    @classmethod
+    def setUpClass(cls):
+        module = "#[cfg(test)]\nmod t {\n%s}\n"
+        files = dict(("src/f%d.rs" % n, module % ("    fn x() {}\n" * n)) for n in range(1, 8))  # n + 3 lines.
+        files.update({"tests/it.rs": module % "    fn y() {}\n", "other/o.rs": module % "    fn z() {}\n"})
+        repo = support.Repo("many")
+        repo.commit("2026-01-05", "Start", files)
+        repo.done()
+        cls.repo = repo.path
+
+    def test_the_most_first_and_the_totals(self):
+        result = support.run("measure.py", "-C", self.repo, "src", "--show", "other/o.rs", "--show", "tests/it.rs")
+        self.assertIn("are: 49 code lines and 28 functions compiled only for tests (Rust's #[cfg(test)] items), in 7 "
+                      "files: src/f7.rs (10), src/f6.rs (9), src/f5.rs (8), src/f4.rs (7), src/f3.rs (6) and 2 more;",
+                      result.out)
+        self.assertIn("other/o.rs: Rust, 0 code lines, band -, 0 functions", result.out)
+        self.assertIn("Set aside as tests: lines 1-4, 4 code lines and 1 function compiled only", result.out)
+        self.assertIn("tests/it.rs: Rust, 4 code lines, band -, 1 functions", result.out)
+        self.assertEqual(result.out.count("Set aside as tests: lines"), 1)
+
+    def test_one_function(self):
+        result = support.run("measure.py", "-C", self.repo, "src/f1.rs")
+        self.assertIn("are: 4 code lines and 1 function compiled only for tests (Rust's #[cfg(test)] items), in "
+                      "src/f1.rs (4);", result.out)
+
+
 class Unusual(unittest.TestCase):
 
     def test_a_repo_with_no_files(self):

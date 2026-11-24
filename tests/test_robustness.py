@@ -112,9 +112,15 @@ def check(test, name, text, seconds, what, aside=None):
     for found in functions or []:
         test.assertTrue(1 <= found[1] <= found[2] <= count and 0 <= found[3] <= found[2] - found[1] + 1,
                         "%s: %r (%s)" % (name, found, what))
-    for part in aside or []:
+    parts = sorted(aside or [])
+    for part in parts:
         test.assertTrue(1 <= part[0] <= part[1] <= count and 0 <= part[2] <= part[1] - part[0] + 1,
                         "%s: %r set aside (%s)" % (name, part, what))
+    for part, after in zip(parts, parts[1:]):
+        test.assertLess(part[1], after[0], "%s: %r and %r overlap (%s)" % (name, part, after, what))
+    for found in functions or []:
+        test.assertFalse(any(part[0] <= found[1] <= part[1] for part in parts),
+                         "%s: %r found in a part set aside (%s)" % (name, found, what))
 
 
 class Fuzz(unittest.TestCase):
