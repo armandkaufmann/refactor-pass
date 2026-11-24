@@ -96,8 +96,10 @@ class Samples(unittest.TestCase):
         for name, text, want in (
                 ("a.inl", members, ("C++", 2)), ("a.h", members, ("C++", 2)), ("A.INL", members, ("C++", 2)),
                 ("b.inl", "inline float lerp(float a, float t) noexcept\n{\n    return a * t;\n}\n", ("C++", 1)),
-                ("m.h", "#ifdef __cplusplus\n#define CALL(x) ns::call(x)\n#endif\nint one(void) {\n    return 1;\n}\n",
-                 ("C", 1)),
+                ("c.inl", "inline int Grid::size() const\n{\n    return n;\n}\n", ("C++", 1)),
+                ("d.inl", "inline Grid operator+(Grid a, Grid b)\n{\n    return a;\n}\n", ("C++", 1)),
+                ("m.h", "#ifdef __cplusplus\n#define CALL(x) \\\n    ns::call(x)\n#endif\nint one(void) {\n"
+                        "    return 1;\n}\n", ("C", 1)),
                 ("n.h", "[[gnu::always_inline]] static inline int one(void) {\n    return 1;\n}\n", ("C", 1))):
             with self.subTest(name=name):
                 _, functions, language = measure.functions(name, text)
@@ -298,6 +300,12 @@ class TestsInsideFiles(unittest.TestCase):
                 ("mod r#t {\n    //! A.\n    //! B.\n    //! C.\n    #![allow(unused)]\n    #![cfg(test)]\n}\n",
                  (0, [], [[1, 7, 4, 0]])),
                 ("fn a() {}\n#[cfg(test)]\nmod r#tests {\n    fn b() {}\n}\n", (1, [["a", 1, 1, 1]], [[2, 5, 4, 1]])),
+                # Attributes before the cfg, lines of comments after it, and pub(crate) before a module's head.
+                ("#[allow(dead_code)]\n#[inline]\n#[cfg(test)]\nfn f() {\n}\n", (0, [], [[1, 5, 5, 1]])),
+                # An inner attribute before it is the file's, not the item's.
+                ("#![allow(dead_code)]\n#[cfg(test)]\nfn f() {\n}\n", (1, [], [[2, 4, 3, 1]])),
+                ("#[cfg(test)]\n// A.\n// B.\n// C.\nfn f() {\n}\n", (0, [], [[1, 6, 3, 1]])),
+                ("pub(crate) mod t {\n    #![cfg(test)]\n}\n", (0, [], [[1, 3, 3, 0]])),
                 # A declaration, whose module is a file of its own; a use's attribute, not the module's after it.
                 ("#[cfg(test)]\nmod t;\nmod a {\n}\n#[cfg(test)]\nuse b::c;\nmod d {\n}\n", (6, [], [[5, 6, 2, 0]]))):
             with self.subTest(text=text):
