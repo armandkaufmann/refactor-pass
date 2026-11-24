@@ -729,6 +729,8 @@ PREPROCESSED = {
     "Swift": (re.compile(r"\s*#(if|elseif|else|endif)\b"), False),
 }
 BRACKETS_IN = re.compile(r"[()\[\]{}]")
+# The languages whose block comments nest: /* a /* b */ c */ is one comment.
+NESTING_COMMENTS = ("Rust", "Swift", "Kotlin")
 
 
 def preprocessed(lines, code, began_inside, directive, continues):
@@ -814,6 +816,8 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
     char_quote = quotes == "char"
     out, began_inside = [], []
     state = None  # Inside: a block comment ("*/"), or a string (its closing quote).
+    nested = 0  # In a block comment, how many comments inside it are open, where they nest.
+    nests = language in NESTING_COMMENTS
     raw = None  # Inside a string with no escapes: its closing text.
     # An interpolation's hole in a string is code, up to the bracket that matches its own, and can hold strings
     # of its own: JavaScript's template literal's ${...}, Kotlin's "${...}", Swift's "\(...)", C#'s $"{...}".
@@ -854,9 +858,15 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
                     i += 1
             elif state == "*/":
                 end = line.find("*/", i)
-                if end < 0:
+                inner = line.find("/*", i, end if end >= 0 else len(line)) if nests else -1
+                if inner >= 0:  # A comment inside it, which closes first.
+                    i, nested = inner + 2, nested + 1
+                elif end < 0:
                     break
-                i, state = end + 2, None
+                elif nested:
+                    i, nested = end + 2, nested - 1
+                else:
+                    i, state = end + 2, None
             elif state:
                 if line[i] == "\\" and not (language in NO_ESCAPES and state.startswith(NO_ESCAPES[language])):
                     code.append("s" * len(line[i:i + 2]))  # The string's, as its other characters are.
