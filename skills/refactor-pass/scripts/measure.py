@@ -102,9 +102,11 @@ app/sub/deep.py; and **/ matches any number of folders, none included, so
 Test files are set aside as the heatmap sets them aside, by name or folder,
 so they stay out of the percentiles, and the output names any set aside in
 doubt; --test and --not-test correct it. So are the tests inside a file,
-Rust's modules compiled only for tests (#[cfg(test)] mod tests {...}),
-which the heatmap counts in the file: the output says how many lines and
-in which files, and --show which lines. --keep-tests measures them all.
+Rust's items compiled only for tests (#[cfg(test)] on a mod tests {...},
+a fn, an impl...), which the heatmap counts in the file: the output says
+how many lines and in which files, and --show which lines. A test module
+in a file of its own (mod tests;) is measured unless named as a test.
+--keep-tests measures them all.
 Any copy of this skill a project keeps in the repo is left out, unless a
 scope names its folder. Reads the working tree's tracked files only.
 
@@ -1335,11 +1337,16 @@ def docstrings(code, inside, continued):
     return found
 
 
-# Rust's module, after its visibility (pub, pub(crate)), up to its body's bracket or a declaration's ;; an
-# attribute's opening, outer (#[...]) or inner (#![...]); and a cfg attribute's.
-RUST_MODULE = re.compile(r"(?<![\w#])(?:pub(?:\s*\([^()]*\))?\s+)?mod\s+(?:r#)?\w+\s*")
+# Rust's item, after its visibility (pub, pub(crate)) and qualifiers (const fn, unsafe impl, extern "C" fn): the
+# keyword that says which; a module's head, before its body's bracket; an attribute's opening, outer (#[...]) or
+# inner (#![...]); a cfg attribute's; and what stops the reading of an item's head.
+RUST_ITEM = re.compile(r"(?:pub(?:\s*\([^()]*\))?\s+)?(?:(?:const|async|unsafe|safe|default|extern\s*\"s*\")\s+)*"
+                       r"(fn|impl|mod|trait|struct|enum|union|type|use|static|const|extern|macro_rules(?=\s*!))\b")
+RUST_MODULE_HEAD = re.compile(r"(?<![\w#])(?:pub(?:\s*\([^()]*\))?\s+)?mod\s+(?:r#)?\w+\s*$")
+RUST_OUTER = re.compile(r"#\s*\[")
 RUST_INNER = re.compile(r"#\s*!\s*\[")
 RUST_CFG = re.compile(r"#\s*!?\s*\[\s*cfg\s*\(")
+ITEM_STOPS = re.compile(r"[(){}\[\];]")
 
 
 def cfg_needs_test(attribute):
@@ -1380,39 +1387,70 @@ def joined(code, start, end):
     return code[i][j:m + 1] if i == k else " ".join([code[i][j:]] + code[i + 1:k] + [code[k][:m + 1]])
 
 
-def rust_test_modules(code):
-    """Rust's modules compiled only for tests, in the skeleton's lines (code), as (first, last) indexes of
-    lines, the outermost only: from the first of a module's attributes to its body's closing bracket. A
-    module is when a cfg among its attributes, before it or first in its body (#![cfg(test)]), needs test
-    (cfg_needs_test). A declaration (mod tests;), whose module is a file of its own, sets nothing aside."""
+def rust_item_end(code, i, j):
+    """Where the Rust item whose head goes on from code[i][j] ends, as its line, column and character: the bracket
+    that closes its body, the first { outside other brackets, or the ; that ends it, as a use's or a
+    declaration's; None if neither comes, as when the brackets around it close first."""
+    closes = brackets_of(code)["closes"]
+    k, col = i, j
+    while k < len(code) and k - i <= SIGNATURE_LINES:
+        stop = ITEM_STOPS.search(code[k], col)
+        if stop is None:
+            k, col = k + 1, 0
+            continue
+        c = stop.group()
+        if c == ";":
+            return k, stop.start(), c
+        end = closes.get((k, stop.start())) if c in OPEN else None
+        if end is None:
+            return None
+        if c == "{":
+            return end[0], end[1] - 1, "}"
+        k, col = end  # Brackets before the body, as parameters' or an array's type, [u8; 3], are passed whole.
+    return None
+
+
+def rust_test_items(code):
+    """Rust's items compiled only for tests, in the skeleton's lines (code), as (first, last) indexes of lines, the
+    outermost only: an item, whatever it is (a module, a function, an impl, a struct, a use...), whose cfg needs
+    test (cfg_needs_test), from the line of its first attribute to the bracket that closes its body or the ; that
+    ends it. The cfg is among the attributes before it, or for a module first in its body (#![cfg(test)]). A
+    module declared with mod tests; is a file of its own and sets nothing aside here; a cfg on what isn't an item,
+    as a statement in a function's body or a struct's field, is that code's."""
     closes = brackets_of(code)["closes"]
     opening = None  # Where each closing bracket's opening one is, worked out when first needed.
-    found = []
+    found = set()
     for i, line in enumerate(code):
-        for module in RUST_MODULE.finditer(line) if "mod" in line else ():
-            body = js_next(code, i, module.end())
-            end = closes.get(body) if body and code[body[0]][body[1]] == "{" else None
-            if end is None:
+        for cfg in RUST_CFG.finditer(line) if "cfg" in line else ():
+            end = closes.get((i, line.index("[", cfg.start())))
+            if end is None or not cfg_needs_test(joined(code, (i, cfg.start()), (end[0], end[1] - 1))):
                 continue
-            first, attributes = i, []
-            at = before_space(code, i, module.start())
+            if RUST_INNER.match(line, cfg.start()):  # The module's whose body it's first in.
+                opener = js_opener(code, i, cfg.start())
+                head = RUST_MODULE_HEAD.search(code[opener[0]][:opener[1]]) if opener and opener[2] == "{" else None
+                body = closes.get(opener[:2]) if head else None
+                if body is None:
+                    continue
+                start, last = (opener[0], head.start()), body[0]
+            else:  # The item after it, past any other attributes.
+                at = js_next(code, end[0], end[1], limit=50)
+                while at and RUST_OUTER.match(code[at[0]], at[1]):
+                    after = closes.get((at[0], code[at[0]].index("[", at[1])))
+                    at = js_next(code, after[0], after[1], limit=50) if after else None
+                item = RUST_ITEM.match(code[at[0]], at[1]) if at else None
+                ends = rust_item_end(code, at[0], item.end()) if item else None
+                if ends is None or (ends[2] == ";" and item.group(1) == "mod"):
+                    continue
+                start, last = (i, cfg.start()), ends[0]
+            at = before_space(code, *start)
             while at and code[at[0]][at[1]] == "]":  # The attributes before it, the nearest first.
                 if opening is None:
-                    opening = dict(((k, c - 1), start) for start, (k, c) in closes.items())
-                start = before_space(code, *opening[at]) if at in opening else None
-                if not start or code[start[0]][start[1]] != "#":  # Not one, or an inner one: the enclosing code's.
+                    opening = dict(((k, c - 1), begin) for begin, (k, c) in closes.items())
+                begin = before_space(code, *opening[at]) if at in opening else None
+                if not begin or code[begin[0]][begin[1]] != "#":  # Not one, or an inner one: the enclosing code's.
                     break
-                attributes.append(joined(code, start, at))
-                first, at = start[0], before_space(code, *start)
-            at = js_next(code, body[0], body[1] + 1, limit=50)
-            inner = RUST_INNER.match(code[at[0]], at[1]) if at else None
-            while inner and (at[0], inner.end() - 1) in closes:  # Those first in its body.
-                k, c = closes[(at[0], inner.end() - 1)]
-                attributes.append(joined(code, at, (k, c - 1)))
-                at = js_next(code, k, c, limit=50)
-                inner = RUST_INNER.match(code[at[0]], at[1]) if at else None
-            if any(cfg_needs_test(a) for a in attributes):
-                found.append((first, end[0]))
+                start, at = begin, before_space(code, *begin)
+            found.add((start[0], last))
     outermost = []
     for first, last in sorted(found):
         if not outermost or first > outermost[-1][1]:
@@ -1476,7 +1514,7 @@ FIND["Java"], FIND["C#"] = [by_pattern(dict((lang[0], lang[2]) for lang in LANGU
 
 def functions(path, text, set_aside=None):
     """The file's code lines, its functions as (name, first line, last line, code lines, deepest), and its language.
-    With set_aside, a list, the code compiled only for tests (Rust's #[cfg(test)] mod tests { ... }) is left out,
+    With set_aside, a list, the code compiled only for tests (Rust's #[cfg(test)] items) is left out,
     as test files are: its lines are in neither the file's nor a function's, and no function in it is found.
     Each part left out is added to set_aside, as (first line, last line, code lines, functions)."""
     language = BY_EXTENSION.get(os.path.splitext(path)[1].lower())
@@ -1510,7 +1548,7 @@ def functions(path, text, set_aside=None):
     if name == "Python":  # Docstrings are documentation, as comments are.
         for i in docstrings(code, inside, continued):
             counted[i] = False
-    parts = [(first, last, sum(counted[first:last + 1])) for first, last in rust_test_modules(code)] \
+    parts = [(first, last, sum(counted[first:last + 1])) for first, last in rust_test_items(code)] \
         if set_aside is not None and name == "Rust" else []
     for first, last, _ in parts:
         counted[first:last + 1] = [False] * (last + 1 - first)
@@ -1746,8 +1784,9 @@ def main():
                     key=lambda kv: (-kv[0], kv[1]))
     if inside:
         count = sum(part[3] for _, path in inside for part in within[path])
-        print("Tests inside files, set aside as test files are: %d code lines and %d function%s of Rust's "
-              "#[cfg(test)] modules, in %s." % (
+        print("Tests inside files, set aside as test files are: %d code lines and %d function%s compiled only for "
+              "tests (Rust's #[cfg(test)] items), in %s; a test module in a file of its own (mod tests;) is "
+              "measured unless named as a test." % (
                   sum(n for n, _ in inside), count, "" if count == 1 else "s",
                   "%s (%d)" % inside[0][::-1] if len(inside) == 1 else "%d files: %s" % (
                       len(inside), a_few(["%s (%d)" % (path, n) for n, path in inside]))))
@@ -1819,10 +1858,10 @@ def main():
             if parts:  # What its lines leave out, where, so the lines listed stay the file's own.
                 spans = ["%d-%d" % part[:2] for part in parts]
                 count = sum(part[3] for part in parts)
-                print("Set aside as tests: lines %s, %s of %d code lines and %d function%s; --keep-tests lists "
-                      "them." % (spans[0] if len(spans) == 1 else ", ".join(spans[:-1]) + " and " + spans[-1],
-                                 "a #[cfg(test)] module" if len(parts) == 1 else "#[cfg(test)] modules",
-                                 sum(part[2] for part in parts), count, "" if count == 1 else "s"))
+                print("Set aside as tests: lines %s, %d code lines and %d function%s compiled only for tests "
+                      "(#[cfg(test)]); --keep-tests lists them." % (
+                          spans[0] if len(spans) == 1 else ", ".join(spans[:-1]) + " and " + spans[-1],
+                          sum(part[2] for part in parts), count, "" if count == 1 else "s"))
             # The first and last lines, as git log -L FIRST,LAST:FILE takes them.
             spans = ["%d-%d" % (f[1], f[2]) for f in found]
             width = max([len("first-last")] + [len(s) for s in spans])
