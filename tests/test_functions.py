@@ -291,6 +291,16 @@ class CodeLines(unittest.TestCase):
         # =begin ... =end is a comment, whatever its lines start with; and after __END__ comes data.
         self.check("a.rb", "def f\n  1\nend\n=begin\nnotes about f\n# more notes\n=end\nx = 1\n__END__\ndata\n", 4)
 
+    def test_a_line_of_only_an_escape_in_a_string(self):
+        # A line of the string, as any other is, so code; a docstring's is left out with the rest of it.
+        for name, text, want in (("a.py", 'x = """a\n\\n\nb"""\n', 3), ("a.js", "x = `a\n\\t\nb`\n", 3),
+                                 ("a.rs", 'let x = "a\n\\n\nb";\n', 3), ("a.swift", 'let x = """\n\\n\n"""\n', 3),
+                                 ("A.java", 'String x = """\n\\n\n""";\n', 3), ("a.php", '<?php\n$x = "\n\\n\n";\n', 4),
+                                 ("a.gd", 'var x = """a\n\\t\nb"""\n', 3), ("a.c", 'char *x = "a\\\n\\n\\\n";\n', 3),
+                                 ("a.py", '"""a\n\\n\n"""\nx = 1\n', 1)):
+            with self.subTest(name=name, text=text):
+                self.check(name, text, want)
+
     def test_a_language_with_no_rule_counts_lines(self):
         measure = support.load("measure")
         lines, functions, language = measure.functions("notes.txt", "a\n\n# b\n// c\nd\n")
