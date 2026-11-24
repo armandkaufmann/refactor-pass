@@ -30,16 +30,19 @@ page only.
 
 With --open, a page with no errors is then opened in the browser, and a
 last line says so, or why it wasn't: over SSH, with no display, or with
-nothing here to open it with. That never fails the check. It runs the
-command REFACTOR_PASS_BROWSER, or else BROWSER (but not over SSH), names:
-%s in it stands for the page, which otherwise goes at its end, and several
-commands, separated as PATH separates folders, are tried in turn. none
-opens nothing, and a browser that runs in the terminal, as lynx does, is
-never run, since it would take over the shell. Where neither is set, the
-page goes to the system's program for HTML files: open on macOS, Windows'
-own on Windows, wslview or else explorer.exe on WSL, and xdg-open
-elsewhere. It waits up to 5 seconds for the command to finish, then leaves
-it running, as a browser it starts does.
+nothing here to open it with. That never fails the check. The page goes to
+the system's program for HTML files: open on macOS, Windows' own on
+Windows, wslview or else explorer.exe on WSL, and xdg-open elsewhere.
+REFACTOR_PASS_BROWSER, where it's set, names a command to run instead,
+even over SSH or with no display: %s in it stands for the page, which
+otherwise goes at its end, its words are split as Windows or a POSIX shell
+splits them, and several commands, separated as PATH separates folders,
+are tried in turn. none opens nothing, and a browser that runs in the
+terminal, as lynx does, is never run, since it would take over the shell.
+BROWSER isn't read: tools set it to hand links on to another machine, as
+VS Code does in a dev container or a Codespace, where this page's path
+means nothing. It waits up to 5 seconds for the command to finish, then
+leaves it running, as a browser it starts does.
 
 Usage:
   check_page.py PAGE
@@ -358,20 +361,17 @@ def check(text):
 
 def openers(page, environ, system, release, which, windows_path):
     """What --open runs to open page, a whole path, in a browser: (name, command) pairs to try in turn, and why
-    there are none where there aren't. The command REFACTOR_PASS_BROWSER names, where it does; else, where a
-    browser here would be in front of the user, BROWSER's, or the system's own way to open an HTML file. system
-    is as sys.platform gives it, release the kernel's (which says WSL), which finds a program, and windows_path
-    gives a path as Windows knows it, on WSL."""
+    there are none where there aren't. The commands REFACTOR_PASS_BROWSER names, where it does; else, where a
+    browser here would be in front of the user, the system's own way to open an HTML file. system is as
+    sys.platform gives it, release the kernel's (which says WSL), which finds a program, and windows_path gives a
+    path as Windows knows it, on WSL. BROWSER isn't read: tools set it to hand links on to the machine in front
+    of the user, where this page's path means nothing."""
     wsl = system.startswith("linux") and "microsoft" in release.lower()
     named = environ.get("REFACTOR_PASS_BROWSER", "").strip()
     if named:
-        return named_browsers("REFACTOR_PASS_BROWSER", named, page, system, wsl, which, windows_path)
-    # Over SSH, BROWSER is often a tool's, handing a link to the machine in front of the user, where this page's
-    # path means nothing.
+        return named_browsers(named, page, system, wsl, which, windows_path)
     if any(environ.get(v) for v in ("SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY")):
         return [], "this is a session over SSH, so a browser here isn't in front of the user"
-    if environ.get("BROWSER", "").strip():
-        return named_browsers("BROWSER", environ["BROWSER"].strip(), page, system, wsl, which, windows_path)
     if system == "darwin":
         return [("open", ["open", page])], None
     if system.startswith("win"):
@@ -393,30 +393,40 @@ def openers(page, environ, system, release, which, windows_path):
     return [], "there's no xdg-open here to hand it to a browser"
 
 
-def named_browsers(variable, value, page, system, wsl, which, windows_path):
-    """The commands a variable such as BROWSER names, as openers gives them: in each, %s stands for the page,
-    which otherwise goes at its end; none names none."""
+def named_browsers(value, page, system, wsl, which, windows_path):
+    """The commands REFACTOR_PASS_BROWSER names, as openers gives them: in each, %s stands for the page, which
+    otherwise goes at its end; none names none."""
     if value.lower() == "none":
-        return [], "%s is none" % variable
-    commands, why = [], None
-    for entry in [e.strip() for e in value.split(";" if system.startswith("win") else ":") if e.strip()]:
+        return [], "REFACTOR_PASS_BROWSER is none"
+    windows = system.startswith("win")
+    commands, why = [], "REFACTOR_PASS_BROWSER's %r names no command" % value
+    for entry in [e.strip() for e in value.split(";" if windows else ":") if e.strip()]:
         try:
-            words = [entry] if which(entry) else shlex.split(entry)  # A program's path with spaces is one word.
+            # A program's path with spaces, unquoted, is one word.
+            words = [entry] if which(entry) else command_words(entry, windows)
         except ValueError as e:
-            why = "%s's %r can't be read: %s" % (variable, entry, e)
+            why = "REFACTOR_PASS_BROWSER's %r can't be read: %s" % (entry, e)
             continue
         name = re.split(r"[\\/]", words[0])[-1] if words else ""
         target = windows_path(page) if wsl and name.lower().endswith(".exe") else page  # A Windows program, on WSL.
         if not name:
-            why = "%s's %r names no command" % (variable, entry)
+            why = "REFACTOR_PASS_BROWSER's %r names no command" % entry
         elif re.sub(r"(?i)\.exe$", "", name).lower() in TERMINAL_BROWSERS:
-            why = "%s's %s runs in the terminal, where it would take over this shell" % (variable, name)
+            why = "REFACTOR_PASS_BROWSER's %s runs in the terminal, where it would take over this shell" % name
         elif not target:
             why = "wslpath couldn't give its path as Windows knows it, for %s" % name
         else:
             commands.append((name, [w.replace("%s", target) for w in words] if any("%s" in w for w in words) else
                              words + [target]))
     return commands, None if commands else why
+
+
+def command_words(command, windows):
+    """A command's words: as Windows splits a command line, where " groups them and \\ is a character, or else as
+    a POSIX shell does."""
+    if windows:
+        return [w.replace('"', "") for w in re.findall(r'(?:[^\s"]|"[^"]*(?:"|$))+', command)]
+    return shlex.split(command)
 
 
 def launch(name, command):
