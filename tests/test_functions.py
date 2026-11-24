@@ -342,12 +342,20 @@ class Strings(unittest.TestCase):
         # holes of two braces, quotes in a verbatim string's holes.
         for string in ('""""\n        has """ in it {\n        """"', '$$"""\n        {"a": {{x}}\n        """',
                        '$"""\n        a {F("}")} b\n        """', '$@"a {d["}"]} b"', '@$"a {d["}"]} b"',
-                       '$@"a\n{d["}"]} "" }} b"', '$@"x {d["k"]} {{ y"', '$"a {d["}"]} b"', '$@"{F(@"}""")}"'):
+                       '$@"a\n{d["}"]} "" }} b"', '$@"x {d["k"]} {{ y"', '$"a {d["}"]} b"', '$@"{F(@"}""")}"',
+                       '""""C:\\""""', '$""""\n        {x // """"\n        }\n        """"',
+                       '$$"""\n        {{x // """\n        }}\n        """', '\n$"a {d["}"]} b"'):
             with self.subTest(string=string):
                 n = string.count("\n")
                 text = "class R {\n    string A() {\n        return %s;\n    }\n    int B() {\n        return 1;\n" \
                        "    }\n}\n" % string
                 self.assertEqual([f[:3] for f in found("R.cs", text)], [["A", 2, 4 + n], ["B", 5 + n, 7 + n]])
+
+
+    def test_four_quotes_in_python_and_kotlin(self):
+        # Three quotes open the string and the fourth is in it, as in C# it would not be.
+        self.assertEqual(found("a.py", 'x = """"a" b"""\ndef f():\n    return 1\n'), [["f", 2, 3, 2]])
+        self.assertEqual(found("a.kt", 'val x = """"a" b"""\nfun f() {\n}\n'), [["f", 2, 3, 2]])
 
 
 class Comments(unittest.TestCase):
@@ -356,10 +364,23 @@ class Comments(unittest.TestCase):
         # Rust's, Swift's and Kotlin's, as C's don't: a brace after the inner one's end is the comment's.
         for name, text in (("a.rs", "fn a() {\n    /* a /* b */ { */\n}\nfn b() {\n}\n"),
                            ("a.swift", "func a() {\n    /* a /* b */ { */\n}\nfunc b() {\n}\n"),
-                           ("a.kt", "fun a() {\n    /* a /* b */ { */\n}\nfun b() {\n}\n"),
-                           ("a.c", "int a(void) {\n    /* a /* b */\n}\nint b(void) {\n}\n")):
+                           ("a.kt", "fun a() {\n    /* a /* b */ { */\n}\nfun b() {\n}\n")) + tuple(
+                (name, "%s a() {\n    /* a /* b */\n}\n%s b() {\n}\n" % (word, word)) for name, word in (
+                    ("a.c", "int"), ("a.cpp", "int"), ("A.java", "int"), ("A.cs", "int"), ("a.js", "function"),
+                    ("a.ts", "function"), ("a.go", "func"), ("a.php", "function"))):
             with self.subTest(name=name):
-                self.assertEqual([f[:3] for f in found(name, text)], [["a", 1, 3], ["b", 4, 5]])
+                php = name.endswith(".php")  # Its code after <?php, a line down.
+                self.assertEqual([f[:3] for f in found(name, "<?php\n" * php + text)],
+                                 [["a", 1 + php, 3 + php], ["b", 4 + php, 5 + php]])
+
+    def test_nesting_from_where_each_opens(self):
+        # Two comments on one line don't nest; an inner one opens on a line with no */, or at its start.
+        for text in ("fn a() {\n    f(/* x */ 1, /* y */ 2);\n}\nfn b() {\n}\n",
+                     "fn a() {\n    /* x\n    /* y\n    */ { */\n}\nfn b() {\n}\n",
+                     "fn a() {\n/* x\n/* y */ {\n*/\n}\nfn b() {\n}\n"):
+            with self.subTest(text=text):
+                n = text.count("\n")
+                self.assertEqual([f[:3] for f in found("a.rs", text)], [["a", 1, n - 2], ["b", n - 1, n]])
 
 
     def test_an_inner_comment_that_opens_on_a_star(self):
