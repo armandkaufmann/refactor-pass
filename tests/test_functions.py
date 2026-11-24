@@ -86,6 +86,23 @@ class Samples(unittest.TestCase):
                 self.assertEqual((language, [f[:3] for f in functions or []]), ("C++", [("twice", 2, 4)]))
         self.assertEqual(measure.functions("a.inl", "static int one(void) {\n    return 1;\n}\n")[2], "C")
 
+    def test_an_inl_or_h_by_what_its_code_holds(self):
+        # C++ by a name qualified by its class, an operator's definition or noexcept, as in definitions written
+        # out of their class in a namespace that the header including them opens; C++ in a macro, or a C23
+        # attribute's vendor (gnu::), isn't the code's own.
+        measure = support.load("measure")
+        members = ("inline Path Path::operator/(const Path& p) const noexcept\n{\n    return Join(*this, p);\n}\n"
+                   "inline bool Path::empty() const noexcept\n{\n    return size == 0;\n}\n")
+        for name, text, want in (
+                ("a.inl", members, ("C++", 2)), ("a.h", members, ("C++", 2)),
+                ("b.inl", "inline float lerp(float a, float t) noexcept\n{\n    return a * t;\n}\n", ("C++", 1)),
+                ("m.h", "#ifdef __cplusplus\n#define CALL(x) ns::call(x)\n#endif\nint one(void) {\n    return 1;\n}\n",
+                 ("C", 1)),
+                ("n.h", "[[gnu::always_inline]] static inline int one(void) {\n    return 1;\n}\n", ("C", 1))):
+            with self.subTest(name=name):
+                _, functions, language = measure.functions(name, text)
+                self.assertEqual((language, len(functions)), want)
+
     def test_language_of_each_sample(self):
         measure = support.load("measure")
         names = {".vue": "Vue", ".svelte": "Vue", ".tsx": "TypeScript", ".mjs": "JavaScript", ".jsx": "JavaScript"}
