@@ -378,14 +378,16 @@ def js_close(code, i, j, limit):
     return None
 
 
+NOT_SPACE = re.compile(r"\S")
+
+
 def js_next(code, i, j, limit=3):
-    """The line and column of the first character from code[i][j] on that isn't a space, or None."""
+    """The line and column of the first character from code[i][j] on that isn't a space, or None; read from there,
+    not from the line's start, so many calls on one long line stay quick."""
     for k in range(i, min(len(code), i + limit)):
-        line = code[k]
-        start = j if k == i else 0
-        rest = len(line[start:]) - len(line[start:].lstrip())
-        if line[start:].strip():
-            return k, start + rest
+        found = NOT_SPACE.search(code[k], j if k == i else 0)
+        if found:
+            return k, found.start()
     return None
 
 
@@ -1405,11 +1407,14 @@ def cfg_needs_test(attribute):
 
 
 def before_space(code, i, j):
-    """The line and column of the last character before code[i][j] that isn't a space, or None."""
+    """The line and column of the last character before code[i][j] that isn't a space, or None; read back from
+    there, past spaces only."""
     while i >= 0:
-        text = code[i][:j].rstrip()
-        if text:
-            return i, len(text) - 1
+        line, k = code[i], min(j, len(code[i])) - 1
+        while k >= 0 and line[k].isspace():
+            k -= 1
+        if k >= 0:
+            return i, k
         i -= 1
         j = len(code[i]) if i >= 0 else 0
     return None
@@ -1455,20 +1460,24 @@ def rust_item_end(code, i, j, body=True):
 def rust_in_macro(code, i, col, memo):
     """Whether code[i][col] is in a macro's brackets, an invocation's or a macro_rules! definition's, whose text is
     the macro's, not code of its own. memo keeps the answer per bracket, so however deep a file's brackets nest,
-    each is looked at once."""
-    stack = brackets_of(code)["stacks"][i]
-    for at, c in enumerate(code[i][:col]):
-        if c in OPEN:
-            stack = ((i, at, c), stack)
-        elif c in CLOSE and stack is not None:
+    each is looked at once; and the brackets open where the last call stopped on its line, so the calls on one long
+    line, in their order, read it once."""
+    scan = memo.get("scan")
+    stack, start = (scan[2], scan[1]) if scan and scan[0] == i and scan[1] <= col else \
+        (brackets_of(code)["stacks"][i], 0)
+    for found in BRACKET.finditer(code[i], start, col):
+        if found.group() in OPEN:
+            stack = ((i, found.start(), found.group()), stack)
+        elif stack is not None:
             stack = stack[1]
+    memo["scan"] = (i, col, stack)
     path = []
     while stack is not None and stack[0][:2] not in memo:
         path.append(stack[0])
         stack = stack[1]
     inside = memo[stack[0][:2]] if stack is not None else False
     for line, at, _ in reversed(path):
-        inside = inside or bool(RUST_MACRO_BEFORE.search(code[line], 0, at))
+        inside = inside or bool(RUST_MACRO_BEFORE.search(code[line], max(0, at - 200), at))
         memo[(line, at)] = inside
     return inside
 
@@ -1484,6 +1493,13 @@ def rust_test_items(code):
     closes = brackets_of(code)["closes"]
     opening = None  # Where each closing bracket's opening one is, worked out when first needed.
     found, macros = set(), {}
+    edges = {}  # Per line, the columns of its first and last characters that aren't spaces, worked out once.
+
+    def edge(k):
+        if k not in edges:
+            text = code[k]
+            edges[k] = (len(text) - len(text.lstrip()), len(text.rstrip()) - 1)
+        return edges[k]
     # Where the last walk over a run of attributes stopped, and the modules whose inner cfgs were read: each run, and
     # each module, is read once, however many cfgs it holds.
     walked, modules = (-1, -1), set()
@@ -1525,8 +1541,8 @@ def rust_test_items(code):
                 start, at = begin, before_space(code, *begin)
             # Its lines, but for one it shares with other code, before its first attribute or after its end, which
             # stays counted with that code's functions.
-            first = start[0] + bool(code[start[0]][:start[1]].strip())
-            last = end[0] - bool(code[end[0]][end[1] + 1:].strip())
+            first = start[0] + (edge(start[0])[0] < start[1])
+            last = end[0] - (edge(end[0])[1] > end[1])
             if first <= last:
                 found.add((first, last))
     outermost = []
