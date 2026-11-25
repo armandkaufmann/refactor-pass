@@ -303,19 +303,21 @@ def cpp_header(code):
         return True
     kept, going_on = [], False
     frames = []  # Per #if open: whether its branch now is C++'s only, and whether its #else is.
+    cpp = 0  # How many of them are C++'s only now, so that a line asks once however deep they nest.
     for line in code:
         directive = going_on or line.lstrip().startswith("#")
         going_on = directive and line.rstrip().endswith("\\")
         found = CONDITIONAL.match(line) if directive else None
         if found and found.group(1) in ("if", "ifdef", "ifndef"):
             frames.append(list(cplusplus_branch(*found.groups())))
-        elif found and frames and found.group(1) == "elif":
-            frames[-1][0] = frames[-1][1] or cplusplus_branch("if", found.group(2))[0]
-        elif found and frames and found.group(1) == "else":
-            frames[-1][0] = frames[-1][1]
+            cpp += frames[-1][0]
+        elif found and frames and found.group(1) in ("elif", "else"):
+            now = frames[-1][1] or found.group(1) == "elif" and cplusplus_branch("if", found.group(2))[0]
+            cpp += now - frames[-1][0]
+            frames[-1][0] = now
         elif found and frames and found.group(1) == "endif":
-            frames.pop()
-        kept.append("" if directive or any(cpp for cpp, _ in frames) else line)
+            cpp -= frames.pop()[0]
+        kept.append("" if directive or cpp else line)
     return bool(CPP_IN_CODE.search(C_TAG_OPERATOR.sub(" ", without_attributes("\n".join(kept)))))
 
 # JavaScript and TypeScript: how a definition's line starts, up to the bracket that opens its parameters
