@@ -295,20 +295,31 @@ GROWING = {
     "open-aliases.rs": (480, lambda n: "#[cfg(test)]\ntype A<T,\n" * n),
     "quote-runs.cs": (300000, lambda n: "var s = " + '"' * n + "\n" + ('"' * (n - 1) + "x") * 4 + "\n" + '"' * n +
                       ";\n"),
-    # Rust's test modules in files of their own, of a repo's files: thousands of declarations in one file, a crate
-    # root's each, a chain of modules each bringing in the next through #[path], a cycle of them, and a deep tree; a
-    # string never closed, of thousands of \", a cfg of thousands of strings, and declarations in blocks thousands deep.
-    "mod-lines": (600, lambda n: rust_files(["src/lib.rs"], n), "modules"),
-    "crate-roots": (400, lambda n: dict([("src/bin/t%d.rs" % k, "#[cfg(test)]\nmod m%d;\n" % k) for k in range(n)] +
-                                        [("src/bin/m%d.rs" % k, "") for k in range(n)]), "modules"),
-    "module-chain": (500, lambda n: rust_chain(n, n + 1), "modules"),
-    "module-cycle": (550, lambda n: rust_chain(n, 0), "modules"),
-    "module-tree": (40000, lambda n: dict([("src/lib.rs", "#[cfg(test)]\nmod a;\n")] + [
-        ("src/" + "a/" * k + "mod.rs", "mod a;\n") for k in range(1, int((2 * n) ** 0.5) + 1)]), "modules"),
+    # Rust's test modules in files of their own, of a repo's files, each sized so that the steps named in brackets,
+    # made to grow with the square, fail it on both Pythons: thousands of declarations in one file (the tracked files,
+    # or the readings found tests, kept in a list); crate roots no manifest names, each declaring one (the files a
+    # declaration could bring in kept in a list; the files no reading reaches searched from the start); a chain of
+    # modules each bringing in the next through #[path] (the readings done kept in a list; tests found by passes); a
+    # cycle of them (one read again, which never ends); modules nested thousands deep, a declaration in each (each
+    # scope's folder found again per declaration, or by its way up; the cfg from every block open); a file thousands
+    # of crates bring in through #[path], at the head of a chain of them (its declaring files carried down); a
+    # string never closed, of thousands of \" (read again from each); a cfg of thousands of strings (the attribute
+    # joined per string; its words sliced to the end); and declarations in blocks thousands deep (the declarations,
+    # the brackets open or the scopes copied per block).
+    "mod-lines": (2400, lambda n: rust_files(["src/lib.rs"], n), "modules"),
+    "crate-roots": (3000, lambda n: dict([("gen/t%d.rs" % k, "#[cfg(test)]\nmod m%d;\n" % k) for k in range(n)] +
+                                        [("gen/m%d.rs" % k, "") for k in range(n)]), "modules"),
+    "module-chain": (1600, lambda n: rust_chain(n, n + 1), "modules"),
+    "module-cycle": (1000, lambda n: rust_chain(n, 0), "modules"),
+    "nested-modules": (500, lambda n: {"src/lib.rs": "".join("mod m%d {\n#[cfg(test)]\nmod t%d;\n" % (k, k)
+                                                            for k in range(n)) + "}\n" * n}, "modules"),
+    "shared-chain": (2000, lambda n: dict([("c%d/src/lib.rs" % k, "#[cfg(test)]\n#[path = \"../../s/s0.rs\"]\nmod s;\n")
+                                          for k in range(n)] + [("s/s%d.rs" % k, "#[path = \"s%d.rs\"]\nmod next;\n"
+                                                                 % (k + 1)) for k in range(n)]), "modules"),
     "unclosed-string": (200000, lambda n: {"src/lib.rs": 'mod a;\n"' + '\\"' * n}, "modules"),
     "cfg-strings": (2500, lambda n: {"src/lib.rs": "#[cfg(any(" + 'feature = "x", ' * n + "))]\nmod a;\n",
                                      "src/a.rs": ""}, "modules"),
-    "deep-blocks": (1000, lambda n: {"src/lib.rs": "{" * n + "mod a;" * n + "}" * n, "src/a.rs": ""}, "modules"),
+    "deep-blocks": (6000, lambda n: {"src/lib.rs": "{" * n + "mod a;" * n + "}" * n, "src/a.rs": ""}, "modules"),
 }
 
 
