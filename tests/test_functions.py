@@ -135,13 +135,16 @@ class Samples(unittest.TestCase):
         # or new, delete, co_await or an operator spelt as a word (and, not_eq...), which take them. Not a C
         # function whose name starts with it, nor one whose type is named operator.
         measure = support.load("measure")
+        words = ("and", "and_eq", "bitand", "bitor", "compl", "not", "not_eq", "or", "or_eq", "xor", "xor_eq")
         for text in ("operator bool()", "Mesh::operator bool() const", "operator Color4()", "operator==(",
                      "operator ()(", "operator new(size_t)", "operator new[](size_t)", "operator delete[](void*)",
                      'operator""_km(', "operator const char*()", "operator std::string()", "operator T&()",
-                     "operator co_await()", "operator Task<int(long)>() const", "operator and(Flag a, Flag b)"):
+                     "operator co_await()", "operator Task<int(long)>() const", "operator co_await(Task t)",
+                     "operator bool( ) const", "operator delete [] (void* p)") + \
+                tuple("operator %s(Flag a, Flag b)" % word for word in words):
             with self.subTest(text=text):
                 self.assertTrue(measure.CPP_IN_CODE.search(text))
-        for text in ("operator_rank(", "operator_kind (", "operators(", "my_operator(", "operator lookup(int key)",
+        for text in ("operator_rank(", "operator_kind (", "operators()", "my_operator(", "operator lookup(int key)",
                      "operator pick(void)"):
             with self.subTest(text=text):
                 self.assertFalse(measure.CPP_IN_CODE.search(text))
@@ -357,6 +360,11 @@ class TestsInsideFiles(unittest.TestCase):
                 ("impl S {\n    #[inline]\n    #[cfg(test)]\n    fn f() {}\n}\n", (2, [], [[2, 4, 3, 1]])),
                 ("#[cfg(test)]\n// A.\n// B.\n// C.\nfn f() {\n}\n", (0, [], [[1, 6, 3, 1]])),
                 ("pub(crate) mod t {\n    #![cfg(test)]\n}\n", (0, [], [[1, 3, 3, 0]])),
+                # A longer pub(in ...); the innermost module an inner cfg is first in; a # and a ! apart from their [.
+                ("pub(in crate::parse) mod t {\n    #![cfg(test)]\n}\n", (0, [], [[1, 3, 3, 0]])),
+                ("mod a {\n    fn f() {}\n    mod t {\n        #![cfg(test)]\n        fn g() {}\n    }\n}\n",
+                 (3, [["f", 2, 2, 1]], [[3, 6, 4, 1]])),
+                ("# [cfg(test)]\nfn f() {}\nmod t {\n    # ! [cfg(test)]\n}\n", (0, [], [[1, 2, 2, 1], [3, 5, 3, 0]])),
                 # A declaration, whose module is a file of its own; a use's attribute, not the module's after it.
                 ("#[cfg(test)]\nmod t;\nmod a {\n}\n#[cfg(test)]\nuse b::c;\nmod d {\n}\n", (6, [], [[5, 6, 2, 0]]))):
             with self.subTest(text=text):
