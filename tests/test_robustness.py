@@ -276,6 +276,8 @@ GROWING = {
                              "x" * n + " ", "rust_test_items"),
     # Thousands of /* on one line, in a language whose block comments nest.
     "comment-openers.rs": (70000, lambda n: "/* " * n + "\n"),
+    # A header's #ifdefs nested thousands deep around thousands of lines.
+    "deep-ifdefs.h": (2000, lambda n: "#ifdef A\n" * n + "int x;\n" * n + "#endif\n" * n),
 }
 SCALE, RATIO, LIMIT, TIMEOUT = 4, 8, 5, 60
 TIME = """
