@@ -281,9 +281,10 @@ def without_attributes(text):
     return "".join(kept)
 
 
-# A conditional's directive, and a __cplusplus it's true without, in the skeleton, whose brackets are s.
+# A conditional's directive, and a __cplusplus it's true without, in the skeleton, whose brackets are s:
+# !defined(__cplusplus), !(defined __cplusplus), ! __cplusplus.
 CONDITIONAL = re.compile(r"\s*#\s*(if|ifdef|ifndef|elif|else|endif)\b(.*)")
-NOT_CPLUSPLUS = re.compile(r"!\s*(?:defined)?[s\s]*__cplusplus")
+NOT_CPLUSPLUS = re.compile(r"![s\s]*(?:defined[s\s]*)?__cplusplus")
 
 
 def cplusplus_branch(word, condition):
