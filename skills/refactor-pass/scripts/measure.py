@@ -1362,10 +1362,12 @@ def docstrings(code, inside, continued):
 
 
 # Rust's item, after its visibility (pub, pub(crate)) and qualifiers (const fn, unsafe impl, extern "C" fn): the
-# keyword that says which; a module's head, before its body's bracket; an attribute's opening, outer (#[...]) or
-# inner (#![...]); a cfg attribute's; and what stops the reading of an item's head.
+# keyword that says which, union only before a union's name and what follows that, as it can name a variable; a
+# module's head, before its body's bracket; an attribute's opening, outer (#[...]) or inner (#![...]); a cfg
+# attribute's; and what stops the reading of an item's head.
 RUST_ITEM = re.compile(r"(?:pub(?:\s*\([^()]*\))?\s+)?(?:(?:const|async|unsafe|safe|default|extern\s*\"s*\")\s+)*"
-                       r"(fn|impl|mod|trait|struct|enum|union|type|use|static|const|extern|macro_rules(?=\s*!))\b")
+                       r"(fn|impl|mod|trait|struct|enum|union(?=\s+(?:r#)?\w+\s*(?:[<{]|where\b|$))|type|use|static|"
+                       r"const|extern|macro_rules(?=\s*!))\b")
 RUST_MODULE_HEAD = re.compile(r"(?<![\w#])(?:pub(?:\s*\([^()]*\))?\s+)?mod\s+(?:r#)?\w+\s*$")
 RUST_OUTER = re.compile(r"#\s*\[")
 RUST_INNER = re.compile(r"#\s*!\s*\[")
