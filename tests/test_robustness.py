@@ -8,6 +8,7 @@ full size and every file of a folder, outside the default run.
 
 import errno
 import os
+import posixpath
 import random
 import re
 import signal
@@ -245,13 +246,14 @@ class Generics(unittest.TestCase):
 # still make a case seem to grow too fast. A case that seems to is timed once more, as a reading slower per
 # character on a large text can also make it seem to; and one whose readings take over TIMEOUT seconds on the clock
 # fails. A case can name the step of measure.py it times, given the text's lines, where the rest of the reading
-# would hide it. Unclosed definitions, nested ones each indented one more (sized by their lines' indents), and #if
-# blocks never closed, each branch of which opens a function's body. Rust's tests inside a file, each set aside, as
-# measure.py's run asks: thousands of test modules, a run of thousands of cfgs on one item or on none, of attributes
-# before a module's inner cfgs, of statics with no ;; thousands of test items on one line, or of inner cfgs,
-# #![cfg(test)], in one module, in none, in functions' bodies or each first in a module of its own; and a # and
-# thousands of spaces on a line that says cfg. A header's line of thousands of Objective-C messages, [[x y] z], none
-# a C23 attribute, or of thousands of [[ before one ;.
+# would hide it; or "modules", Rust's test modules of the files it makes, as {path: text}. Unclosed definitions,
+# nested ones each indented one more (sized by their lines' indents), and #if blocks never closed, each branch of
+# which opens a function's body. Rust's tests inside a file, each set aside, as measure.py's run asks: thousands of
+# test modules, a run of thousands of cfgs on one item or on none, of attributes before a module's inner cfgs, of
+# statics with no ;; thousands of test items on one line, or of inner cfgs, #![cfg(test)], in one module, in none,
+# in functions' bodies or each first in a module of its own; and a # and thousands of spaces on a line that says
+# cfg. A header's line of thousands of Objective-C messages, [[x y] z], none a C23 attribute, or of thousands of [[
+# before one ;.
 GROWING = {
     "unclosed.py": (1100, lambda n: "def f(\n" * n),
     "unclosed.gd": (1100, lambda n: "func a(\n" * n),
@@ -293,7 +295,38 @@ GROWING = {
     "open-aliases.rs": (480, lambda n: "#[cfg(test)]\ntype A<T,\n" * n),
     "quote-runs.cs": (300000, lambda n: "var s = " + '"' * n + "\n" + ('"' * (n - 1) + "x") * 4 + "\n" + '"' * n +
                       ";\n"),
+    # Rust's test modules in files of their own, of a repo's files: thousands of declarations in one file, a crate
+    # root's each, a chain of modules each bringing in the next through #[path], a cycle of them, and a deep tree; a
+    # string never closed, of thousands of \", a cfg of thousands of strings, and declarations in blocks thousands deep.
+    "mod-lines": (600, lambda n: rust_files(["src/lib.rs"], n), "modules"),
+    "crate-roots": (400, lambda n: dict([("src/bin/t%d.rs" % k, "#[cfg(test)]\nmod m%d;\n" % k) for k in range(n)] +
+                                        [("src/bin/m%d.rs" % k, "") for k in range(n)]), "modules"),
+    "module-chain": (500, lambda n: rust_chain(n, n + 1), "modules"),
+    "module-cycle": (550, lambda n: rust_chain(n, 0), "modules"),
+    "module-tree": (40000, lambda n: dict([("src/lib.rs", "#[cfg(test)]\nmod a;\n")] + [
+        ("src/" + "a/" * k + "mod.rs", "mod a;\n") for k in range(1, int((2 * n) ** 0.5) + 1)]), "modules"),
+    "unclosed-string": (200000, lambda n: {"src/lib.rs": 'mod a;\n"' + '\\"' * n}, "modules"),
+    "cfg-strings": (2500, lambda n: {"src/lib.rs": "#[cfg(any(" + 'feature = "x", ' * n + "))]\nmod a;\n",
+                                     "src/a.rs": ""}, "modules"),
+    "deep-blocks": (1000, lambda n: {"src/lib.rs": "{" * n + "mod a;" * n + "}" * n, "src/a.rs": ""}, "modules"),
 }
+
+
+def rust_files(declaring, n):
+    """Rust files, each of those declaring bringing in n test modules of its own."""
+    files = {}
+    for path in declaring:
+        files[path] = "".join("#[cfg(test)]\nmod m%d;\n" % k for k in range(n))
+        files.update((posixpath.join(posixpath.dirname(path), "m%d.rs" % k), "") for k in range(n))
+    return files
+
+
+def rust_chain(n, last):
+    """n Rust files, the first a test module, each bringing in the next through #[path]; the last the one named."""
+    files = dict(("src/k%d.rs" % k, "#[path = \"k%d.rs\"]\nmod next;\n" % (k + 1 if k < n - 1 else last))
+                 for k in range(n))
+    files["src/lib.rs"] = "#[cfg(test)]\n#[path = \"k0.rs\"]\nmod k0;\n"
+    return files
 SCALE, RATIO, LIMIT, TIMEOUT = 8, 24, 5, 60
 TIME = """
 import gc, sys, time
@@ -301,14 +334,21 @@ import measure
 from test_robustness import GROWING, LIMIT, SCALE
 name = sys.argv[1]
 n, make = GROWING[name][:2]
-step = getattr(measure, GROWING[name][2]) if len(GROWING[name]) > 2 else None
+step = GROWING[name][2] if len(GROWING[name]) > 2 else None
+if step == "modules":  # Of {path: text}, as if git tracked them all.
+    import scoping
+    read = lambda files: scoping.rust_test_modules(sorted(files), lambda paths: dict((p, files[p]) for p in paths))
+elif step:
+    read = (lambda found: lambda text: found(text.split("\\n")))(getattr(measure, step))
+else:
+    read = lambda text: measure.functions(name, text, [])
 texts = make(n), make(SCALE * n)
 clock = time.perf_counter if sys.platform == "win32" else time.process_time
 def timed(text):
     gc.collect()
     gc.disable()
     start = clock()
-    step(text.split("\\n")) if step else measure.functions(name, text, [])
+    read(text)
     took = clock() - start
     gc.enable()
     if took > LIMIT:  # Too slow already.

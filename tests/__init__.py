@@ -5,6 +5,8 @@
   test_limits.py      the limits measure.py's help admits to, each as a test
   test_measure.py     percentiles, bands and the rest of measure.py's output
   test_heatmap.py     heatmap.py's columns, window and scopes
+  test_modules.py     Rust's test modules in files of their own, known by the mod declarations that bring them
+                      in, set aside by both scripts
   test_pairs.py       files that change together, and the tests that change with several
   test_window.py      bots, reformats, asked commits and --since
   test_fixes.py       the fixes trace: which commits say they fixed a defect, read by type and by words
