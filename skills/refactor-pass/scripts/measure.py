@@ -250,10 +250,14 @@ CPP_SHAPES = (r"^\s*" + TEMPLATE + MODIFIERS + r"(?:" + TYPE_WORD + r"\s+)*[*&]*
 CPP_IN_HEADER = re.compile(r"^\s*(?:template\s*<|namespace(?:\s+[\w:]+)?\s*\{|(?:public|private|protected)\s*:|"
                            r"class\s+\w)|\bstd::", re.M)
 # An operator's definition is the word operator whole, then (), an operator's symbols, [] or a literal's ""
-# (operator==, operator""_km), or a space and a type's name (operator bool, operator new[]), then its parameters;
-# not operator_rank(, a C function's name, a member so named, (*operator)(, nor C's tag (enum operator).
+# (operator==, operator""_km), or new, delete (operator new[]), co_await or an operator spelt as a word
+# (operator not_eq), then its parameters; or a type's name and () (operator bool(), operator Task<int(long)>()),
+# as a conversion takes no parameters. Not operator_rank(, a C function's name, a member so named, (*operator)(,
+# C's tag (enum operator), nor a C function whose type is so named (operator lookup(int key)).
 CPP_IN_CODE = re.compile(r"\w\s*::\s*~?\w|\bnoexcept\b|\boperator\b[ \t]*(?:\(\)[ \t]*\(|"
-                         r"(?:[-+*/%^&|~!=<>,]+|\[\s*\]|\"\"[ \t]*\w+)[ \t]*\(|(?<=[ \t])\w[\w:<>*&\[\] \t]{0,80}?\()")
+                         r"(?:[-+*/%^&|~!=<>,]+|\[\s*\]|\"\"[ \t]*\w+)[ \t]*\(|(?:(?:new|delete)(?:[ \t]*\[[ \t]*\])?|"
+                         r"co_await|and|and_eq|bitand|bitor|compl|not|not_eq|or|or_eq|xor|xor_eq)[ \t]*\(|"
+                         r"\w(?:[\w:<>*& \t]|\([^()]*\)){0,80}?\([ \t]*\))")
 C_TAG_OPERATOR = re.compile(r"\b(?:enum|struct|union)\s+operator\b")
 # What ends a C23 attribute, [[...]], or shows that a [[ opens none, as an Objective-C message's [[x y] z]: a ;
 # or a brace first.
