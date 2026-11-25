@@ -827,8 +827,12 @@ def string_holes(language, quotes, quote, line, at):
 # A run of quotes, as opens C#'s raw string.
 QUOTES = re.compile(r'"+')
 # Characters that start nothing outside a string or a comment, in any language: not a comment's start (# or
-# /), a quote, a raw string's start ($ @ #, or b c r R u U L at the start of a word) or a regular expression's.
+# /), a quote, a raw string's start ($ @ #, or b c r R u U L at the start of a word) or a regular expression's;
+# and what a raw string can't open just after, a word's character, a $ or an @. In Rust, an @ before a raw string
+# is a macro's token or a binding's (@r"...", as inline snapshots write), so the string opens there.
 PLAIN = re.compile(r"(?:[^/#\"'`$@bcrRuUL]|(?<=[\w$@])[bcrRuUL])+")
+PLAIN_RUST = re.compile(r"(?:[^/#\"'`$@bcrRuUL]|(?<=[\w$])[bcrRuUL])+")
+GLUED, GLUED_RUST = re.compile(r"[\w$@]"), re.compile(r"[\w$]")
 
 
 def skeleton(lines, comments, quotes, attributes=False, language=None):
@@ -850,12 +854,13 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
     templates = []
     holes = None  # In a string with holes: what opens one (string_holes).
     opens_raw = RAW_STRING.get(language)
+    plain_text, glued = (PLAIN_RUST, GLUED_RUST) if language == "Rust" else (PLAIN, GLUED)
     for line in lines:
         began_inside.append(state is not None or bool(templates) or raw is not None)
         code = []
         i = 0
         while i < len(line):
-            plain = PLAIN.match(line, i) if state is None and raw is None and not templates else None
+            plain = plain_text.match(line, i) if state is None and raw is None and not templates else None
             if plain:  # Characters that start nothing, copied at once.
                 code.append(plain.group())
                 i = plain.end()
@@ -911,7 +916,7 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
             elif any(line.startswith(m, i) for m in markers if m != "/*") and not (
                     attributes and line.startswith("#[", i)):
                 break
-            elif opens_raw and opens_raw[0].match(line, i) and not re.match(r"[\w$@]", line[i - 1:i]):
+            elif opens_raw and opens_raw[0].match(line, i) and not glued.match(line[i - 1:i]):
                 opened = opens_raw[0].match(line, i)
                 raw = opens_raw[1](opened)
                 holes = "{" if language == "C#" and "$" in opened.group() else None
