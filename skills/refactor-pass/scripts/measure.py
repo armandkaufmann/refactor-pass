@@ -313,9 +313,12 @@ def cpp_header(code):
             frames.append(list(cplusplus_branch(*found.groups())))
             cpp += frames[-1][0]
         elif found and frames and found.group(1) in ("elif", "else"):
-            now = frames[-1][1] or found.group(1) == "elif" and cplusplus_branch("if", found.group(2))[0]
+            # A branch after one that's C's only is C++'s only, as is an #elif by its own condition; and after an
+            # #elif that's C's only, so is any branch after it, the #else too.
+            only, c = cplusplus_branch("if", found.group(2)) if found.group(1) == "elif" else (False, False)
+            now = frames[-1][1] or only
             cpp += now - frames[-1][0]
-            frames[-1][0] = now
+            frames[-1] = [now, frames[-1][1] or c]
         elif found and frames and found.group(1) == "endif":
             cpp -= frames.pop()[0]
         kept.append("" if directive or cpp else line)
