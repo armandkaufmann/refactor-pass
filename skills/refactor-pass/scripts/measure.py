@@ -964,6 +964,10 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
                 if line[i] == "\\" and not (language in NO_ESCAPES and state.startswith(NO_ESCAPES[language])):
                     code.append("s" * len(line[i:i + 2]))  # The string's, as its other characters are.
                     i += 2
+                elif len(state) > 3 and line[i] == '"' and QUOTES.match(line, i).end() - i < len(state):
+                    run = QUOTES.match(line, i).end() - i  # Fewer quotes than close C#'s raw string: its own.
+                    code.append("s" * run)
+                    i += run
                 elif line.startswith(state, i):
                     code.append(state)
                     i, state, holes = i + len(state), None, None
@@ -978,7 +982,7 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
             elif any(line.startswith(m, i) for m in markers if m != "/*") and not (
                     attributes and line.startswith("#[", i)):
                 break
-            elif opens_raw and opens_raw[0].match(line, i) and not glued.match(line[i - 1:i]):
+            elif opens_raw and not glued.match(line[i - 1:i]) and opens_raw[0].match(line, i):
                 opened = opens_raw[0].match(line, i)
                 raw = opens_raw[1](opened)
                 holes = "{" if language == "C#" and "$" in opened.group() else None
