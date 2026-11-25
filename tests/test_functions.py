@@ -347,6 +347,8 @@ class TestsInsideFiles(unittest.TestCase):
                 ("#[allow(dead_code)]\n#[inline]\n#[cfg(test)]\nfn f() {\n}\n", (0, [], [[1, 5, 5, 1]])),
                 # An inner attribute before it is the file's, not the item's.
                 ("#![allow(dead_code)]\n#[cfg(test)]\nfn f() {\n}\n", (1, [], [[2, 4, 3, 1]])),
+                # Indented attributes before it, a method's.
+                ("impl S {\n    #[inline]\n    #[cfg(test)]\n    fn f() {}\n}\n", (2, [], [[2, 4, 3, 1]])),
                 ("#[cfg(test)]\n// A.\n// B.\n// C.\nfn f() {\n}\n", (0, [], [[1, 6, 3, 1]])),
                 ("pub(crate) mod t {\n    #![cfg(test)]\n}\n", (0, [], [[1, 3, 3, 0]])),
                 # A declaration, whose module is a file of its own; a use's attribute, not the module's after it.
@@ -421,7 +423,10 @@ class TestsInsideFiles(unittest.TestCase):
                              "            fn t() {}\n        }\n    }\n}\n",
                             (8, [["quoting", 1, 8, 8], ["t", 5, 5, 1]], [])),
                            ("macro_rules! tests {\n    () => {\n        #[cfg(test)]\n        mod t {}\n    };\n}\n",
-                            (6, [], []))):
+                            (6, [], [])),
+                           # After a test item of its own: each cfg's brackets are its line's.
+                           ("#[cfg(test)]\nfn a() {}\nfn q() -> T {\n    quote! {\n        #[cfg(test)]\n"
+                            "        mod t {}\n    }\n}\n", (6, [["q", 3, 8, 6]], [[1, 2, 2, 1]]))):
             with self.subTest(text=text):
                 self.assertEqual(set_aside(text), want)
 
