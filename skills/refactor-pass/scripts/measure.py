@@ -1492,6 +1492,20 @@ def joined(code, start, end):
     return code[i][j:m + 1] if i == k else " ".join([code[i][j:]] + code[i + 1:k] + [code[k][:m + 1]])
 
 
+def parameter_attributes(code, k, at):
+    """Where a run of attributes from code[k][at] on ends, if it's a generic parameter's, in an item's own
+    generics: after a < or a , and before a parameter, not an item (impl<#[a] T>, fn f<T, #[cfg(x)] U>); or None."""
+    before = before_space(code, k, at)
+    if not before or code[before[0]][before[1]] not in "<,":
+        return None
+    closes, after = brackets_of(code)["closes"], (k, at)
+    while after and RUST_OUTER.match(code[after[0]], after[1]):
+        end = closes.get((after[0], code[after[0]].index("[", after[1])))
+        after = js_next(code, end[0], end[1], limit=50) if end else None
+    item = RUST_ITEM.match(code[after[0]], after[1]) if after else None
+    return after if after and (not item or item.group(1) == "const") else None
+
+
 def rust_item_end(code, i, j, body=True):
     """Where the Rust item whose head goes on from code[i][j] ends, as its line, column and character. With a body
     (body), the bracket that closes it, the first { outside other brackets and outside a type's arguments, as a
@@ -1499,7 +1513,8 @@ def rust_item_end(code, i, j, body=True):
     declaration's. Without, as a constant, a static, a type alias or a use has none, the ; that ends it, its value's
     or its group's braces passed whole (if cfg!(unix) { 1 } else { 2 }, a::{b, c}), however many lines its value
     holds. None if no end comes, as when the brackets around it close first, or the next item's attribute
-    comes, or for an item with a body none comes within SIGNATURE_LINES lines."""
+    comes, not a parameter's in its own generics (parameter_attributes), or for an item with a body none comes
+    within SIGNATURE_LINES lines."""
     closes = brackets_of(code)["closes"]
     k, col, angles = i, j, 0
     while k < len(code) and (not body or k - i <= SIGNATURE_LINES):
@@ -1511,8 +1526,14 @@ def rust_item_end(code, i, j, body=True):
         if c == ";":
             return k, at, c
         if c == "#":  # Another item's attribute: this one has no end. A raw name's # (r#match) goes on.
-            if RUST_OUTER.match(code[k], at) or RUST_INNER.match(code[k], at):
+            if RUST_INNER.match(code[k], at):
                 return None
+            if RUST_OUTER.match(code[k], at):  # Unless it's a parameter's in this item's own generics.
+                past = parameter_attributes(code, k, at) if body and angles > 0 else None
+                if past is None:
+                    return None
+                k, col = past
+                continue
             col = at + 1
             continue
         if c in "<>":  # A type's arguments, but not an arrow's >.
