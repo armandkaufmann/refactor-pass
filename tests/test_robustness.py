@@ -238,7 +238,8 @@ class Generics(unittest.TestCase):
 # Files of many definitions whose ends were each looked for to the end of the file, once taking a time that
 # grew with the square of their length or faster: unclosed definitions, nested ones each indented one more, and
 # #if blocks never closed, each branch of which opens a function's body; and Rust's tests inside a file, each
-# set aside, as measure.py's run asks, and a run of thousands of cfgs on one item, or on none.
+# set aside, as measure.py's run asks, a run of thousands of cfgs on one item, or on none, and thousands of test
+# items on one line.
 GROWING = {
     "unclosed.py": lambda: "def f(\n" * 20000,
     "unclosed.gd": lambda: "func a(\n" * 20000,
@@ -249,6 +250,8 @@ GROWING = {
     "attributes.rs": lambda: "#[cfg(test)]\n" * 4000 + "fn g() {}\n",
     "attributes-alone.rs": lambda: "#[cfg(test)]\n" * 4000,
     "inner-cfgs.rs": lambda: "#[a]\n" * 3000 + "mod t {\n" + "    #![cfg(test)]\n" * 3000 + "}\n",
+    "line-of-fns.rs": lambda: "#[cfg(test)] fn t() { let b = [2]; } " * 4000 + "\n",
+    "line-of-mods.rs": lambda: "#[cfg(test)] mod m { } " * 4000 + "\n",
 }
 TIME = """
 import sys, time
