@@ -156,8 +156,11 @@ class Samples(unittest.TestCase):
                 self.assertFalse(measure.CPP_IN_CODE.search(text))
         text = "int operator_rank(int op);\nstatic inline int operator_kind(int op)\n{\n    return op;\n}\n"
         self.assertEqual(measure.functions("rank.h", text)[2], "C")
-        # A member named operator, a pointer to a function; an enum's tag so named; and a type.
+        # A member named operator, a pointer to a function, or used after -> or . with an operator and a bracket;
+        # an enum's tag so named; and a type.
         for text in ("struct rule {\n    int (*operator)(long, long);\n};\nint run(const struct rule *r);\n",
+                     "struct step { int operator; };\nvoid assign(struct step *s, long x) { s->operator = (int)x; }\n",
+                     "struct step { int operator; };\nint plus(struct step s) { return s.operator == ('+'); }\n",
                      "enum operator { OP_A };\nenum operator read_operator(const char *s);\n",
                      "typedef int operator;\noperator lookup(const char *key, int n);\n"):
             with self.subTest(text=text):
