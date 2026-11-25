@@ -383,6 +383,17 @@ class TestsInsideFiles(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertEqual(set_aside(text), want)
 
+    def test_a_long_value_and_a_long_head(self):
+        # A constant goes on to its ;, however many lines its value holds; an item's head may run over several.
+        for text, want in (
+                ("#[cfg(test)]\nconst ROWS: &[u32] = &[\n" + "    1,\n" * 250 + "];\nfn tail() {\n}\n",
+                 (2, [["tail", 254, 255, 2]], [[1, 253, 253, 0]])),
+                ("#[cfg(test)]\nstatic TEXT: &str = \"\n" + "x\n" * 250 + "\";\n", (0, [], [[1, 253, 253, 0]])),
+                ("#[cfg(test)]\nimpl<T> Grid for Shelf<T>\nwhere\n    T: Clone,\n    T: Copy,\n    T: Send,\n{\n}\n",
+                 (0, [], [[1, 8, 8, 0]]))):
+            with self.subTest(text=text[:40]):
+                self.assertEqual(set_aside(text), want)
+
     def test_a_line_it_shares_with_other_code(self):
         # Stays counted, with its functions, whether that code comes before the item's attribute or after its end.
         for text, want in (("fn b() {} #[cfg(test)]\nmod t {\n    fn c() {}\n}\nfn d() {}\n",
