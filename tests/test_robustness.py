@@ -248,6 +248,7 @@ GROWING = {
     "tests.rs": lambda: "#[cfg(test)]\nmod t {\n    fn f() {}\n}\n" * 12000,
     "attributes.rs": lambda: "#[cfg(test)]\n" * 4000 + "fn g() {}\n",
     "attributes-alone.rs": lambda: "#[cfg(test)]\n" * 4000,
+    "inner-cfgs.rs": lambda: "#[a]\n" * 3000 + "mod t {\n" + "    #![cfg(test)]\n" * 3000 + "}\n",
 }
 TIME = """
 import sys, time

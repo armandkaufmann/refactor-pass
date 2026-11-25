@@ -349,6 +349,10 @@ class TestsInsideFiles(unittest.TestCase):
                 ("#[cfg(test)]\nconst MAX: u8 = if cfg!(unix) {\n    1\n} else {\n    2\n};\nfn next() {\n}\n",
                  (2, [["next", 7, 8, 2]], [[1, 6, 6, 0]])),
                 ("#[cfg(test)]\nconst MIN: u8 = if cfg!(unix) { 1 } else { 2 };\n", (0, [], [[1, 2, 2, 0]])),
+                ("#[cfg(test)]\nstatic SIDE: u8 = if cfg!(unix) { 1 } else { 2 };\n", (0, [], [[1, 2, 2, 0]])),
+                # An arrow's > closes no type's arguments; a union's body may open on the next line.
+                ("#[cfg(test)]\nfn grid() -> Grid<{ 2 }> {\n    Grid\n}\n", (0, [], [[1, 4, 4, 1]])),
+                ("#[cfg(test)]\nunion Bits\n{\n    a: u8,\n}\n", (0, [], [[1, 5, 5, 0]])),
                 ("#[cfg(test)]\nimpl Fixed for Grid<{ 2 * 3 }> {\n    fn width(&self) -> u8 {\n        6\n    }\n}\n"
                  "fn after() {\n}\n", (2, [["after", 7, 8, 2]], [[1, 6, 6, 1]])),
                 ("#[cfg(test)]\nstruct Wide<const N: usize = { 1 + 1 }> {\n    a: [u8; N],\n}\n",
