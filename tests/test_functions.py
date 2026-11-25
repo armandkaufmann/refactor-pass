@@ -131,20 +131,26 @@ class Samples(unittest.TestCase):
                 self.assertEqual(measure.functions("v.h", text)[2], want)
 
     def test_an_operator_is_the_whole_word(self):
-        # operator, then (), a symbol, or a space and a type's name; not a C function whose name starts with it.
+        # operator, then (), a symbol, or a space and a type's name then (), as a conversion takes no parameters;
+        # or new, delete, co_await or an operator spelt as a word (and, not_eq...), which take them. Not a C
+        # function whose name starts with it, nor one whose type is named operator.
         measure = support.load("measure")
-        for text in ("operator bool(", "operator Color4()", "operator==(", "operator ()(", "operator new(",
-                     "operator new[](", 'operator""_km(', "operator const char*(", "operator std::string("):
+        for text in ("operator bool()", "Mesh::operator bool() const", "operator Color4()", "operator==(",
+                     "operator ()(", "operator new(size_t)", "operator new[](size_t)", "operator delete[](void*)",
+                     'operator""_km(', "operator const char*()", "operator std::string()", "operator T&()",
+                     "operator co_await()", "operator Task<int(long)>() const", "operator and(Flag a, Flag b)"):
             with self.subTest(text=text):
                 self.assertTrue(measure.CPP_IN_CODE.search(text))
-        for text in ("operator_rank(", "operator_kind (", "operators(", "my_operator("):
+        for text in ("operator_rank(", "operator_kind (", "operators(", "my_operator(", "operator lookup(int key)",
+                     "operator pick(void)"):
             with self.subTest(text=text):
                 self.assertFalse(measure.CPP_IN_CODE.search(text))
         text = "int operator_rank(int op);\nstatic inline int operator_kind(int op)\n{\n    return op;\n}\n"
         self.assertEqual(measure.functions("rank.h", text)[2], "C")
-        # A member named operator, a pointer to a function; and an enum's tag so named.
+        # A member named operator, a pointer to a function; an enum's tag so named; and a type.
         for text in ("struct rule {\n    int (*operator)(long, long);\n};\nint run(const struct rule *r);\n",
-                     "enum operator { OP_A };\nenum operator read_operator(const char *s);\n"):
+                     "enum operator { OP_A };\nenum operator read_operator(const char *s);\n",
+                     "typedef int operator;\noperator lookup(const char *key, int n);\n"):
             with self.subTest(text=text):
                 self.assertEqual(measure.functions("rule.h", text)[2], "C")
 
