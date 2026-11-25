@@ -235,46 +235,62 @@ class Generics(unittest.TestCase):
         self.assertLess(float(result.out), 10, result)
 
 
-# Files of many definitions whose ends were each looked for to the end of the file, once taking a time that
-# grew with the square of their length or faster: unclosed definitions, nested ones each indented one more, and
-# #if blocks never closed, each branch of which opens a function's body; and Rust's tests inside a file, each
-# set aside, as measure.py's run asks, a run of thousands of cfgs on one item, or on none, and thousands of test
-# items on one line, or of inner cfgs, #![cfg(test)], in one module, in none, in functions' bodies or each first
-# in a module of its own, or a # and thousands of spaces on a line that says cfg; and a header's line of
-# thousands of Objective-C messages, [[x y] z], none a C23 attribute, or of thousands of [[ before one ;.
+# Files whose reading once took a time that grew with the square of their size, or faster. Each is made at a size
+# and at SCALE times it, and read at both, the best of two runs each: at the larger it must take under RATIO times
+# as long, where a time that grows with the size takes about SCALE times as long and one that grows with its square
+# about SCALE * SCALE times, however fast the machine; and under LIMIT seconds. Unclosed definitions, nested ones
+# each indented one more (sized by their lines' indents), and #if blocks never closed, each branch of which opens a
+# function's body. Rust's tests inside a file, each set aside, as measure.py's run asks: thousands of test modules,
+# a run of thousands of cfgs on one item or on none, of attributes before a module's inner cfgs, of statics with no
+# ;; thousands of test items on one line, or of inner cfgs, #![cfg(test)], in one module, in none, in functions'
+# bodies or each first in a module of its own; and a # and thousands of spaces on a line that says cfg. A header's
+# line of thousands of Objective-C messages, [[x y] z], none a C23 attribute, or of thousands of [[ before one ;.
 GROWING = {
-    "unclosed.py": lambda: "def f(\n" * 20000,
-    "unclosed.gd": lambda: "func a(\n" * 20000,
-    "nested.py": lambda: "".join(" " * i + "def f%d():\n" % i for i in range(3000)),
-    "nested.rb": lambda: "".join(" " * i + "def f%d\n" % i for i in range(3000)),
-    "open-ifs.c": lambda: "#if A\nint f() {\n#else\n" * 10000,
-    "tests.rs": lambda: "#[cfg(test)]\nmod t {\n    fn f() {}\n}\n" * 12000,
-    "attributes.rs": lambda: "#[cfg(test)]\n" * 4000 + "fn g() {}\n",
-    "attributes-alone.rs": lambda: "#[cfg(test)]\n" * 4000,
-    "inner-cfgs.rs": lambda: "#[a]\n" * 3000 + "mod t {\n" + "    #![cfg(test)]\n" * 3000 + "}\n",
-    "line-of-fns.rs": lambda: "#[cfg(test)] fn t() { let b = [2]; } " * 4000 + "\n",
-    "line-of-mods.rs": lambda: "#[cfg(test)] mod m { } " * 4000 + "\n",
-    "messages.h": lambda: "void g(void) { " + "[[x y] z]; " * 20000 + "}\n",
-    "statics.rs": lambda: "#[cfg(test)]\nstatic B: u16 = 2\n" * 4000,
-    "openings.h": lambda: "int x = " + "[[" * 30000 + ";\n",
-    "line-of-inner-cfgs.rs": lambda: "mod m { " + "#![cfg(test)] " * 6000 + "}\n",
-    "inner-cfgs-alone.rs": lambda: "#![cfg(test)] " * 6000 + "\n",
-    "line-of-test-mods.rs": lambda: "mod m { #![cfg(test)] fn t() {} } " * 3000 + "\n",
-    "line-of-fn-cfgs.rs": lambda: "fn g() { #![cfg(test)] } " * 3000 + "\n",
-    "inner-after-attributes.rs": lambda: "mod m { #![allow(x)] #![cfg(test)] } " * 3000 + "\n",
-    "two-inner-cfgs.rs": lambda: "mod m { #![cfg(test)] #![cfg(test)] } " * 2000 + "\n",
-    "outer-and-inner.rs": lambda: "#[cfg(test)] mod m { #![cfg(test)] } " * 3000 + "\n",
-    "nested-test-mods.rs": lambda: "mod a { #![cfg(test)] mod b { #![cfg(test)] } } " * 2000 + "\n",
-    "hash-then-spaces.rs": lambda: "let cfg = 1; x #" + " " * 100000 + "y\n",
+    "unclosed.py": (2500, lambda n: "def f(\n" * n),
+    "unclosed.gd": (2500, lambda n: "func a(\n" * n),
+    "nested.py": (250000, lambda n: "".join(" " * i + "def f%d():\n" % i for i in range(int((2 * n) ** 0.5)))),
+    "nested.rb": (700000, lambda n: "".join(" " * i + "def f%d\n" % i for i in range(int((2 * n) ** 0.5)))),
+    "open-ifs.c": (1400, lambda n: "#if A\nint f() {\n#else\n" * n),
+    "tests.rs": (1400, lambda n: "#[cfg(test)]\nmod t {\n    fn f() {}\n}\n" * n),
+    "attributes.rs": (2500, lambda n: "#[cfg(test)]\n" * n + "fn g() {}\n"),
+    "attributes-alone.rs": (2500, lambda n: "#[cfg(test)]\n" * n),
+    "inner-cfgs.rs": (1200, lambda n: "#[a]\n" * n + "mod t {\n" + "    #![cfg(test)]\n" * n + "}\n"),
+    "line-of-fns.rs": (1300, lambda n: "#[cfg(test)] fn t() { let b = [2]; } " * n + "\n"),
+    "line-of-mods.rs": (1700, lambda n: "#[cfg(test)] mod m { } " * n + "\n"),
+    "messages.h": (7000, lambda n: "void g(void) { " + "[[x y] z]; " * n + "}\n"),
+    "statics.rs": (1200, lambda n: "#[cfg(test)]\nstatic B: u16 = 2\n" * n),
+    "openings.h": (80000, lambda n: "int x = " + "[[" * n + ";\n"),
+    "line-of-inner-cfgs.rs": (2400, lambda n: "mod m { " + "#![cfg(test)] " * n + "}\n"),
+    "inner-cfgs-alone.rs": (2400, lambda n: "#![cfg(test)] " * n + "\n"),
+    "line-of-test-mods.rs": (900, lambda n: "mod m { #![cfg(test)] fn t() {} } " * n + "\n"),
+    "line-of-fn-cfgs.rs": (1000, lambda n: "fn g() { #![cfg(test)] } " * n + "\n"),
+    "inner-after-attributes.rs": (800, lambda n: "mod m { #![allow(x)] #![cfg(test)] } " * n + "\n"),
+    "two-inner-cfgs.rs": (700, lambda n: "mod m { #![cfg(test)] #![cfg(test)] } " * n + "\n"),
+    "outer-and-inner.rs": (600, lambda n: "#[cfg(test)] mod m { #![cfg(test)] } " * n + "\n"),
+    "nested-test-mods.rs": (450, lambda n: "mod a { #![cfg(test)] mod b { #![cfg(test)] } } " * n + "\n"),
+    "hash-then-spaces.rs": (300000, lambda n: "let cfg = 1; x #" + " " * n + "y\n"),
 }
+SCALE, RATIO, LIMIT, TIMEOUT = 4, 8, 5, 60
 TIME = """
-import sys, time
+import gc, sys, time
 import measure
-from test_robustness import GROWING
-text = GROWING[sys.argv[1]]()
-start = time.time()
-measure.functions(sys.argv[1], text, [])
-print("%.2f" % (time.time() - start))
+from test_robustness import GROWING, LIMIT, SCALE
+name = sys.argv[1]
+n, make = GROWING[name]
+texts, best = (make(n), make(SCALE * n)), [None, None]
+for _ in range(2):
+    for k, text in enumerate(texts):
+        gc.collect()
+        gc.disable()
+        start = time.perf_counter()
+        measure.functions(name, text, [])
+        took = time.perf_counter() - start
+        gc.enable()
+        best[k] = took if best[k] is None else min(best[k], took)
+        if took > LIMIT:  # Too slow already.
+            print("%.3f %.3f" % (best[0], took))
+            sys.exit()
+print("%.3f %.3f" % tuple(best))
 """
 
 
@@ -285,11 +301,14 @@ class Growing(unittest.TestCase):
         for name in sorted(GROWING):
             with self.subTest(case=name):
                 try:
-                    result = support.run_python(code, name, timeout=30)
+                    result = support.run_python(code, name, timeout=TIMEOUT)
                 except subprocess.TimeoutExpired:
-                    self.fail("%s took over 30 seconds" % name)
+                    self.fail("%s took over %d seconds" % (name, TIMEOUT))
                 self.assertEqual(result.code, 0, result)
-                self.assertLess(float(result.out), 5, name)
+                small, large = (float(t) for t in result.out.split())
+                self.assertLess(large, LIMIT, name)
+                self.assertLess(large, RATIO * small, "%s: %.3f seconds at its size, %.3f at %d times it" % (
+                    name, small, large, SCALE))
 
 
 # A script run with one of the functions it calls replaced by one that raises, as a bug would.
