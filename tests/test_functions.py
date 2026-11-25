@@ -102,7 +102,10 @@ class Samples(unittest.TestCase):
                  ("C", 1)),
                 ("n.h", "[[gnu::always_inline]] static inline int one(void) {\n    return 1;\n}\n", ("C", 1)),
                 ("o.h", "[[gnu::cold,\n  gnu::noinline]]\nstatic inline int one(void) {\n    return 1;\n}\n",
-                 ("C", 1))):
+                 ("C", 1)),
+                # An Objective-C message's [[ isn't an attribute that a ]] far on closes.
+                ("p.h", "void g(void) { [[x y] z]; }\ninline int Grid::size() const { return n; }\nint v = a[b[0]];\n",
+                 ("C++", 2))):
             with self.subTest(name=name):
                 _, functions, language = measure.functions(name, text)
                 self.assertEqual((language, len(functions)), want)
@@ -117,7 +120,13 @@ class Samples(unittest.TestCase):
                 ("#ifndef __cplusplus\nint pick(int a);\n#else\nint pick(int a) noexcept;\n#endif\n", "C"),
                 ("#ifdef __cplusplus\n#if 1\nint f() noexcept;\n#endif\nint g() noexcept;\n#endif\n", "C"),
                 ("#ifdef __cplusplus\n#endif\ninline int Grid::size() const {\n    return n;\n}\n", "C++"),
-                ("#ifdef __cplusplus\nnamespace ns {\n}\n#endif\n", "C++")):
+                ("#ifdef __cplusplus\nnamespace ns {\n}\n#endif\n", "C++"),
+                # Not C++ only: !defined, an #elif after #ifndef, ||, the #else of #ifdef.
+                ("#if !defined(__cplusplus)\nint pick(int a);\n#else\nint pick(int a) noexcept;\n#endif\n", "C"),
+                ("#ifndef __cplusplus\nint pick(int a);\n#elif defined(FAST)\nint pick(int a) noexcept;\n#endif\n",
+                 "C"),
+                ("#if defined(__cplusplus) || defined(OTHER)\nint f() noexcept;\n#endif\n", "C++"),
+                ("#ifdef __cplusplus\n#else\nint f() noexcept;\n#endif\n", "C++")):
             with self.subTest(text=text):
                 self.assertEqual(measure.functions("v.h", text)[2], want)
 

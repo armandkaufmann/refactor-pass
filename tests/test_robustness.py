@@ -253,6 +253,7 @@ GROWING = {
     "line-of-fns.rs": lambda: "#[cfg(test)] fn t() { let b = [2]; } " * 4000 + "\n",
     "line-of-mods.rs": lambda: "#[cfg(test)] mod m { } " * 4000 + "\n",
     "messages.h": lambda: "void g(void) { " + "[[x y] z]; " * 20000 + "}\n",
+    "statics.rs": lambda: "#[cfg(test)]\nstatic B: u16 = 2\n" * 4000,
 }
 TIME = """
 import sys, time
