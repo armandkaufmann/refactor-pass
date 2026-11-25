@@ -107,6 +107,20 @@ class Samples(unittest.TestCase):
                 _, functions, language = measure.functions(name, text)
                 self.assertEqual((language, len(functions)), want)
 
+    def test_cpp_offered_to_cpp_callers(self):
+        # A C header's code for C++ callers, under __cplusplus to its #else or #endif, is no evidence of the new
+        # kinds; after the guard it is, and what main took for C++ (a namespace) still is.
+        measure = support.load("measure")
+        for text, want in (
+                ("vec2 vec2_add(vec2 a, vec2 b);\n#if defined(__cplusplus) && !defined(PLAIN)\n"
+                 "inline vec2 operator+(vec2 a, vec2 b) {\n    return vec2_add(a, b);\n}\n#endif\n", "C"),
+                ("#ifndef __cplusplus\nint pick(int a);\n#else\nint pick(int a) noexcept;\n#endif\n", "C"),
+                ("#ifdef __cplusplus\n#if 1\nint f() noexcept;\n#endif\nint g() noexcept;\n#endif\n", "C"),
+                ("#ifdef __cplusplus\n#endif\ninline int Grid::size() const {\n    return n;\n}\n", "C++"),
+                ("#ifdef __cplusplus\nnamespace ns {\n}\n#endif\n", "C++")):
+            with self.subTest(text=text):
+                self.assertEqual(measure.functions("v.h", text)[2], want)
+
     def test_an_operator_is_the_whole_word(self):
         # operator, then (), a symbol, or a space and a type's name; not a C function whose name starts with it.
         measure = support.load("measure")
