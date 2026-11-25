@@ -1587,8 +1587,8 @@ def rust_test_items(code):
     test (cfg_needs_test), from the line of its first attribute to the bracket that closes its body or the ; that
     ends it, but for a line it shares with other code. The cfg is among the attributes before it, or for a module
     first in its body (#![cfg(test)]). A module declared with mod tests; is a file of its own and sets nothing
-    aside here; a cfg on what isn't an item, as a statement in a function's body or a struct's field, is that
-    code's, and so is one in a macro's text (rust_in_macro)."""
+    aside here; a cfg on what isn't an item, as a statement in a function's body, a struct's field or a generic
+    parameter (fn f<#[cfg(test)] const N: usize>), is that code's, and so is one in a macro's text (rust_in_macro)."""
     closes = brackets_of(code)["closes"]
     opening = None  # Where each closing bracket's opening one is, worked out when first needed.
     found, macros = set(), {}
@@ -1641,6 +1641,8 @@ def rust_test_items(code):
                 if not begin or code[begin[0]][begin[1]] != "#":  # Not one, or an inner one: the enclosing code's.
                     break
                 start, at = begin, before_space(code, *begin)
+            if at and code[at[0]][at[1]] in "<,":  # No item follows a < or a ,: a generic parameter does.
+                continue
             # Its lines, but for one it shares with other code, before its first attribute or after its end, which
             # stays counted with that code's functions.
             first = start[0] + (edge(start[0])[0] < start[1])
