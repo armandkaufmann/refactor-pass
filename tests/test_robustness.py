@@ -280,6 +280,8 @@ GROWING = {
     "deep-ifdefs.h": (2000, lambda n: "#ifdef A\n" * n + "int x;\n" * n + "#endif\n" * n),
     # A ! and thousands of spaces in a header's #if on __cplusplus.
     "bang-then-spaces.h": (250000, lambda n: "#if !" + " " * n + "x && __cplusplus\nint a;\n#endif\n"),
+    # A header of thousands of blank lines, which its evidence of C++ read on from each.
+    "blank-lines.h": (6000, lambda n: "int a;\n" + "\n" * n + "int b;\n"),
 }
 SCALE, RATIO, LIMIT, TIMEOUT = 4, 8, 5, 60
 TIME = """
