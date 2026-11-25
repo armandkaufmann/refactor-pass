@@ -246,8 +246,8 @@ CPP_SHAPES = (r"^\s*" + TEMPLATE + MODIFIERS + r"(?:" + TYPE_WORD + r"\s+)*[*&]*
 # what C has none of, as a class, a namespace, a template, an access label or std::; or, in code outside the
 # preprocessor's lines and C23's attributes ([[gnu::...]]), a name qualified by its class, an operator's
 # definition or noexcept, as definitions written out of their class are, in a namespace that the header including
-# them opens (cpp_header).
-CPP_IN_HEADER = re.compile(r"^\s*(?:template\s*<|namespace(?:\s+[\w:]+)?\s*\{|(?:public|private|protected)\s*:|"
+# them opens (cpp_header). Those that start a line are looked for past that line's own spaces only.
+CPP_IN_HEADER = re.compile(r"^[^\S\n]*(?:template\s*<|namespace(?:\s+[\w:]+)?\s*\{|(?:public|private|protected)\s*:|"
                            r"class\s+\w)|\bstd::", re.M)
 # An operator's definition is the word operator whole, then (), an operator's symbols, [] or a literal's ""
 # (operator==, operator""_km), or new, delete (operator new[]), co_await or an operator spelt as a word
