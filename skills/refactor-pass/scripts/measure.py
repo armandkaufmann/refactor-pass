@@ -249,7 +249,10 @@ CPP_SHAPES = (r"^\s*" + TEMPLATE + MODIFIERS + r"(?:" + TYPE_WORD + r"\s+)*[*&]*
 # them opens (cpp_header).
 CPP_IN_HEADER = re.compile(r"^\s*(?:template\s*<|namespace(?:\s+[\w:]+)?\s*\{|(?:public|private|protected)\s*:|"
                            r"class\s+\w)|\bstd::", re.M)
-CPP_IN_CODE = re.compile(r"\w\s*::\s*~?\w|\bnoexcept\b|\boperator\s*(?:\(\)|[^\w\s(]+|\w+)\s*\(")
+# An operator's definition is the word operator whole, then (), a symbol (operator==, operator""_km), or a space and
+# a type's name (operator bool, operator new[]), then its parameters; operator_rank( is a C function's name.
+CPP_IN_CODE = re.compile(r"\w\s*::\s*~?\w|\bnoexcept\b|\boperator\b[ \t]*(?:\(\)[ \t]*\(|[^\w\s(]+\w*[ \t]*\(|"
+                         r"(?<=[ \t])\w[\w:<>*&\[\] \t]{0,80}?\()")
 C23_ATTRIBUTE = re.compile(r"\[\[.*?\]\]")
 
 
