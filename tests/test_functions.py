@@ -336,6 +336,10 @@ class TestsInsideFiles(unittest.TestCase):
         # A use's group and a constant's struct, whose } the item's ; follows on its line.
         text = "#[cfg(test)]\nuse a::{b, c};\n#[cfg(test)]\nconst S: Size = Size {\n    w: 1,\n};\n"
         self.assertEqual(set_aside(text)[2], [[1, 2, 2, 0], [3, 6, 4, 0]])
+        # union is a keyword only before a union's name: a variable so named starts a statement.
+        text = "fn join(mut union: Vec<u8>) -> Vec<u8> {\n    #[cfg(test)]\n    union.push(2);\n    union\n}\n"
+        self.assertEqual(set_aside(text), (5, [["join", 1, 5, 5]], []))
+        self.assertEqual(set_aside("#[cfg(test)]\nunion Bits {\n    a: u8,\n}\n")[2], [[1, 4, 4, 0]])
 
 
     def test_a_line_it_shares_with_other_code(self):
