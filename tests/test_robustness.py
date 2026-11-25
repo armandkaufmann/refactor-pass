@@ -238,13 +238,15 @@ class Generics(unittest.TestCase):
 # Files whose reading once took a time that grew with the square of their size, or faster. Each is made at a size
 # and at SCALE times it, and read at both, the best of two runs each: at the larger it must take under RATIO times
 # as long, where a time that grows with the size takes about SCALE times as long and one that grows with its square
-# about SCALE * SCALE times, however fast the machine; and under LIMIT seconds. Unclosed definitions, nested ones
-# each indented one more (sized by their lines' indents), and #if blocks never closed, each branch of which opens a
-# function's body. Rust's tests inside a file, each set aside, as measure.py's run asks: thousands of test modules,
-# a run of thousands of cfgs on one item or on none, of attributes before a module's inner cfgs, of statics with no
-# ;; thousands of test items on one line, or of inner cfgs, #![cfg(test)], in one module, in none, in functions'
-# bodies or each first in a module of its own; and a # and thousands of spaces on a line that says cfg. A header's
-# line of thousands of Objective-C messages, [[x y] z], none a C23 attribute, or of thousands of [[ before one ;.
+# about SCALE * SCALE times, however fast the machine; and under LIMIT seconds. A case can name the step of
+# measure.py it times, given the text's lines, where the rest of the reading would hide it. Unclosed definitions,
+# nested ones each indented one more (sized by their lines' indents), and #if blocks never closed, each branch of
+# which opens a function's body. Rust's tests inside a file, each set aside, as measure.py's run asks: thousands of
+# test modules, a run of thousands of cfgs on one item or on none, of attributes before a module's inner cfgs, of
+# statics with no ;; thousands of test items on one line, or of inner cfgs, #![cfg(test)], in one module, in none,
+# in functions' bodies or each first in a module of its own; and a # and thousands of spaces on a line that says
+# cfg. A header's line of thousands of Objective-C messages, [[x y] z], none a C23 attribute, or of thousands of [[
+# before one ;.
 GROWING = {
     "unclosed.py": (2500, lambda n: "def f(\n" * n),
     "unclosed.gd": (2500, lambda n: "func a(\n" * n),
@@ -269,6 +271,9 @@ GROWING = {
     "outer-and-inner.rs": (600, lambda n: "#[cfg(test)] mod m { #![cfg(test)] } " * n + "\n"),
     "nested-test-mods.rs": (450, lambda n: "mod a { #![cfg(test)] mod b { #![cfg(test)] } } " * n + "\n"),
     "hash-then-spaces.rs": (300000, lambda n: "let cfg = 1; x #" + " " * n + "y\n"),
+    # Test items between long runs of text on one line, set aside on their own: each copied the rest of the line.
+    "tests-in-a-long-line": (1000000, lambda n: " " + "x" * n + " " + "#[cfg(test)] fn f() {} " * (n // 1000) +
+                             "x" * n + " ", "rust_test_items"),
 }
 SCALE, RATIO, LIMIT, TIMEOUT = 4, 8, 5, 60
 TIME = """
@@ -276,14 +281,15 @@ import gc, sys, time
 import measure
 from test_robustness import GROWING, LIMIT, SCALE
 name = sys.argv[1]
-n, make = GROWING[name]
+n, make = GROWING[name][:2]
+step = getattr(measure, GROWING[name][2]) if len(GROWING[name]) > 2 else None
 texts, best = (make(n), make(SCALE * n)), [None, None]
 for _ in range(2):
     for k, text in enumerate(texts):
         gc.collect()
         gc.disable()
         start = time.perf_counter()
-        measure.functions(name, text, [])
+        step(text.split("\\n")) if step else measure.functions(name, text, [])
         took = time.perf_counter() - start
         gc.enable()
         best[k] = took if best[k] is None else min(best[k], took)
