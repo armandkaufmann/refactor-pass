@@ -236,10 +236,10 @@ class Generics(unittest.TestCase):
 
 
 # Files whose reading once took a time that grew with the square of their size, or faster. Each is made at a size
-# and at SCALE times it, and read at both, three times over: at the larger it must take under RATIO times as long,
-# in the pair of readings that grew least, where a time that grows with the size takes about SCALE times as long and
-# one that grows with its square about SCALE * SCALE times, however fast the machine; and under LIMIT seconds. A
-# machine slow for a moment, or slower per character on a large text, slows a pair or the larger readings by up to
+# and at SCALE times it, and read at both, three times over: at the larger, its fastest reading must take under
+# RATIO times as long as its fastest at the smaller, where a time that grows with the size takes about SCALE times
+# as long and one that grows with its square about SCALE * SCALE times, however fast the machine; and under LIMIT
+# seconds. A machine slow for a moment, or slower per character on a large text, slows the larger readings by up to
 # three times, so a case that seems to grow too fast is timed once more. A case can name the step of measure.py it
 # times, given the text's lines, where the rest of the reading would hide it. Unclosed definitions, nested ones
 # each indented one more (sized by their lines' indents), and #if blocks never closed, each branch of which opens a
@@ -273,12 +273,12 @@ GROWING = {
     "nested-test-mods.rs": (200, lambda n: "mod a { #![cfg(test)] mod b { #![cfg(test)] } } " * n + "\n"),
     "hash-then-spaces.rs": (150000, lambda n: "let cfg = 1; x #" + " " * n + "y\n"),
     # Test items between long runs of text on one line, set aside on their own: each copied the rest of the line.
-    "tests-in-a-long-line": (450000, lambda n: " " + "x" * n + " " + "#[cfg(test)] fn f() {} " * (n // 1000) +
+    "tests-in-a-long-line": (1500000, lambda n: " " + "x" * n + " " + "#[cfg(test)] fn f() {} " * (n // 1000) +
                              "x" * n + " ", "rust_test_items"),
     # Thousands of /* on one line, in a language whose block comments nest.
     "comment-openers.rs": (31000, lambda n: "/* " * n + "\n"),
-    # A header's #ifdefs nested thousands deep around thousands of lines.
-    "deep-ifdefs.h": (1100, lambda n: "#ifdef A\n" * n + "int x;\n" * n + "#endif\n" * n),
+    # A header's #ifdefs nested thousands deep around thousands of lines, its evidence of C++ read on its own.
+    "deep-ifdefs.h": (4000, lambda n: "#ifdef A\n" * n + "int x;\n" * n + "#endif\n" * n, "cpp_header"),
     # A ! and thousands of spaces in a header's #if on __cplusplus.
     "bang-then-spaces.h": (110000, lambda n: "#if !" + " " * n + "x && __cplusplus\nint a;\n#endif\n"),
     # A header of thousands of blank lines, which its evidence of C++ read on from each.
@@ -310,8 +310,8 @@ def timed(text):
         print("%.3f %.3f" % (took, took))
         sys.exit()
     return took
-pairs = [(timed(texts[0]), timed(texts[1])) for _ in range(3)]
-print("%.3f %.3f" % min(pairs, key=lambda pair: pair[1] / pair[0]))
+runs = [(timed(texts[0]), timed(texts[1])) for _ in range(3)]
+print("%.3f %.3f" % (min(small for small, _ in runs), min(large for _, large in runs)))
 """
 
 
