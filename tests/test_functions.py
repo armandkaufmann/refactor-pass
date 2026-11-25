@@ -435,7 +435,9 @@ class TestsInsideFiles(unittest.TestCase):
                 ("#[cfg(test)]\nunsafe impl<#[may_dangle] T> Drop for Ring<T> {\n    fn drop(&mut self) {}\n}\n"
                  "fn after() {\n}\n", (2, [["after", 5, 6, 2]], [[1, 4, 4, 1]])),
                 ("#[cfg(test)]\nfn pair<#[cfg(unix)] T, #[a] #[b] U>(a: U) {\n}\n", (0, [], [[1, 3, 3, 1]])),
-                ("#[cfg(test)]\nfn width<#[a] const N: usize>() {\n}\n", (0, [], [[1, 3, 3, 1]]))):
+                ("#[cfg(test)]\nfn width<#[a] const N: usize>() {\n}\n", (0, [], [[1, 3, 3, 1]])),
+                ("#[cfg(test)]\ntype Pair<#[cfg(unix)] T> = (T, T);\nfn after() {}\n", (1, [["after", 3, 3, 1]],
+                                                                                    [[1, 2, 2, 0]]))):
             with self.subTest(text=text):
                 self.assertEqual(set_aside(text), want)
 
