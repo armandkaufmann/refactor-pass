@@ -119,6 +119,11 @@ class Samples(unittest.TestCase):
                 self.assertFalse(measure.CPP_IN_CODE.search(text))
         text = "int operator_rank(int op);\nstatic inline int operator_kind(int op)\n{\n    return op;\n}\n"
         self.assertEqual(measure.functions("rank.h", text)[2], "C")
+        # A member named operator, a pointer to a function; and an enum's tag so named.
+        for text in ("struct rule {\n    int (*operator)(long, long);\n};\nint run(const struct rule *r);\n",
+                     "enum operator { OP_A };\nenum operator read_operator(const char *s);\n"):
+            with self.subTest(text=text):
+                self.assertEqual(measure.functions("rule.h", text)[2], "C")
 
     def test_language_of_each_sample(self):
         measure = support.load("measure")
