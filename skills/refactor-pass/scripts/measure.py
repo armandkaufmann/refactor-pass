@@ -101,13 +101,14 @@ tracks. In a glob, * matches across folders too, so 'app/*.py' takes
 app/sub/deep.py; and **/ matches any number of folders, none included, so
 'app/**/*.py' takes app/main.py too. Use the same scope as the heatmap.
 Test files are set aside as the heatmap sets them aside, by name or folder,
-so they stay out of the percentiles, and the output names any set aside in
-doubt; --test and --not-test correct it. So are the tests inside a file,
-Rust's items compiled only for tests (#[cfg(test)] on a mod tests {...},
-a fn, an impl...), which the heatmap counts in the file: the output says
-how many lines and in which files, and --show which lines. A test module
-in a file of its own (mod tests;) is measured unless named as a test.
---keep-tests measures them all.
+or for Rust's test modules in files of their own by the declarations that
+bring them in (#[cfg(test)] mod tests;), so they stay out of the
+percentiles, and the output names any set aside in doubt; --test and
+--not-test correct it. So are the tests inside a file, Rust's items
+compiled only for tests (#[cfg(test)] on a mod tests {...}, a fn, an
+impl...), which the heatmap counts in the file: the output says how many
+lines and in which files, and --show which lines. --keep-tests measures
+them all.
 Any copy of this skill a project keeps in the repo is left out, unless a
 scope names its folder. Reads the working tree's tracked files only.
 
@@ -1442,34 +1443,13 @@ RUST_ITEM = re.compile(r"(?:pub(?:\s*\([^()]*\))?\s+)?(?:(?:const|async|unsafe|s
 RUST_MODULE_HEAD = re.compile(r"(?<![\w#])(?:pub(?:\s*\([^()]*\))?\s+)?mod\s+(?:r#)?\w+\s*$")
 RUST_OUTER = re.compile(r"#\s*\[")
 RUST_INNER = re.compile(r"#\s*!\s*\[")
-RUST_CFG = re.compile(r"#\s*(?:!\s*)?\[\s*cfg\s*\(")
+RUST_CFG, cfg_needs_test = scoping.RUST_CFG, scoping.cfg_needs_test  # Shared with the heatmap's test modules.
 ITEM_STOPS = re.compile(r"[(){}\[\];<>#]")
 SEMICOLON_AFTER = re.compile(r"\s*;")
 # What comes before a macro's brackets: an invocation's name and its ! (quote! {...}, vec![...]), or a macro_rules!
 # definition's name; and how far back on a bracket's line that, or a module's head before its body's brace, is read.
 RUST_MACRO_BEFORE = re.compile(r"(?:\w!|macro_rules\s*!\s*(?:r#)?\w+)\s*$")
 BEFORE_BRACKET = 200
-
-
-def cfg_needs_test(attribute):
-    """Whether a Rust attribute, as the skeleton has it, is a cfg that holds only where test is set: cfg(test),
-    or test among all()'s predicates; not under not(), nor under any() unless each of its predicates needs
-    test too."""
-    match = RUST_CFG.match(attribute)
-    words = re.findall(r'\w+|"s*"|[(),=]', attribute[match.end():]) if match else []
-    frames = [("all", [])]  # Per bracket open, its operator and whether each of its predicates needs test.
-    for k, word in enumerate(words):
-        if words[k + 1:k + 2] == ["("]:
-            frames.append((word, []))
-        elif word == ")":
-            operator, needs = frames.pop()
-            need = any(needs) if operator == "all" else operator == "any" and bool(needs) and all(needs)
-            if not frames:
-                return need
-            frames[-1][1].append(need)
-        elif re.match(r"\w", word) and words[k - 1:k] != ["="]:  # A name, or a key given a value (feature = "x").
-            frames[-1][1].append(word == "test" and words[k + 1:k + 2] != ["="])
-    return False
 
 
 def before_space(code, i, j):
@@ -1870,6 +1850,26 @@ def not_there(repo, missing):
     return ", and ".join(parts)
 
 
+def working_texts(repo, paths):
+    """The texts of the files the working tree holds, of those asked for; one missing, unreadable or binary is
+    left out."""
+    texts = {}
+    for path in paths:
+        try:
+            with open(os.path.join(repo, path), "rb") as f:
+                data = f.read()
+        except OSError:
+            continue
+        if b"\0" not in data[:8000]:
+            texts[path] = data.decode("utf-8", errors="replace")
+    return texts
+
+
+def and_list(names):
+    """Names joined by commas and an and."""
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+
+
 def a_few(paths):
     """The first five paths, and how many more."""
     names = paths[:5] + (["%d more" % (len(paths) - 5)] if len(paths) > 5 else [])
@@ -1913,8 +1913,15 @@ def main():
             sys.exit(scoping.unknown_file(path, tracked, repo, "in its working tree"))
     in_scope = [p for p in tracked if scoping.in_scope(p, args.scope) and not scoping.ignored(p, patterns)]
     paths, own = scoping.leave_own_out(in_scope, tracked, args.scope)
-    tests = set() if args.keep_tests else set(p for p in paths if scoping.is_test(p, args.test, args.not_test))
-    doubts = scoping.doubtful_tests(tests, paths, args.test)
+    # Rust's test modules in files of their own, by the declarations that bring them in, which may be outside the
+    # scope: read in every tracked .rs file of the working tree, where the scope or --show has one.
+    modules = scoping.rust_test_modules(tracked, lambda wanted: working_texts(repo, wanted)) \
+        if not args.keep_tests and any(p.endswith(".rs") for p in paths + shows) else {}
+    tests = set() if args.keep_tests else set(
+        p for p in paths if scoping.is_test(p, args.test, args.not_test, modules))
+    # Those set aside by their declarations alone, so the output can say which.
+    declared = sorted(p for p in tests if p in modules and not scoping.is_test(p, args.test, args.not_test))
+    doubts = scoping.doubtful_tests(tests, paths, args.test, modules)
     paths = [p for p in paths if p not in tests]
 
     measured, failed, unreadable, missing = {}, [], [], []
@@ -1933,7 +1940,7 @@ def main():
             continue
         text = data.decode("utf-8", errors="replace")
         # The tests inside a file are set aside as test files are; a test file, shown, is measured whole.
-        aside = None if args.keep_tests or scoping.is_test(path, args.test, args.not_test) else []
+        aside = None if args.keep_tests or scoping.is_test(path, args.test, args.not_test, modules) else []
         try:
             measured[path] = functions(path, text, aside)
         except Exception:
@@ -1982,16 +1989,20 @@ def main():
           "and %d for a function, is in its band. The 80th and 90th are big; the 70th, worth a closer look."
           % (REFERENCE["file"][0], REFERENCE["function"][0]))
     if not args.keep_tests:
-        print("Test files: %s." % ("%d set aside from the percentiles and the table" % len(tests)
-                                   if tests else "none in the scope"))
+        print("Test files: %s%s." % ("%d set aside from the percentiles and the table" % len(tests)
+                                     if tests else "none in the scope", (
+                                         ", 1 of them a Rust test module in a file of its own, known by its "
+                                         "declaration, not its name: " if len(declared) == 1 else
+                                         ", %d of them Rust test modules in files of their own, known by their "
+                                         "declarations, not their names: " % len(declared)) + a_few(declared)
+                                     if declared else ""))
     # The files in the scope with tests inside them, those with the most lines of them first.
     inside = sorted(((sum(part[2] for part in parts), path) for path, parts in within.items() if path in in_paths),
                     key=lambda kv: (-kv[0], kv[1]))
     if inside:
         count = sum(part[3] for _, path in inside for part in within[path])
         print("Tests inside files, set aside as test files are: %d code lines and %d function%s compiled only for "
-              "tests (Rust's #[cfg(test)] items), in %s; a test module in a file of its own (mod tests;) is "
-              "measured unless named as a test." % (
+              "tests (Rust's #[cfg(test)] items), in %s." % (
                   sum(n for n, _ in inside), count, "" if count == 1 else "s",
                   "%s (%d)" % inside[0][::-1] if len(inside) == 1 else "%d files: %s" % (
                       len(inside), a_few(["%s (%d)" % (path, n) for n, path in inside]))))
@@ -2059,6 +2070,11 @@ def main():
                     (language,) + tuple(cuts[language][1]) + (
                         "; they lean on one function, so bands are by the reference points" if leans else "",))
                 if language in cuts else "no %s file in the scope, so no percentiles to compare with" % language))
+            if path in modules and not scoping.is_test(path, args.test, args.not_test) and \
+                    scoping.is_test(path, args.test, args.not_test, modules):
+                print("A test file: %s; measured whole here." % (
+                    "one of Rust's test modules, compiled only for the tests of %s" % and_list(sorted(modules[path]))
+                    if modules[path] else "Rust compiled only for tests, by the #![cfg(test)] at its top"))
             parts = within.get(path, [])
             if parts:  # What its lines leave out, where, so the lines listed stay the file's own.
                 spans = ["%d-%d" % part[:2] for part in parts]

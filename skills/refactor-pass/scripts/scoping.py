@@ -4,7 +4,7 @@
 The scope (folders or globs), the files never worth a refactor, copies of
 this skill kept inside the repo, and the tests, which are set
 aside by name or folder so that a spec beside its source doesn't swamp the
-counts.
+counts, and in Rust by the mod declarations that bring them in.
 """
 
 import argparse
@@ -303,21 +303,25 @@ def named(path, patterns):
     return any(glob_match(posixpath.basename(path), p) or glob_match(path, p) for p in patterns)
 
 
-def is_test(path, more=(), not_tests=()):
-    """Whether a file is a test: by its name, or by a folder it's in, unless not_tests names it."""
+def is_test(path, more=(), not_tests=(), modules=()):
+    """Whether a file is a test: by its name, or by a folder it's in, or as one of Rust's test modules
+    (rust_test_modules), unless not_tests names it."""
     if named(path, not_tests):
         return False
-    if any(part.lower() in TEST_FOLDERS for part in path.split("/")[:-1]):
+    if any(part.lower() in TEST_FOLDERS for part in path.split("/")[:-1]) or path in modules:
         return True
     return named(path, TEST_NAMES + list(more))
 
 
-def doubtful_tests(tests, tracked, more=()):
+def doubtful_tests(tests, tracked, more=(), modules=()):
     """Of the files set aside as tests, those that may not be, as (what, why), so the eye goes to
     them: a name that's a test only by a word at its end, in no folder of tests; or a folder of
-    tests by its name in which no file is named like a test, such as a spec folder of specifications."""
+    tests by its name in which no file is named like a test, such as a spec folder of specifications.
+    One of Rust's test modules (modules) is a test whatever its name."""
     found, folders = [], {}
     for path in sorted(tests):
+        if path in modules:
+            continue
         parts = path.split("/")
         by_name = named(path, TEST_NAMES + list(more))
         test_folders = [i for i, part in enumerate(parts[:-1]) if part.lower() in TEST_FOLDERS]
@@ -328,7 +332,7 @@ def doubtful_tests(tests, tracked, more=()):
             folders.setdefault("/".join(parts[:test_folders[0] + 1]), []).append(path)
     for folder in sorted(folders):
         inside = [p for p in tracked if p.startswith(folder + "/")]
-        if not any(named(p, TEST_NAMES + list(more)) for p in inside):
+        if not any(named(p, TEST_NAMES + list(more)) or p in modules for p in inside):
             found.append((folder + "/", "a folder named like tests, but none of its %d files is" % len(inside)))
     return found
 
@@ -344,12 +348,237 @@ def flat(name):
     return re.sub(r"[^a-z0-9]", "", name)
 
 
-def owns(test, path, stems):
+def owns(test, path, stems, modules=None):
     """Whether path is the test's own file: the same name less the test's marker; or, when no file in
     stems (the production files' flat stems) has that name, the same name and an entry point's suffix,
-    as ShowDashboardTest.php and ShowDashboardController.php."""
+    as ShowDashboardTest.php and ShowDashboardController.php; or, for one of Rust's test modules, a file whose
+    declarations bring it in (modules, as rust_test_modules gives them)."""
+    if path in (modules or {}).get(test, ()):
+        return True
     mine, theirs = flat(stem(test, True)), flat(stem(path, False))
     return theirs == mine or (mine not in stems and any(theirs == mine + part for part in ENTRY_POINTS))
+
+
+# Rust's test modules in files of their own (#[cfg(test)] mod tests;). A cfg needs test when it holds only where
+# test is set (cfg_needs_test), which reads an attribute as measure.py's skeleton has it, its strings written "s".
+RUST_CFG = re.compile(r"#\s*(?:!\s*)?\[\s*cfg\s*\(")
+
+
+def cfg_needs_test(attribute):
+    """Whether a Rust attribute, as the skeleton has it, is a cfg that holds only where test is set: cfg(test),
+    or test among all()'s predicates; not under not(), nor under any() unless each of its predicates needs
+    test too."""
+    match = RUST_CFG.match(attribute)
+    words = re.findall(r'\w+|"s*"|[(),=]', attribute[match.end():]) if match else []
+    frames = [("all", [])]  # Per bracket open, its operator and whether each of its predicates needs test.
+    for k, word in enumerate(words):
+        if words[k + 1:k + 2] == ["("]:
+            frames.append((word, []))
+        elif word == ")":
+            operator, needs = frames.pop()
+            need = any(needs) if operator == "all" else operator == "any" and bool(needs) and all(needs)
+            if not frames:
+                return need
+            frames[-1][1].append(need)
+        elif re.match(r"\w", word) and words[k - 1:k] != ["="]:  # A name, or a key given a value (feature = "x").
+            frames[-1][1].append(word == "test" and words[k + 1:k + 2] != ["="])
+    return False
+
+
+# What a Rust file's text is read in, past its comments and strings: a comment's or a string's opening, an
+# attribute's (#[ or #![), a module's head (mod name, then ; or {), a brace, a bracket or a ;; and anything else at
+# once, in runs. A string never closed runs to the end. A file that holds neither a mod declaration nor an inner cfg
+# isn't read so.
+RUST_TOKEN = re.compile(r"""(//[^\n]*|/\*)|(b?r\#*")|(b?"(?:\\.|[^"\\])*(?:"|\\?\Z)|"""
+                        r"""b?'(?:\\(?:x[0-9a-fA-F]{2}|u\{[0-9a-fA-F]{1,6}\}|.)|[^'\\\n])')|(\#!?\s*\[)|"""
+                        r"""\bmod\s+((?:r\#)?[A-Za-z_]\w*)\s*(?=[;{])|([{}\[\];])|"""
+                        r"""(?:[^/"'\#{}\[\];\w]+|(?!\bmod\b)(?!b?r\#*")(?!b?["'])\w+|/(?![/*])|"""
+                        r"""'(?![^'\\\n]'|\\)|\#(?!!?\s*\[))+|\w+|.""", re.S)
+RUST_DECLARES = re.compile(r"mod\s+(?:r#)?\w+\s*;")
+RUST_INNER_CFG = re.compile(r"#\s*!\s*\[\s*cfg")
+BLOCK_COMMENT = re.compile(r"/\*|\*/")
+KINDS = (None, "comment", "raw", "string", "attribute", "head", "bracket")
+
+
+def rust_tokens(text):
+    """A Rust file's tokens, as (kind, text), past its comments: a string or a character, whole ("string"), an
+    attribute's opening ("attribute"), a module's head, its name as its text ("head"), a brace, a bracket or a ;
+    ("bracket"), and anything else in runs (None)."""
+    i = 0
+    while i < len(text):
+        found = RUST_TOKEN.match(text, i)
+        i = found.end()
+        kind = KINDS[found.lastindex or 0]
+        if kind == "comment":
+            if found.group(1) == "/*":  # Rust's block comments nest.
+                depth = 1
+                for mark in BLOCK_COMMENT.finditer(text, i):
+                    depth += 1 if mark.group() == "/*" else -1
+                    if not depth:
+                        i = mark.end()
+                        break
+                else:
+                    i = len(text)
+            continue
+        if kind == "raw":  # To the quote and as many #s as it opened with.
+            hashes = found.group(2).count("#")
+            close = text.find('"' + "#" * hashes, i)
+            i = close + 1 + hashes if close >= 0 else len(text)
+            kind = "string"
+        yield kind, found.group(5) if kind == "head" else text[found.start():i]
+
+
+def rust_attribute(tokens, opening):
+    """An attribute read from tokens after its opening: its text, written for cfg_needs_test (its strings "s"),
+    and the file a path attribute names (#[path = "x.rs"]), its \\ read as /, or None."""
+    parts, depth, path, first = [opening], 1, None, True
+    for kind, token in tokens:
+        if kind == "bracket" and token in "[]":
+            depth += 1 if token == "[" else -1
+            if not depth:
+                break
+        if kind == "string":
+            if first and re.match(r"\s*path\s*=\s*$", "".join(parts[1:])):  # Its first string only.
+                raw = token.lstrip("br").strip("#")
+                path = raw[1:-1].replace("\\", "/")  # An escaped \\ is two /, which a path reads as one.
+            token, first = '"s"', False
+        parts.append(token if kind != "head" else "mod " + token)
+    return "".join(parts) + "]", path
+
+
+def rust_modules(text):
+    """A Rust file's mod declarations, as (name, path, inline, test): the module's name, its #[path] if it has
+    one, the folders of the inline modules it's in (each its #[path], or its name), and whether its cfg, or
+    the code it's in, needs test; and whether the whole file does, by #![cfg(test)] before anything else in
+    it. In a block that's no module's, as a macro's (pick! { if #[cfg(test)] { mod t; } }), a declaration is
+    read as if the block weren't there, its cfg before the block's brace."""
+    # Per block open: whether it's an inline module's, whether its code needs test, and whether nothing but inner
+    # attributes has come in it yet; and the folders of the inline modules open.
+    frames, inline = [[False, False, True]], []
+    declared, pending, name, tokens = [], [], None, rust_tokens(text)
+    for kind, token in tokens:
+        if kind == "attribute":
+            attribute, path = rust_attribute(tokens, token)
+            if "!" in token:
+                if frames[-1][2] and cfg_needs_test(attribute):
+                    frames[-1][1] = True
+            else:
+                pending.append((attribute, path))
+                frames[-1][2] = False
+            continue
+        if kind is None and not token.strip():
+            continue
+        frames[-1][2] = False
+        if kind == "head":
+            name = token[2:] if token.startswith("r#") else token
+        elif kind == "bracket" and token in ";{}":
+            test = frames[-1][1] or any(cfg_needs_test(a) for a, _ in pending)
+            path = next((p for _, p in pending if p is not None), None)
+            if token == ";":
+                if name:
+                    declared.append((name, path, tuple(inline), test))
+            elif token == "{":
+                frames.append([bool(name), test, True])
+                if name:
+                    inline.append(path or name)
+            elif len(frames) > 1 and frames.pop()[0]:
+                inline.pop()
+            pending, name = [], None
+    return frames[0][1], declared
+
+
+def rust_test_modules(tracked, read):
+    """Rust's test modules in files of their own: each tracked .rs file every mod declaration of which, in a tracked
+    file, needs test, by its cfg or by the code it's in (an inline module compiled only for tests, or a file that's
+    a test module itself); and each marked #![cfg(test)] before anything else in it. A file is where rustc finds it:
+    name.rs or name/mod.rs in the folder of a mod.rs, a lib.rs or a main.rs, or of a module file name's own
+    (src/disk.rs's in src/disk/), an inline module's folder added; or the file a #[path] names, from the file's
+    folder, or from the inline module's, which rustc then reads as a mod.rs. A crate root with another name (a
+    binary's, an example's), not known without Cargo.toml, is a file no declaration could bring in, and is read as a
+    lib.rs; a file no declaration reaches from those, nor from a mod.rs, a lib.rs or a main.rs, looks in its own
+    folder's first and then beside itself. read(paths) gives the files' texts. Per test module, the files that
+    aren't tests whose declarations bring it in, or bring in the test module it's in: its own files."""
+    known = set(p for p in tracked if p.endswith(".rs"))
+    texts = read(sorted(known)) if known else {}
+    parsed = dict((p, rust_modules(t)) for p, t in texts.items()
+                  if p in known and (RUST_DECLARES.search(t) or RUST_INNER_CFG.search(t)))
+
+    def places(path, bases, name, attribute, inline):
+        """Where a declaration in path may point, from the folders given (bases), the likelier first."""
+        folder = posixpath.dirname(path)
+        if attribute and not inline:
+            return [posixpath.normpath(posixpath.join(folder, attribute))]
+        found = []
+        for base in bases:
+            where = posixpath.join(base, *inline)
+            found += [posixpath.join(where, attribute)] if attribute else \
+                [posixpath.join(where, name + ".rs"), posixpath.join(where, name, "mod.rs")]
+        return [posixpath.normpath(p) for p in found]
+
+    def folders(path, kind):
+        """The folders a file's modules are in: a mod.rs's own; a module file's of its name; either, else."""
+        folder = posixpath.dirname(path)
+        own = posixpath.join(folder, posixpath.splitext(posixpath.basename(path))[0])
+        return {"mod-rs": [folder], "module": [own], None: [own, folder]}[kind]
+    # Per file read for its declarations: a mod.rs (as a lib.rs, a main.rs, a crate root of another name, or a
+    # file a #[path] names), a module file, or neither known. A file no declaration could bring in is a crate root.
+    maybe = set()
+    for path, (_, declared) in parsed.items():
+        for name, attribute, inline, _ in declared:
+            maybe.update(places(path, folders(path, None), name, attribute, inline))
+    kinds = dict((p, "mod-rs") for p in parsed if posixpath.basename(p) in ("mod.rs", "lib.rs", "main.rs")
+                 or p not in maybe)
+    queue, unknown, k = sorted(kinds, reverse=True), sorted(parsed), 0
+    edges = {}  # Per file a declaration brings in, the declaring files and whether each declaration needs test.
+    while queue or k < len(unknown):
+        if not queue:  # No declaration from a known file reaches it.
+            path, k = unknown[k], k + 1
+            if path in kinds:
+                continue
+            kinds[path] = None
+            queue.append(path)
+        path = queue.pop()
+        for name, attribute, inline, test in parsed[path][1]:
+            target = next((p for p in places(path, folders(path, kinds[path]), name, attribute, inline)
+                           if p in known), None)
+            if target:
+                edges.setdefault(target, []).append((path, test))
+                if target in parsed and target not in kinds:  # A file a #[path] names is read as a mod.rs.
+                    mod_rs = attribute or posixpath.basename(target) == "mod.rs"
+                    kinds[target] = "mod-rs" if mod_rs else "module"
+                    queue.append(target)
+    # The tests: each file marked so, then each whose declarations all need test or are in tests, from those up.
+    tests, waiting, unmet = [p for p in sorted(parsed) if parsed[p][0]], {}, {}
+    for target, declared in edges.items():
+        unmet[target] = sum(1 for _, test in declared if not test)
+        for source, test in declared:
+            if not test:
+                waiting.setdefault(source, []).append(target)
+    seen = set(tests)
+    tests += [t for t in sorted(edges) if not unmet[t] and t not in seen]
+    seen, k = set(tests), 0
+    while k < len(tests):
+        for target in waiting.get(tests[k], ()):
+            unmet[target] -= 1
+            if not unmet[target] and target not in seen:
+                seen.add(target)
+                tests.append(target)
+        k += 1
+    # Their own files, carried down from the files that aren't tests to the tests their declarations bring in.
+    owners = dict((t, set(s for s, _ in edges.get(t, ()) if s not in seen)) for t in tests)
+    below = {}  # Per test, the tests its declarations bring in.
+    for target in tests:
+        for source, _ in edges.get(target, ()):
+            if source in seen:
+                below.setdefault(source, []).append(target)
+    queue = list(tests)
+    while queue:
+        source = queue.pop()
+        for target in below.get(source, ()):
+            if not owners[source] <= owners[target]:
+                owners[target] |= owners[source]
+                queue.append(target)
+    return dict((t, frozenset(owners[t])) for t in tests)
 
 
 def tracked_files(repo, rev=None):

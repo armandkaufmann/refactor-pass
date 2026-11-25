@@ -61,8 +61,9 @@ what it said, and go on without it, from `git log` and the code.
   or `app`, not docs or assets. Read the project's README, a directory
   listing and any agent instructions (`AGENTS.md`, `CLAUDE.md`) to decide.
   Test files, known by name (`Board.spec.ts`, `test_x.py`, `XTest.php`...)
-  or folder, stay out of the table and pairs, and are listed apart when
-  they change with several files. Add `--test GLOB` for other test names,
+  or folder, and Rust's test modules by the `#[cfg(test)] mod` that brings
+  them in, stay out of the table and pairs, and are listed apart when they
+  change with several files. Add `--test GLOB` for other test names,
   `--not-test GLOB` for a file that only looks like one (the heatmap names
   any it doubts), and `--ignore GLOB` for generated files.
 - **Window**: by default the last 200 commits. `--since` sets it instead

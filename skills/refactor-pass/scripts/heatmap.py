@@ -37,12 +37,12 @@ author dates, which a rebase or a cherry-pick keeps. This shows these:
 
 Test files are set aside, so a spec beside its source doesn't top the list:
 those named as the common frameworks name them (Board.spec.ts, test_x.py,
-x_test.go, XTest.php, XTests.cs...) and anything in a folder named test,
-tests, __tests__, spec or the like. --test adds a pattern, --not-test keeps
-a file that only looks like a test, and --keep-tests counts them all like
-the rest. The output names any set aside in doubt: a name such as
-ABTest.php in no folder of tests, or a spec folder in which no file is
-named like a test.
+x_test.go, XTest.php...), anything in a folder named test, tests,
+__tests__, spec or the like, and Rust's test modules by their declarations
+(#[cfg(test)] mod x;). --test adds a pattern, --not-test keeps a file that
+only looks like a test, and --keep-tests counts them all like the rest. The
+output names any set aside in doubt: a name such as ABTest.php in no folder
+of tests, or a spec folder in which no file is named like a test.
 
 Then the files that keep changing in the same commits, with two measures:
 of the quieter file's commits, the share that changed both (how likely the
@@ -560,6 +560,28 @@ def not_landed(repo, shas):
                 scoping.git(repo, "merge-base", "--is-ancestor", found[0], "HEAD").returncode != 0:
             lost.add(sha)
     return lost
+
+
+def texts_at(repo, rev, paths):
+    """The texts of the files at rev, of those asked for, read in one batch; one missing there, or binary, is
+    left out."""
+    wanted = [p for p in paths if "\n" not in p]
+    if not wanted:
+        return {}
+    data = scoping.git(repo, "cat-file", "--batch", input="".join("%s:%s\n" % (rev, p) for p in wanted).encode()).stdout
+    texts, pos = {}, 0
+    for path in wanted:
+        end = data.index(b"\n", pos)
+        header = data[pos:end].split(b" ")
+        pos = end + 1
+        if len(header) != 3 or not SHA.fullmatch(header[0].decode()) or not header[2].isdigit():
+            continue
+        size = int(header[2])
+        blob = data[pos:pos + size]
+        pos += size + 1
+        if header[1] == b"blob" and b"\0" not in blob[:8000]:
+            texts[path] = blob.decode("utf-8", errors="replace")
+    return texts
 
 
 def line_counts(repo, wanted):
@@ -1590,8 +1612,15 @@ def main():
     newer = set(c[0] for c in commits[:(len(commits) + 1) // 2])
     # The fixes trace, of the commits counted: types are read as labels where most subjects carry one.
     typed = typed_share(commits)
+    rust_read = {}  # Rust's test modules (rust_test_modules), read at HEAD when a Rust file is first asked of.
+
+    def modules():
+        if "modules" not in rust_read:
+            rust_read["modules"] = scoping.rust_test_modules(tracked, lambda wanted: texts_at(repo, "HEAD", wanted))
+        return rust_read["modules"]
+
     def is_test(path):
-        return scoping.is_test(path, args.test, args.not_test)
+        return scoping.is_test(path, args.test, args.not_test, modules() if path.endswith(".rs") else ())
 
     tops = package_tops(tracked)
     fixes = {} if args.no_fixes else fix_trace(commits, everything, typed >= LABELLED, is_test,
@@ -1756,7 +1785,8 @@ def main():
     by_path = dict((r["path"], r) for r in rows)
     rows = [r for r in rows if r["path"] in alive]
     in_scope = [p for p in tracked if scoping.in_scope(p, args.scope) and not scoping.ignored(p, patterns)]
-    doubts = scoping.doubtful_tests(tests, in_scope, args.test)
+    doubts = scoping.doubtful_tests(tests, in_scope, args.test,
+                                    modules() if any(p.endswith(".rs") for p in in_scope) else ())
     # Each production file's name, so a test's own file is found even where it isn't in the window.
     stems = set(scoping.flat(scoping.stem(p, False)) for p in in_scope if not is_test(p))
 
@@ -1855,7 +1885,8 @@ def main():
     # Tests that change with several production files besides their own.
     tied = defaultdict(list)
     for (test, path), count in with_tests.items():
-        if not scoping.owns(test, path, stems) and measures([test, path], count):
+        if not scoping.owns(test, path, stems, modules() if test.endswith(".rs") else None) and \
+                measures([test, path], count):
             tied[test].append({"path": path, "shared": count})
     tied = [{"test": test, "files": sorted(found, key=lambda f: (-f["shared"], f["path"]))}
             for test, found in tied.items() if len(found) > 1]
@@ -1916,8 +1947,14 @@ def main():
     else:
         print("Growth is from nothing: the window starts at the first commit.")
     if not args.keep_tests:
-        print("Test files: %s." % ("%d changed in the window, set aside from the table and the pairs" % len(tests)
-                                   if tests else "none in the scope changed in the window"))
+        declared = [p for p in tests if p.endswith(".rs") and p in modules() and
+                    not scoping.is_test(p, args.test, args.not_test)]
+        print("Test files: %s%s." % ("%d changed in the window, set aside from the table and the pairs" % len(tests)
+                                     if tests else "none in the scope changed in the window",
+                                     (", 1 of them a Rust test module in a file of its own, known by its "
+                                      "declaration" if len(declared) == 1 else ", %d of them Rust test modules in "
+                                      "files of their own, known by their declarations" % len(declared))
+                                     if declared else ""))
     if doubts:
         print("Set aside as tests, but maybe not: %s%s. If one isn't a test, --not-test GLOB counts it." % (
             "; ".join("%s (%s)" % d for d in doubts[:5]), "; and %d more" % (len(doubts) - 5)
