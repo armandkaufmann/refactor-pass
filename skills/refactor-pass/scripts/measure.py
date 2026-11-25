@@ -1470,8 +1470,13 @@ def rust_test_items(code):
     closes = brackets_of(code)["closes"]
     opening = None  # Where each closing bracket's opening one is, worked out when first needed.
     found, macros = set(), {}
+    # Where the last walk over a run of attributes stopped, and the modules whose inner cfgs were read: each run, and
+    # each module, is read once, however many cfgs it holds.
+    walked, modules = (-1, -1), set()
     for i, line in enumerate(code):
         for cfg in RUST_CFG.finditer(line) if "cfg" in line else ():
+            if (i, cfg.start()) < walked:
+                continue
             end = closes.get((i, line.index("[", cfg.start())))
             if end is None or not cfg_needs_test(joined(code, (i, cfg.start()), (end[0], end[1] - 1))) or \
                     rust_in_macro(code, i, cfg.start(), macros):
@@ -1479,15 +1484,17 @@ def rust_test_items(code):
             if RUST_INNER.match(line, cfg.start()):  # The module's whose body it's first in.
                 opener = js_opener(code, i, cfg.start())
                 head = RUST_MODULE_HEAD.search(code[opener[0]][:opener[1]]) if opener and opener[2] == "{" else None
-                body = closes.get(opener[:2]) if head else None
+                body = closes.get(opener[:2]) if head and opener[:2] not in modules else None
                 if body is None:
                     continue
+                modules.add(opener[:2])
                 start, end = (opener[0], head.start()), (body[0], body[1] - 1)
             else:  # The item after it, past any other attributes.
-                at = js_next(code, end[0], end[1], limit=50)
+                at, walked = js_next(code, end[0], end[1], limit=50), end
                 while at and RUST_OUTER.match(code[at[0]], at[1]):
                     after = closes.get((at[0], code[at[0]].index("[", at[1])))
                     at = js_next(code, after[0], after[1], limit=50) if after else None
+                    walked = after or walked
                 item = RUST_ITEM.match(code[at[0]], at[1]) if at else None
                 ends = rust_item_end(code, at[0], item.end()) if item else None
                 if ends is None or (ends[2] == ";" and item.group(1) == "mod"):
