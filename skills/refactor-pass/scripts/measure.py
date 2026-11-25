@@ -1425,7 +1425,7 @@ RUST_MODULE_HEAD = re.compile(r"(?<![\w#])(?:pub(?:\s*\([^()]*\))?\s+)?mod\s+(?:
 RUST_OUTER = re.compile(r"#\s*\[")
 RUST_INNER = re.compile(r"#\s*!\s*\[")
 RUST_CFG = re.compile(r"#\s*!?\s*\[\s*cfg\s*\(")
-ITEM_STOPS = re.compile(r"[(){}\[\];<>]")
+ITEM_STOPS = re.compile(r"[(){}\[\];<>#]")
 # What comes before a macro's brackets: an invocation's name and its ! (quote! {...}, vec![...]), or a macro_rules!
 # definition's name.
 RUST_MACRO_BEFORE = re.compile(r"(?:\w!|macro_rules\s*!\s*(?:r#)?\w+)\s*$")
@@ -1477,11 +1477,12 @@ def rust_item_end(code, i, j, body=True):
     (body), the bracket that closes it, the first { outside other brackets and outside a type's arguments, as a
     const generic's (Grid<{ 2 * 3 }>), or the ; just after it (struct S { ... };); or else the ; that ends it, as a
     declaration's. Without, as a constant, a static, a type alias or a use has none, the ; that ends it, its value's
-    or its group's braces passed whole (if cfg!(unix) { 1 } else { 2 }, a::{b, c}). None if no end comes, as when
-    the brackets around it close first."""
+    or its group's braces passed whole (if cfg!(unix) { 1 } else { 2 }, a::{b, c}), however many lines its value
+    holds. None if no end comes, as when the brackets around it close first, or the next item's attribute
+    comes, or for an item with a body none comes within SIGNATURE_LINES lines."""
     closes = brackets_of(code)["closes"]
     k, col, angles = i, j, 0
-    while k < len(code) and k - i <= SIGNATURE_LINES:
+    while k < len(code) and (not body or k - i <= SIGNATURE_LINES):
         stop = ITEM_STOPS.search(code[k], col)
         if stop is None:
             k, col = k + 1, 0
@@ -1489,6 +1490,11 @@ def rust_item_end(code, i, j, body=True):
         c, at = stop.group(), stop.start()
         if c == ";":
             return k, at, c
+        if c == "#":  # Another item's attribute: this one has no end. A raw name's # (r#match) goes on.
+            if RUST_OUTER.match(code[k], at) or RUST_INNER.match(code[k], at):
+                return None
+            col = at + 1
+            continue
         if c in "<>":  # A type's arguments, but not an arrow's >.
             angles += 1 if c == "<" else 0 if at and code[k][at - 1] in "-=" else -1
             col = at + 1
