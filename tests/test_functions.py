@@ -103,9 +103,10 @@ class Samples(unittest.TestCase):
                 ("n.h", "[[gnu::always_inline]] static inline int one(void) {\n    return 1;\n}\n", ("C", 1)),
                 ("o.h", "[[gnu::cold,\n  gnu::noinline]]\nstatic inline int one(void) {\n    return 1;\n}\n",
                  ("C", 1)),
-                # An Objective-C message's [[ isn't an attribute that a ]] far on closes.
+                # An Objective-C message's [[ isn't an attribute that a ]] far on closes, past a ; or a brace.
                 ("p.h", "void g(void) { [[x y] z]; }\ninline int Grid::size() const { return n; }\nint v = a[b[0]];\n",
-                 ("C++", 2))):
+                 ("C++", 2)),
+                ("q.h", "void f(void) {\n    if ([[p q] r]) { Shape::area(m[n[0]]); }\n}\n", ("C++", 1))):
             with self.subTest(name=name):
                 _, functions, language = measure.functions(name, text)
                 self.assertEqual((language, len(functions)), want)
@@ -127,6 +128,11 @@ class Samples(unittest.TestCase):
                  "C"),
                 ("#if defined(__cplusplus) || defined(OTHER)\nint f() noexcept;\n#endif\n", "C++"),
                 ("#ifdef __cplusplus\n#else\nint f() noexcept;\n#endif\n", "C++"),
+                # C++'s only by an #elif after a plain #if; the #else of a plain #if is anyone's; a stray #endif.
+                ("#if defined(PLAIN_C)\nint area(int s);\n#elif defined(__cplusplus)\nint area(int s) noexcept;\n"
+                 "#endif\n", "C"),
+                ("#ifdef SMALL\nint w;\n#else\ninline int Shape::area() const { return n; }\n#endif\n", "C++"),
+                ("int x;\n#endif\n", "C"),
                 # Not C++, in brackets, which the skeleton writes as s: its #else is C++'s only.
                 ("#if !(defined(__cplusplus))\nint pick(int a);\n#else\nint pick(int a) noexcept;\n#endif\n", "C"),
                 ("#if !(defined __cplusplus)\nint pick(int a);\n#else\nint pick(int a) noexcept;\n#endif\n", "C"),
@@ -141,15 +147,17 @@ class Samples(unittest.TestCase):
         # or new, delete, co_await or an operator spelt as a word (and, not_eq...), which take them. Not a C
         # function whose name starts with it, nor one whose type is named operator.
         measure = support.load("measure")
+        # None qualified, as a qualified one counts by its :: alone (Mesh::operator bool() const).
         words = ("and", "and_eq", "bitand", "bitor", "compl", "not", "not_eq", "or", "or_eq", "xor", "xor_eq")
-        for text in ("operator bool()", "Mesh::operator bool() const", "operator Color4()", "operator==(",
-                     "operator ()(", "operator new(size_t)", "operator new[](size_t)", "operator delete[](void*)",
-                     'operator""_km(', "operator const char*()", "operator std::string()", "operator T&()",
-                     "operator co_await()", "operator Task<int(long)>() const", "operator co_await(Task t)",
-                     "operator bool( ) const", "operator delete [] (void* p)") + \
-                tuple("operator %s(Flag a, Flag b)" % word for word in words):
+        for text in ("operator bool()", "operator bool() const", "operator Color4()", "operator==(", "operator!=(",
+                     "operator,(", "operator ()(", "operator() (", "operator[ ](", "operator new(size_t)",
+                     "operator new[](size_t)", "operator delete[](void*)", 'operator""_km(', 'operator"" _px(',
+                     "operator const char*()", "operator string_view()", "operator T&()", "operator co_await()",
+                     "operator Task<int(long)>() const", "operator co_await(Task t)", "operator bool( ) const",
+                     "operator delete [] (void* p)") + tuple("operator %s(Flag a, Flag b)" % word for word in words):
             with self.subTest(text=text):
                 self.assertTrue(measure.CPP_IN_CODE.search(text))
+                self.assertNotIn("::", text)
         for text in ("operator_rank(", "operator_kind (", "operators()", "my_operator(", "operator lookup(int key)",
                      "operator pick(void)"):
             with self.subTest(text=text):
@@ -162,7 +170,10 @@ class Samples(unittest.TestCase):
                      "struct step { int operator; };\nvoid assign(struct step *s, long x) { s->operator = (int)x; }\n",
                      "struct step { int operator; };\nint plus(struct step s) { return s.operator == ('+'); }\n",
                      "enum operator { OP_A };\nenum operator read_operator(const char *s);\n",
-                     "typedef int operator;\noperator lookup(const char *key, int n);\n"):
+                     "struct operator { int a; };\nstruct operator fresh();\n",
+                     "union operator { int a; };\nunion operator blank();\n",
+                     "typedef int operator;\noperator lookup(const char *key, int n);\n",
+                     "typedef int operator;\noperator *latest();\n"):
             with self.subTest(text=text):
                 self.assertEqual(measure.functions("rule.h", text)[2], "C")
 
