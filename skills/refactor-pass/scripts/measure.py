@@ -253,12 +253,13 @@ CPP_IN_HEADER = re.compile(r"^\s*(?:template\s*<|namespace(?:\s+[\w:]+)?\s*\{|(?
 # (operator==, operator""_km), or new, delete (operator new[]), co_await or an operator spelt as a word
 # (operator not_eq), then its parameters; or a type's name and () (operator bool(), operator Task<int(long)>()),
 # as a conversion takes no parameters. Not operator_rank(, a C function's name, a member so named, (*operator)(,
-# C's tag (enum operator), nor a C function whose type is so named (operator lookup(int key)).
+# nor one used after -> or . (s->operator = (int)x), which C++ writes only to call one (this->operator=(o)), C's tag
+# (enum operator), nor a C function whose type is so named (operator lookup(int key)).
 CPP_IN_CODE = re.compile(r"\w\s*::\s*~?\w|\bnoexcept\b|\boperator\b[ \t]*(?:\(\)[ \t]*\(|"
                          r"(?:[-+*/%^&|~!=<>,]+|\[\s*\]|\"\"[ \t]*\w+)[ \t]*\(|(?:(?:new|delete)(?:[ \t]*\[[ \t]*\])?|"
                          r"co_await|and|and_eq|bitand|bitor|compl|not|not_eq|or|or_eq|xor|xor_eq)[ \t]*\(|"
                          r"\w(?:[\w:<>*& \t]|\([^()]*\)){0,80}?\([ \t]*\))")
-C_TAG_OPERATOR = re.compile(r"\b(?:enum|struct|union)\s+operator\b")
+C_TAG_OPERATOR = re.compile(r"\b(?:enum|struct|union)\s+operator\b|(?:\.|->)\s*operator\b")
 # What ends a C23 attribute, [[...]], or shows that a [[ opens none, as an Objective-C message's [[x y] z]: a ;
 # or a brace first.
 C23_ATTRIBUTE_END = re.compile(r"\]\]|[;{}]")
