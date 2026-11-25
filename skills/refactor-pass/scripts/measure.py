@@ -1529,7 +1529,7 @@ def rust_item_end(code, i, j, body=True):
             if RUST_INNER.match(code[k], at):
                 return None
             if RUST_OUTER.match(code[k], at):  # Unless it's a parameter's in this item's own generics.
-                past = parameter_attributes(code, k, at) if body and angles > 0 else None
+                past = parameter_attributes(code, k, at) if angles > 0 else None
                 if past is None:
                     return None
                 k, col = past
