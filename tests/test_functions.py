@@ -413,7 +413,12 @@ class TestsInsideFiles(unittest.TestCase):
                 ("#[cfg(test)]\nstruct Wide<const N: usize = { 1 + 1 }> {\n    a: [u8; N],\n}\n",
                  (0, [], [[1, 4, 4, 0]])),
                 # Type parameters over lines, the > that closes them starting its line.
-                ("#[cfg(test)]\nimpl<\n    T: Clone,\n> Shelf for T {\n}\n", (0, [], [[1, 5, 5, 0]]))):
+                ("#[cfg(test)]\nimpl<\n    T: Clone,\n> Shelf for T {\n}\n", (0, [], [[1, 5, 5, 0]])),
+                # A generic parameter's attributes, in the item's own generics, aren't the next item's.
+                ("#[cfg(test)]\nunsafe impl<#[may_dangle] T> Drop for Ring<T> {\n    fn drop(&mut self) {}\n}\n"
+                 "fn after() {\n}\n", (2, [["after", 5, 6, 2]], [[1, 4, 4, 1]])),
+                ("#[cfg(test)]\nfn pair<#[cfg(unix)] T, #[a] #[b] U>(a: U) {\n}\n", (0, [], [[1, 3, 3, 1]])),
+                ("#[cfg(test)]\nfn width<#[a] const N: usize>() {\n}\n", (0, [], [[1, 3, 3, 1]]))):
             with self.subTest(text=text):
                 self.assertEqual(set_aside(text), want)
 
