@@ -1424,7 +1424,7 @@ RUST_ITEM = re.compile(r"(?:pub(?:\s*\([^()]*\))?\s+)?(?:(?:const|async|unsafe|s
 RUST_MODULE_HEAD = re.compile(r"(?<![\w#])(?:pub(?:\s*\([^()]*\))?\s+)?mod\s+(?:r#)?\w+\s*$")
 RUST_OUTER = re.compile(r"#\s*\[")
 RUST_INNER = re.compile(r"#\s*!\s*\[")
-RUST_CFG = re.compile(r"#\s*!?\s*\[\s*cfg\s*\(")
+RUST_CFG = re.compile(r"#\s*(?:!\s*)?\[\s*cfg\s*\(")
 ITEM_STOPS = re.compile(r"[(){}\[\];<>#]")
 # What comes before a macro's brackets: an invocation's name and its ! (quote! {...}, vec![...]), or a macro_rules!
 # definition's name; and how far back on a bracket's line that, or a module's head before its body's brace, is read.
