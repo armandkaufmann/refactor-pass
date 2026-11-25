@@ -1372,7 +1372,7 @@ RUST_MODULE_HEAD = re.compile(r"(?<![\w#])(?:pub(?:\s*\([^()]*\))?\s+)?mod\s+(?:
 RUST_OUTER = re.compile(r"#\s*\[")
 RUST_INNER = re.compile(r"#\s*!\s*\[")
 RUST_CFG = re.compile(r"#\s*!?\s*\[\s*cfg\s*\(")
-ITEM_STOPS = re.compile(r"[(){}\[\];]")
+ITEM_STOPS = re.compile(r"[(){}\[\];<>]")
 # What comes before a macro's brackets: an invocation's name and its ! (quote! {...}, vec![...]), or a macro_rules!
 # definition's name.
 RUST_MACRO_BEFORE = re.compile(r"(?:\w!|macro_rules\s*!\s*(?:r#)?\w+)\s*$")
@@ -1416,24 +1416,31 @@ def joined(code, start, end):
     return code[i][j:m + 1] if i == k else " ".join([code[i][j:]] + code[i + 1:k] + [code[k][:m + 1]])
 
 
-def rust_item_end(code, i, j):
-    """Where the Rust item whose head goes on from code[i][j] ends, as its line, column and character: the bracket
-    that closes its body, the first { outside other brackets, or the ; just after it (use a::{b, c};); or else the
-    ; that ends it, as a declaration's; None if neither comes, as when the brackets around it close first."""
+def rust_item_end(code, i, j, body=True):
+    """Where the Rust item whose head goes on from code[i][j] ends, as its line, column and character. With a body
+    (body), the bracket that closes it, the first { outside other brackets and outside a type's arguments, as a
+    const generic's (Grid<{ 2 * 3 }>), or the ; just after it (struct S { ... };); or else the ; that ends it, as a
+    declaration's. Without, as a constant, a static, a type alias or a use has none, the ; that ends it, its value's
+    or its group's braces passed whole (if cfg!(unix) { 1 } else { 2 }, a::{b, c}). None if no end comes, as when
+    the brackets around it close first."""
     closes = brackets_of(code)["closes"]
-    k, col = i, j
+    k, col, angles = i, j, 0
     while k < len(code) and k - i <= SIGNATURE_LINES:
         stop = ITEM_STOPS.search(code[k], col)
         if stop is None:
             k, col = k + 1, 0
             continue
-        c = stop.group()
+        c, at = stop.group(), stop.start()
         if c == ";":
-            return k, stop.start(), c
-        end = closes.get((k, stop.start())) if c in OPEN else None
+            return k, at, c
+        if c in "<>":  # A type's arguments, but not an arrow's >.
+            angles += 1 if c == "<" else 0 if at and code[k][at - 1] in "-=" else -1
+            col = at + 1
+            continue
+        end = closes.get((k, at)) if c in OPEN else None
         if end is None:
             return None
-        if c == "{":
+        if c == "{" and body and angles <= 0:
             after = code[end[0]][end[1]:]
             return end[0], end[1] + (len(after) - len(after.lstrip()) if after.lstrip()[:1] == ";" else -1), "}"
         k, col = end  # Brackets before the body, as parameters' or an array's type, [u8; 3], are passed whole.
@@ -1498,7 +1505,8 @@ def rust_test_items(code):
                     at = js_next(code, after[0], after[1], limit=50) if after else None
                     walked = after or walked
                 item = RUST_ITEM.match(code[at[0]], at[1]) if at else None
-                ends = rust_item_end(code, at[0], item.end()) if item else None
+                ends = rust_item_end(code, at[0], item.end(), item.group(1) not in ("const", "static", "type", "use")) \
+                    if item else None
                 if ends is None or (ends[2] == ";" and item.group(1) == "mod"):
                     continue
                 start, end = (i, cfg.start()), ends[:2]
