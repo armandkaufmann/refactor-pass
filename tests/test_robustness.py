@@ -96,11 +96,12 @@ class Limit(object):
         return False
 
 
-def check(test, name, text, seconds, what):
+def check(test, name, text, seconds, what, aside=None):
+    """With aside, a list, the code compiled only for tests is set aside in it, as measure.py's run asks."""
     measure = support.load("measure")
     try:
         with Limit(seconds) as limit:
-            lines, functions, language = measure.functions(name, text)
+            lines, functions, language = measure.functions(name, text, *([] if aside is None else [aside]))
     except TooSlow:
         test.fail("%s took over %ds: %s" % (name, seconds, what))
     except Exception as e:
@@ -111,6 +112,15 @@ def check(test, name, text, seconds, what):
     for found in functions or []:
         test.assertTrue(1 <= found[1] <= found[2] <= count and 0 <= found[3] <= found[2] - found[1] + 1,
                         "%s: %r (%s)" % (name, found, what))
+    parts = sorted(aside or [])
+    for part in parts:
+        test.assertTrue(1 <= part[0] <= part[1] <= count and 0 <= part[2] <= part[1] - part[0] + 1,
+                        "%s: %r set aside (%s)" % (name, part, what))
+    for part, after in zip(parts, parts[1:]):
+        test.assertLess(part[1], after[0], "%s: %r and %r overlap (%s)" % (name, part, after, what))
+    for found in functions or []:
+        test.assertFalse(any(part[0] <= found[1] <= part[1] for part in parts),
+                         "%s: %r found in a part set aside (%s)" % (name, found, what))
 
 
 class Fuzz(unittest.TestCase):
@@ -151,12 +161,35 @@ EXTREMES = [
 ]
 
 
+# Rust's tests inside files, looked for where measure.py's run sets them aside: modules never closed, nested,
+# after thousands of attributes, and a cfg nested thousands deep.
+TESTS_INSIDE = [
+    ("open.rs", "#[cfg(test)]\nmod a {\n" * 5000),
+    ("nested.rs", "#[cfg(test)] mod a {\n" * 5000 + "}\n" * 5000),
+    ("attributes.rs", "#[a]\n" * 20000 + "mod a {\n}\n"),
+    ("cfg.rs", "#[cfg(" + "all(" * 5000 + "test" + ")" * 5001 + "]\nmod a {\n}\n"),
+]
+
+
 class Extremes(unittest.TestCase):
 
     def test_extremes(self):
         for name, text in EXTREMES:
             with self.subTest(case=name):
                 check(self, name, text, 10, "an extreme")
+
+    def test_tests_inside_files(self):
+        for name, text in TESTS_INSIDE:
+            with self.subTest(case=name):
+                check(self, name, text, 10, "an extreme", [])
+        rng = random.Random(SEED)
+        files = [f for f in samples() if f[0].endswith(".rs")] + [
+            ("lib.rs", "#[cfg(all(test, unix))]\nmod tests {\n    #![allow(unused)]\n    #[test]\n    fn a() {\n"
+                       "        let _ = ('}', \"{\");\n    }\n}\nfn b() {\n}\n")]
+        for n in range(100):
+            name, text = files[n % len(files)]
+            mutated, what = mutate(rng, name, text, files)
+            check(self, name, mutated, 5, what, [])
 
 
 # Lines of many generic types that aren't a definition, each of which once took a time that doubled with each
@@ -202,24 +235,88 @@ class Generics(unittest.TestCase):
         self.assertLess(float(result.out), 10, result)
 
 
-# Files of many definitions whose ends were each looked for to the end of the file, once taking a time that
-# grew with the square of their length or faster: unclosed definitions, nested ones each indented one more, and
-# #if blocks never closed, each branch of which opens a function's body.
+# Files whose reading once took a time that grew with the square of their size, or faster. Each is made at a size
+# and at SCALE times it, and read at both, three times over: at the larger, its fastest reading must take under
+# RATIO times as long as its fastest at the smaller, where a time that grows with the size takes about SCALE times
+# as long and one that grows with its square about SCALE * SCALE times, however fast the machine; and under LIMIT
+# seconds. The time is the processor's, spent on the reading alone, which a busy machine doesn't stretch, though it
+# stretches a long reading's time on the clock more than a short one's. On Windows, whose processor time advances in
+# ticks of about 15.6 ms, too coarse for readings of 7 to 80 ms, it's the clock's, so a busy Windows machine can
+# still make a case seem to grow too fast. A case that seems to is timed once more, as a reading slower per
+# character on a large text can also make it seem to; and one whose readings take over TIMEOUT seconds on the clock
+# fails. A case can name the step of measure.py it times, given the text's lines, where the rest of the reading
+# would hide it. Unclosed definitions, nested ones each indented one more (sized by their lines' indents), and #if
+# blocks never closed, each branch of which opens a function's body. Rust's tests inside a file, each set aside, as
+# measure.py's run asks: thousands of test modules, a run of thousands of cfgs on one item or on none, of attributes
+# before a module's inner cfgs, of statics with no ;; thousands of test items on one line, or of inner cfgs,
+# #![cfg(test)], in one module, in none, in functions' bodies or each first in a module of its own; and a # and
+# thousands of spaces on a line that says cfg. A header's line of thousands of Objective-C messages, [[x y] z], none
+# a C23 attribute, or of thousands of [[ before one ;.
 GROWING = {
-    "unclosed.py": lambda: "def f(\n" * 20000,
-    "unclosed.gd": lambda: "func a(\n" * 20000,
-    "nested.py": lambda: "".join(" " * i + "def f%d():\n" % i for i in range(3000)),
-    "nested.rb": lambda: "".join(" " * i + "def f%d\n" % i for i in range(3000)),
-    "open-ifs.c": lambda: "#if A\nint f() {\n#else\n" * 10000,
+    "unclosed.py": (1100, lambda n: "def f(\n" * n),
+    "unclosed.gd": (1100, lambda n: "func a(\n" * n),
+    "nested.py": (100000, lambda n: "".join(" " * i + "def f%d():\n" % i for i in range(int((2 * n) ** 0.5)))),
+    "nested.rb": (280000, lambda n: "".join(" " * i + "def f%d\n" % i for i in range(int((2 * n) ** 0.5)))),
+    "open-ifs.c": (640, lambda n: "#if A\nint f() {\n#else\n" * n),
+    "tests.rs": (820, lambda n: "#[cfg(test)]\nmod t {\n    fn f() {}\n}\n" * n),
+    "attributes.rs": (1100, lambda n: "#[cfg(test)]\n" * n + "fn g() {}\n"),
+    "attributes-alone.rs": (1100, lambda n: "#[cfg(test)]\n" * n),
+    "inner-cfgs.rs": (550, lambda n: "#[a]\n" * n + "mod t {\n" + "    #![cfg(test)]\n" * n + "}\n"),
+    "line-of-fns.rs": (570, lambda n: "#[cfg(test)] fn t() { let b = [2]; } " * n + "\n"),
+    "line-of-mods.rs": (750, lambda n: "#[cfg(test)] mod m { } " * n + "\n"),
+    "messages.h": (3100, lambda n: "void g(void) { " + "[[x y] z]; " * n + "}\n"),
+    "statics.rs": (550, lambda n: "#[cfg(test)]\nstatic B: u16 = 2\n" * n),
+    "openings.h": (35000, lambda n: "int x = " + "[[" * n + ";\n"),
+    "line-of-inner-cfgs.rs": (1050, lambda n: "mod m { " + "#![cfg(test)] " * n + "}\n"),
+    "inner-cfgs-alone.rs": (1050, lambda n: "#![cfg(test)] " * n + "\n"),
+    "line-of-test-mods.rs": (380, lambda n: "mod m { #![cfg(test)] fn t() {} } " * n + "\n"),
+    "line-of-fn-cfgs.rs": (440, lambda n: "fn g() { #![cfg(test)] } " * n + "\n"),
+    "inner-after-attributes.rs": (350, lambda n: "mod m { #![allow(x)] #![cfg(test)] } " * n + "\n"),
+    "two-inner-cfgs.rs": (300, lambda n: "mod m { #![cfg(test)] #![cfg(test)] } " * n + "\n"),
+    "outer-and-inner.rs": (270, lambda n: "#[cfg(test)] mod m { #![cfg(test)] } " * n + "\n"),
+    "nested-test-mods.rs": (200, lambda n: "mod a { #![cfg(test)] mod b { #![cfg(test)] } } " * n + "\n"),
+    "hash-then-spaces.rs": (150000, lambda n: "let cfg = 1; x #" + " " * n + "y\n"),
+    # Test items between long runs of text on one line, set aside on their own: each copied the rest of the line.
+    "tests-in-a-long-line": (1500000, lambda n: " " + "x" * n + " " + "#[cfg(test)] fn f() {} " * (n // 1000) +
+                             "x" * n + " ", "rust_test_items"),
+    # Thousands of /* on one line, in a language whose block comments nest.
+    "comment-openers.rs": (31000, lambda n: "/* " * n + "\n"),
+    # A header's #ifdefs nested thousands deep around thousands of lines, its evidence of C++ read on its own.
+    "deep-ifdefs.h": (4000, lambda n: "#ifdef A\n" * n + "int x;\n" * n + "#endif\n" * n, "cpp_header"),
+    # A ! and thousands of spaces in a header's #if on __cplusplus.
+    "bang-then-spaces.h": (110000, lambda n: "#if !" + " " * n + "x && __cplusplus\nint a;\n#endif\n"),
+    # A header of thousands of blank lines, which its evidence of C++ read on from each.
+    "blank-lines.h": (2700, lambda n: "int a;\n" + "\n" * n + "int b;\n"),
+    # In C#, thousands of $ before a string; and a raw string opened by thousands of quotes, holding runs of one fewer.
+    "dollars.cs": (8500, lambda n: "var s = " + "$" * n + '"{a}";\n'),
+    # Rust test type aliases left open after a , in their generics.
+    "open-aliases.rs": (480, lambda n: "#[cfg(test)]\ntype A<T,\n" * n),
+    "quote-runs.cs": (300000, lambda n: "var s = " + '"' * n + "\n" + ('"' * (n - 1) + "x") * 4 + "\n" + '"' * n +
+                      ";\n"),
 }
+SCALE, RATIO, LIMIT, TIMEOUT = 8, 24, 5, 60
 TIME = """
-import sys, time
+import gc, sys, time
 import measure
-from test_robustness import GROWING
-text = GROWING[sys.argv[1]]()
-start = time.time()
-measure.functions(sys.argv[1], text)
-print("%.2f" % (time.time() - start))
+from test_robustness import GROWING, LIMIT, SCALE
+name = sys.argv[1]
+n, make = GROWING[name][:2]
+step = getattr(measure, GROWING[name][2]) if len(GROWING[name]) > 2 else None
+texts = make(n), make(SCALE * n)
+clock = time.perf_counter if sys.platform == "win32" else time.process_time
+def timed(text):
+    gc.collect()
+    gc.disable()
+    start = clock()
+    step(text.split("\\n")) if step else measure.functions(name, text, [])
+    took = clock() - start
+    gc.enable()
+    if took > LIMIT:  # Too slow already.
+        print("%.3f %.3f" % (took, took))
+        sys.exit()
+    return took
+runs = [(timed(texts[0]), timed(texts[1])) for _ in range(3)]
+print("%.3f %.3f" % (min(small for small, _ in runs), min(large for _, large in runs)))
 """
 
 
@@ -229,12 +326,18 @@ class Growing(unittest.TestCase):
         code = "import sys; sys.path[:0] = [%r, %r]\n" % (support.SCRIPTS, support.HERE) + TIME
         for name in sorted(GROWING):
             with self.subTest(case=name):
-                try:
-                    result = support.run_python(code, name, timeout=30)
-                except subprocess.TimeoutExpired:
-                    self.fail("%s took over 30 seconds" % name)
-                self.assertEqual(result.code, 0, result)
-                self.assertLess(float(result.out), 5, name)
+                for _ in range(2):  # Once more if it seems to grow too fast.
+                    try:
+                        result = support.run_python(code, name, timeout=TIMEOUT)
+                    except subprocess.TimeoutExpired:
+                        self.fail("%s took over %d seconds" % (name, TIMEOUT))
+                    self.assertEqual(result.code, 0, result)
+                    small, large = (float(t) for t in result.out.split())
+                    if large < LIMIT and large < RATIO * small:
+                        break
+                self.assertLess(large, LIMIT, name)
+                self.assertLess(large, RATIO * small, "%s: %.3f seconds at its size, %.3f at %d times it" % (
+                    name, small, large, SCALE))
 
 
 # A script run with one of the functions it calls replaced by one that raises, as a bug would.

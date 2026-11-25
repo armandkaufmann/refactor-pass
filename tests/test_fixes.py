@@ -440,6 +440,17 @@ class Words(unittest.TestCase):
                            ("lib/build.py", None), ("src/server.c", None), ("ci/check.py", None)]:
             self.assertEqual(not_code(path, test), kind, path)
 
+    def test_the_ci_of_forgejo_gitea_and_woodpecker(self):
+        # Their workflows, as .github's are; and Woodpecker's one file, as .travis.yml is.
+        for path in (".forgejo/workflows/ci.yml", ".gitea/workflows/ci.yaml", ".woodpecker/test.yml",
+                     ".woodpecker.yml", ".woodpecker.yaml"):
+            with self.subTest(path=path):
+                self.assertEqual(self.heatmap.not_code(path, lambda p: False), "CI, build or dependency files")
+
+    def test_code_holds_what_measure_reads(self):
+        # In a docs folder, a file measure.py reads is code, as is any other by its extension.
+        self.assertEqual(set(support.load("measure").BY_EXTENSION) - self.heatmap.CODE_EXTENSIONS, set())
+
     def test_a_documentation_name_with_a_code_extension_is_code(self):
         not_code, doc, chore = self.heatmap.not_code, "documentation", "CI, build or dependency files"
         for path, kind in [("src/history.ts", None), ("news.py", None), ("lib/authors.rb", None), ("changes.js", None),
@@ -474,8 +485,9 @@ class Words(unittest.TestCase):
         heatmap, doc, chore = self.heatmap, "documentation", "CI, build or dependency files"
         for path, kind in [("docs/guide.md", doc), ("docs/images/flow.png", doc), ("docs/Makefile", doc),
                            ("doc/man_docs.go", None), ("tokio/src/doc/mod.rs", None), ("apps/docs/src/search.ts", None),
-                           ("docs/conf.py", None)]:
-            self.assertEqual(heatmap.not_code(path, lambda p: False), kind, path)
+                           ("docs/conf.py", None), ("docs/vec.inl", None), ("doc/io.cppm", None)]:
+            with self.subTest(path=path):
+                self.assertEqual(heatmap.not_code(path, lambda p: False), kind)
         tops = heatmap.package_tops(["setup.py", "python/setup.py", "python/pyproject.toml", "sdk/setup.py",
                                      "sdk/client/__init__.py", "src/setup.py", "src/shop/__init__.py"])
         self.assertEqual(tops, {"", "python"})

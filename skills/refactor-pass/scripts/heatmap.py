@@ -676,9 +676,10 @@ DOC_FILES = re.compile(r".*\.(?:md|markdown|rst|adoc|asciidoc|rdoc)$", re.I)
 
 # CI, build and dependency files: what a project runs its checks with, builds and packages itself with, and
 # names its dependencies in. A fix in them isn't a fix of the project's code.
-CI_FOLDERS = {".github", ".circleci", ".buildkite", ".gitlab", ".azure-pipelines"}
+CI_FOLDERS = {".github", ".circleci", ".buildkite", ".gitlab", ".azure-pipelines", ".forgejo", ".gitea", ".woodpecker"}
 CHORE_FILES = re.compile(
     r"(?:\.gitlab-ci\.yml|\.travis\.yml|appveyor\.yml|\.appveyor\.yml|azure-pipelines\.yml|Jenkinsfile|\.cirrus\.yml|"
+    r"\.woodpecker\.ya?ml|"
     r"\.pre-commit-config\.yaml|\.?codecov\.ya?ml|renovate\.json5?|\.readthedocs\.ya?ml|"
     r"Makefile|makefile|GNUmakefile|[\w.-]+\.mk|CMakeLists\.txt|[\w.-]+\.cmake|meson\.build|BUILD(?:\.bazel)?|"
     r"WORKSPACE|"
@@ -695,9 +696,10 @@ CHORE_FILES = re.compile(
 
 # Code by its extension: in a docs folder, such a file is taken for code, as cobra's doc/ is a package of the
 # library and tokio's src/doc/ a module, though some are documentation's own scripts (docs/conf.py).
-CODE_EXTENSIONS = set(".c .cc .cpp .cxx .h .hh .hpp .hxx .m .mm .cs .fs .vb .java .kt .kts .scala .groovy .clj .go .rs "
-                      ".swift .py .pyx .rb .php .pl .pm .lua .js .jsx .mjs .cjs .ts .tsx .mts .cts .vue .svelte .dart "
-                      ".ex .exs .erl .hs .ml .elm .jl .r .zig .nim .cr .gd .sh .ps1 .sql".split())
+CODE_EXTENSIONS = set(".c .cc .cpp .cxx .c++ .h .hh .hpp .hxx .h++ .inl .ipp .tpp .tcc .txx .ixx .cppm .m .mm .cs .fs "
+                      ".vb .java .kt .kts .scala .groovy .clj .go .rs .swift .py .pyx .rb .php .pl .pm .lua .js .jsx "
+                      ".mjs .cjs .ts .tsx .mts .cts .vue .svelte .dart .ex .exs .erl .hs .ml .elm .jl .r .zig .nim .cr "
+                      ".gd .sh .ps1 .sql".split())
 
 
 def is_doc(path):

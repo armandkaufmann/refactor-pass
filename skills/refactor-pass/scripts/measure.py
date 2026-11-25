@@ -53,8 +53,9 @@ destructor with no type, and a name qualified by its class (Session::run)
 at any indentation. A name is any the language allows, a word it
 doesn't reserve (delete in Java), and may carry type arguments (C#'s
 Get<T>, C++'s List<T>::Add, named Get and List::Add); a name in
-backquotes is a name in Kotlin and Swift; and a .h file is C++ when it
-holds a class, a namespace or a template. A signature may run over
+backquotes is a name in Kotlin and Swift; and a .h or .inl file is C++
+when it holds a class, a namespace, a template or a name qualified by
+its class. A signature may run over
 several lines, and a body may sit on its signature's line. Each
 language's strings are read as it writes them (Ruby's regular
 expressions, % literals and heredocs, C#'s @"...", Rust's r#"..."#, C++'s
@@ -101,9 +102,14 @@ app/sub/deep.py; and **/ matches any number of folders, none included, so
 'app/**/*.py' takes app/main.py too. Use the same scope as the heatmap.
 Test files are set aside as the heatmap sets them aside, by name or folder,
 so they stay out of the percentiles, and the output names any set aside in
-doubt; --test and --not-test correct it, and --keep-tests measures them
-all. Any copy of this skill a project keeps in the repo is left out, unless
-a scope names its folder. Reads the working tree's tracked files only.
+doubt; --test and --not-test correct it. So are the tests inside a file,
+Rust's items compiled only for tests (#[cfg(test)] on a mod tests {...},
+a fn, an impl...), which the heatmap counts in the file: the output says
+how many lines and in which files, and --show which lines. A test module
+in a file of its own (mod tests;) is measured unless named as a test.
+--keep-tests measures them all.
+Any copy of this skill a project keeps in the repo is left out, unless a
+scope names its folder. Reads the working tree's tracked files only.
 
 Examples:
   measure.py src tests
@@ -236,10 +242,88 @@ CPP_SHAPES = (r"^\s*" + TEMPLATE + MODIFIERS + r"(?:" + TYPE_WORD + r"\s+)*[*&]*
               not_a_type("C++") + not_a_name("C++") + r"(?![A-Z][A-Z0-9_]*\s*\()(~?[A-Za-z_]\w*)\s*\(" +
               SIGNATURE_REST + r"|^\s*" + TEMPLATE + not_a_type("C++") + r"((?!\d)\w+" + TYPE_ARGUMENTS +
               r"(?:::~?\w+" + TYPE_ARGUMENTS + r")+)\s*\((?!.*\)\s*,\s*$)[^;{=]*(?:\{.*)?$")
-# A .h file is C's header or C++'s: C++'s when its code holds what C has none of, as a class, a namespace, a
-# template, an access label or std::.
-CPP_IN_HEADER = re.compile(r"^\s*(?:template\s*<|namespace(?:\s+[\w:]+)?\s*\{|(?:public|private|protected)\s*:|"
+# A .h file is C's header or C++'s, and an .inl file C's or C++'s inline definitions: C++'s when its code holds
+# what C has none of, as a class, a namespace, a template, an access label or std::; or, in code outside the
+# preprocessor's lines and C23's attributes ([[gnu::...]]), a name qualified by its class, an operator's
+# definition or noexcept, as definitions written out of their class are, in a namespace that the header including
+# them opens (cpp_header). Those that start a line are looked for past that line's own spaces only.
+CPP_IN_HEADER = re.compile(r"^[^\S\n]*(?:template\s*<|namespace(?:\s+[\w:]+)?\s*\{|(?:public|private|protected)\s*:|"
                            r"class\s+\w)|\bstd::", re.M)
+# An operator's definition is the word operator whole, then (), an operator's symbols, [] or a literal's ""
+# (operator==, operator""_km), or new, delete (operator new[]), co_await or an operator spelt as a word
+# (operator not_eq), then its parameters; or a type's name and () (operator bool(), operator Task<int(long)>()),
+# as a conversion takes no parameters. Not operator_rank(, a C function's name, a member so named, (*operator)(,
+# nor one used after -> or . (s->operator = (int)x), which C++ writes only to call one (this->operator=(o)), C's tag
+# (enum operator), nor a C function whose type is so named (operator lookup(int key)).
+CPP_IN_CODE = re.compile(r"\w\s*::\s*~?\w|\bnoexcept\b|\boperator\b[ \t]*(?:\(\)[ \t]*\(|"
+                         r"(?:[-+*/%^&|~!=<>,]+|\[\s*\]|\"\"[ \t]*\w+)[ \t]*\(|(?:(?:new|delete)(?:[ \t]*\[[ \t]*\])?|"
+                         r"co_await|and|and_eq|bitand|bitor|compl|not|not_eq|or|or_eq|xor|xor_eq)[ \t]*\(|"
+                         r"\w(?:[\w:<>*& \t]|\([^()]*\)){0,80}?\([ \t]*\))")
+C_TAG_OPERATOR = re.compile(r"\b(?:enum|struct|union)\s+operator\b|(?:\.|->)\s*operator\b")
+# What ends a C23 attribute, [[...]], or shows that a [[ opens none, as an Objective-C message's [[x y] z]: a ;
+# or a brace first.
+C23_ATTRIBUTE_END = re.compile(r"\]\]|[;{}]")
+
+
+def without_attributes(text):
+    """text without its C23 attributes, [[...]], however many lines each runs over; in one pass, since a [[ that no
+    ]] closes before a ; or a brace opens none, nor does any other [[ before that."""
+    kept, i, k = [], 0, 0
+    while True:
+        start = text.find("[[", k)
+        stop = C23_ATTRIBUTE_END.search(text, start + 2) if start >= 0 else None
+        if stop is None:
+            break
+        if stop.group() == "]]":
+            kept.append(text[i:start])
+            i = stop.end()
+        k = stop.end()
+    kept.append(text[i:])
+    return "".join(kept)
+
+
+# A conditional's directive, and a __cplusplus it's true without, in the skeleton, whose brackets are s:
+# !defined(__cplusplus), !(defined __cplusplus), ! __cplusplus.
+CONDITIONAL = re.compile(r"\s*#\s*(if|ifdef|ifndef|elif|else|endif)\b(.*)")
+NOT_CPLUSPLUS = re.compile(r"![s\s]*(?:defined[s\s]*)?__cplusplus")
+
+
+def cplusplus_branch(word, condition):
+    """Whether the branch an #if, #ifdef or #ifndef opens with this condition is compiled only as C++, and whether
+    only as C, so that its #else is only C++: by __cplusplus, alone or with &&; not with ||."""
+    if "__cplusplus" not in condition or "||" in condition:
+        return False, False
+    c = word == "ifndef" or bool(NOT_CPLUSPLUS.search(condition))
+    return not c, c
+
+
+def cpp_header(code):
+    """Whether a .h or an .inl file, as C's skeleton has its lines (code), is C++'s: by CPP_IN_HEADER, or by
+    CPP_IN_CODE in its code, not in a macro, which a C header can define for C++, nor in a C23 attribute, nor
+    under __cplusplus to its #else or #endif, as a C header offers C++ callers its operators."""
+    if CPP_IN_HEADER.search("\n".join(code)):
+        return True
+    kept, going_on = [], False
+    frames = []  # Per #if open: whether its branch now is C++'s only, and whether its #else is.
+    cpp = 0  # How many of them are C++'s only now, so that a line asks once however deep they nest.
+    for line in code:
+        directive = going_on or line.lstrip().startswith("#")
+        going_on = directive and line.rstrip().endswith("\\")
+        found = CONDITIONAL.match(line) if directive else None
+        if found and found.group(1) in ("if", "ifdef", "ifndef"):
+            frames.append(list(cplusplus_branch(*found.groups())))
+            cpp += frames[-1][0]
+        elif found and frames and found.group(1) in ("elif", "else"):
+            # A branch after one that's C's only is C++'s only, as is an #elif by its own condition; and after an
+            # #elif that's C's only, so is any branch after it, the #else too.
+            only, c = cplusplus_branch("if", found.group(2)) if found.group(1) == "elif" else (False, False)
+            now = frames[-1][1] or only
+            cpp += now - frames[-1][0]
+            frames[-1] = [now, frames[-1][1] or c]
+        elif found and frames and found.group(1) == "endif":
+            cpp -= frames.pop()[0]
+        kept.append("" if directive or cpp else line)
+    return bool(CPP_IN_CODE.search(C_TAG_OPERATOR.sub(" ", without_attributes("\n".join(kept)))))
 
 # JavaScript and TypeScript: how a definition's line starts, up to the bracket that opens its parameters
 # (or its type parameters). What follows the parameters then says whether it's a function (js_function).
@@ -351,14 +435,16 @@ def js_close(code, i, j, limit):
     return None
 
 
+NOT_SPACE = re.compile(r"\S")
+
+
 def js_next(code, i, j, limit=3):
-    """The line and column of the first character from code[i][j] on that isn't a space, or None."""
+    """The line and column of the first character from code[i][j] on that isn't a space, or None; read from there,
+    not from the line's start, so many calls on one long line stay quick."""
     for k in range(i, min(len(code), i + limit)):
-        line = code[k]
-        start = j if k == i else 0
-        rest = len(line[start:]) - len(line[start:].lstrip())
-        if line[start:].strip():
-            return k, start + rest
+        found = NOT_SPACE.search(code[k], j if k == i else 0)
+        if found:
+            return k, found.start()
     return None
 
 
@@ -670,8 +756,11 @@ LANGUAGES = [
      "brackets", "// /*", ""),
     ("Java", ".java", JAVA_SHAPES, "brackets", "// /*", "char"),
     ("C#", ".cs", CS_SHAPES, "brackets", "// /*", "char"),
-    ("C", ".c .h", c_shapes("C"), "brackets", "// /*", "char"),
-    ("C++", ".cpp .cc .cxx .hpp .hh", CPP_SHAPES, "brackets", "// /*", "char"),
+    # C++'s templates' and inline definitions (.ipp, .tpp, .tcc, .txx) and modules (.ixx, .cppm) too; an .inl, as
+    # a .h, is C's or C++'s by what it holds.
+    ("C", ".c .h .inl", c_shapes("C"), "brackets", "// /*", "char"),
+    ("C++", ".cpp .cc .cxx .c++ .hpp .hh .hxx .h++ .ipp .tpp .tcc .txx .ixx .cppm", CPP_SHAPES, "brackets", "// /*",
+     "char"),
 ]
 BY_EXTENSION = dict((ext, lang) for lang in LANGUAGES for ext in lang[1].split())
 OPEN, CLOSE = "([{", ")]}"
@@ -701,8 +790,9 @@ DOCSTRING = re.compile(r"""\s*[rRuUbBfF]{0,2}("{3}|'{3}|"|')""")
 CHARACTER = re.compile(r"'(?:\\(?:u\{[0-9a-fA-F]{1,6}\}|x[0-9a-fA-F]{1,2}|u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8}|"
                        r"[0-7]{1,3}|.)|[^\\'])'")
 # Per language, strings with no escapes, which can hold quotes and run over lines: how one opens, and its
-# closing text. C#'s verbatim @"..." (where "" is a quote), Rust's r"..." and r#"..."# (and br"...", cr"..."),
-# C++'s R"x(...)x", Swift's #"..."# (where an escape is written \#, as \#" for a quote).
+# closing text. C#'s verbatim @"..." (where "" is a quote, and which with a $ has holes, as $"..." has), Rust's
+# r"..." and r#"..."# (and br"...", cr"..."), C++'s R"x(...)x", Swift's #"..."# (where an escape is written \#,
+# as \#" for a quote).
 RAW_STRING = {
     "C#": (re.compile(r'(?:\$+@|@\$*)"'), lambda opened: '"'),
     "Rust": (re.compile(r'[bc]?r(#*)"'), lambda opened: '"' + opened.group(1)),
@@ -710,7 +800,8 @@ RAW_STRING = {
     "Swift": (re.compile(r'(#+)("""|")'), lambda opened: opened.group(2) + opened.group(1)),
 }
 # Per language, the quotes of a string read as the others are, holes and all, but with no escapes, so that a \
-# before its closing quote is a \: Go's `...`, Kotlin's """...""" and C#'s raw """...""".
+# before its closing quote is a \: Go's `...`, Kotlin's """...""" and C#'s raw """...""" (or """"..."""", which
+# can hold """: it closes with as many quotes as it opens with).
 NO_ESCAPES = {"Go": "`", "Kotlin": '"""', "C#": '"""'}
 # Per language, a preprocessor directive's line and its word, and whether it goes on after a \ at the end.
 PREPROCESSED = {
@@ -721,6 +812,8 @@ PREPROCESSED = {
     "Swift": (re.compile(r"\s*#(if|elseif|else|endif)\b"), False),
 }
 BRACKETS_IN = re.compile(r"[()\[\]{}]")
+# The languages whose block comments nest: /* a /* b */ c */ is one comment.
+NESTING_COMMENTS = ("Rust", "Swift", "Kotlin")
 
 
 def preprocessed(lines, code, began_inside, directive, continues):
@@ -771,24 +864,34 @@ def preprocessed(lines, code, began_inside, directive, continues):
     return result
 
 
-def string_holes(language, quotes, quote, before):
-    """What opens an interpolation's hole in a string that opens with quote, after the character before
-    it; or None."""
+def string_holes(language, quotes, quote, line, at):
+    """What opens an interpolation's hole in a string that opens with quote at line[at]; or None. In C#, as
+    many braces as there are $s before it: one after $ ($"...{x}..."), two after $$, which a raw string can
+    open with so that one is a brace."""
     if quote == "`" and quotes == "regex":
         return "${"
-    if quote in ('"', '"""'):
+    if quote.startswith('"'):
         if language == "Kotlin":
             return "${"
         if language == "Swift":
             return "\\("
-        if language == "C#" and before == "$":
-            return "{"
+        if language == "C#":
+            dollars = 0
+            while dollars < at and line[at - dollars - 1] == "$":
+                dollars += 1
+            return "{" * dollars or None
     return None
 
 
+# A run of quotes, as opens C#'s raw string.
+QUOTES = re.compile(r'"+')
 # Characters that start nothing outside a string or a comment, in any language: not a comment's start (# or
-# /), a quote, a raw string's start ($ @ #, or b c r R u U L at the start of a word) or a regular expression's.
+# /), a quote, a raw string's start ($ @ #, or b c r R u U L at the start of a word) or a regular expression's;
+# and what a raw string can't open just after, a word's character, a $ or an @. In Rust, an @ before a raw string
+# is a macro's token or a binding's (@r"...", as inline snapshots write), so the string opens there.
 PLAIN = re.compile(r"(?:[^/#\"'`$@bcrRuUL]|(?<=[\w$@])[bcrRuUL])+")
+PLAIN_RUST = re.compile(r"(?:[^/#\"'`$@bcrRuUL]|(?<=[\w$])[bcrRuUL])+")
+GLUED, GLUED_RUST = re.compile(r"[\w$@]"), re.compile(r"[\w$]")
 
 
 def skeleton(lines, comments, quotes, attributes=False, language=None):
@@ -800,22 +903,34 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
     char_quote = quotes == "char"
     out, began_inside = [], []
     state = None  # Inside: a block comment ("*/"), or a string (its closing quote).
+    nested = 0  # In a block comment, how many comments inside it are open, where they nest.
+    nests = language in NESTING_COMMENTS
     raw = None  # Inside a string with no escapes: its closing text.
     # An interpolation's hole in a string is code, up to the bracket that matches its own, and can hold strings
     # of its own: JavaScript's template literal's ${...}, Kotlin's "${...}", Swift's "\(...)", C#'s $"{...}".
-    # Per hole still open: how many of its brackets are open inside it, its brackets, and the string it's in.
+    # Per hole still open: how many of its brackets are open inside it, its brackets, and the string it's in
+    # (state, holes and raw, as they were).
     templates = []
     holes = None  # In a string with holes: what opens one (string_holes).
     opens_raw = RAW_STRING.get(language)
+    plain_text, glued = (PLAIN_RUST, GLUED_RUST) if language == "Rust" else (PLAIN, GLUED)
     for line in lines:
         began_inside.append(state is not None or bool(templates) or raw is not None)
         code = []
         i = 0
+        close = None  # In a block comment, where the next */ on the line is (-1 for none), until it's passed.
         while i < len(line):
-            plain = PLAIN.match(line, i) if state is None and raw is None and not templates else None
+            plain = plain_text.match(line, i) if state is None and raw is None and not templates else None
             if plain:  # Characters that start nothing, copied at once.
                 code.append(plain.group())
                 i = plain.end()
+            elif holes == "{" and (line.startswith("{{", i) or line.startswith("}}", i)):
+                code.append("ss")  # C#'s brace written twice is a brace.
+                i += 2
+            elif holes and line.startswith(holes, i):
+                code.append("s" * len(holes))  # The hole's own brackets aren't the code's.
+                templates.append([0, holes[-1], ")" if holes[-1] == "(" else "}", state, holes, raw])
+                i, state, holes, raw = i + len(holes), None, None, None
             elif raw is not None:
                 if raw == '"' and language == "C#" and line.startswith('""', i):  # A verbatim string's quote.
                     code.append("ss")
@@ -826,25 +941,33 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
                     i += escape
                 elif line.startswith(raw, i):
                     code.append('"')
-                    i, raw = i + len(raw), None
+                    i, raw, holes = i + len(raw), None, None
                 else:
                     code.append("s")
                     i += 1
             elif state == "*/":
-                end = line.find("*/", i)
-                if end < 0:
+                if close is None or 0 <= close < i:
+                    close = line.find("*/", i)
+                end = close
+                # A comment inside it, which closes first; one that starts before the */ is read, as a compiler
+                # reads from the left, so /*/ opens one.
+                inner = line.find("/*", i, end + 1 if end >= 0 else len(line)) if nests else -1
+                if inner >= 0:
+                    i, nested = inner + 2, nested + 1
+                elif end < 0:
                     break
-                i, state = end + 2, None
+                elif nested:
+                    i, nested = end + 2, nested - 1
+                else:
+                    i, state = end + 2, None
             elif state:
-                if holes == "{" and (line.startswith("{{", i) or line.startswith("}}", i)):
-                    code.append("ss")  # C#'s brace written twice is a brace.
+                if line[i] == "\\" and not (language in NO_ESCAPES and state.startswith(NO_ESCAPES[language])):
+                    code.append("s" * len(line[i:i + 2]))  # The string's, as its other characters are.
                     i += 2
-                elif holes and line.startswith(holes, i):
-                    code.append("s" * len(holes))  # The hole's own brackets aren't the code's.
-                    templates.append([0, holes[-1], ")" if holes[-1] == "(" else "}", state, holes])
-                    i, state, holes = i + len(holes), None, None
-                elif line[i] == "\\" and state != NO_ESCAPES.get(language):
-                    i += 2
+                elif len(state) > 3 and line[i] == '"' and QUOTES.match(line, i).end() - i < len(state):
+                    run = QUOTES.match(line, i).end() - i  # Fewer quotes than close C#'s raw string: its own.
+                    code.append("s" * run)
+                    i += run
                 elif line.startswith(state, i):
                     code.append(state)
                     i, state, holes = i + len(state), None, None
@@ -859,16 +982,17 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
             elif any(line.startswith(m, i) for m in markers if m != "/*") and not (
                     attributes and line.startswith("#[", i)):
                 break
-            elif opens_raw and opens_raw[0].match(line, i) and not re.match(r"[\w$@]", line[i - 1:i]):
+            elif opens_raw and not glued.match(line[i - 1:i]) and opens_raw[0].match(line, i):
                 opened = opens_raw[0].match(line, i)
                 raw = opens_raw[1](opened)
+                holes = "{" if language == "C#" and "$" in opened.group() else None
                 code.append('"')
                 i = opened.end()
             elif line.startswith('"""', i) or line.startswith("'''", i):
-                state = line[i:i + 3]
-                holes = string_holes(language, quotes, state, line[i - 1:i])
+                state = QUOTES.match(line, i).group() if language == "C#" and line[i] == '"' else line[i:i + 3]
+                holes = string_holes(language, quotes, state, line, i)
                 code.append(state)
-                i += 3
+                i += len(state)
             elif line[i] == "/" and quotes == "regex" and REGEX.match(line, i) and regex_may_start(code, out):
                 literal = REGEX.match(line, i).group(0)  # A regular expression, which can hold quotes and brackets.
                 code.append("/" + "s" * (len(literal) - 2) + "/")
@@ -879,12 +1003,12 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
                 i += len(literal.group(0)) if literal else 1
             elif line[i] in "\"'`":
                 state = line[i]
-                holes = string_holes(language, quotes, state, line[i - 1:i])
+                holes = string_holes(language, quotes, state, line, i)
                 code.append(state)
                 i += 1
             elif templates and line[i] == templates[-1][2] and not templates[-1][0]:  # A hole's end: back in
                 code.append("s")  # its string.
-                _, _, _, state, holes = templates.pop()
+                _, _, _, state, holes, raw = templates.pop()
                 i += 1
             elif templates and line[i] in templates[-1][1:3]:
                 templates[-1][0] += 1 if line[i] == templates[-1][1] else -1
@@ -896,7 +1020,9 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
         if state in ('"', "'") and quotes != "spans" and not line.rstrip().endswith("\\") and not (
                 language == "Rust" and state == '"'):
             state = holes = None  # Most languages end a one-quote string at the line's end; Rust's go on.
-        out.append("".join(code))
+        # A line blank in the file is blank, in a string too, where its spaces, and the \r of a line a Windows
+        # checkout ends with \r\n, would be s.
+        out.append("".join(code) if line.strip() else "")
     if language in PREPROCESSED:
         out = preprocessed(lines, out, began_inside, *PREPROCESSED[language])
     return out, began_inside
@@ -1079,7 +1205,7 @@ def ruby_skeleton(lines):
             began_inside[-1] = True  # A heredoc's opening that starts its line, at any indentation, goes on.
         heredocs.extend(waiting)
         waiting = []
-        out.append("".join(code))
+        out.append("".join(code) if line.strip() else "")  # Blank, in a string too, as skeleton's are.
     return out, began_inside
 
 
@@ -1306,6 +1432,230 @@ def docstrings(code, inside, continued):
     return found
 
 
+# Rust's item, after its visibility (pub, pub(crate)) and qualifiers (const fn, unsafe impl, extern "C" fn): the
+# keyword that says which, union only before a union's name and what follows that, as it can name a variable; a
+# module's head, before its body's bracket; an attribute's opening, outer (#[...]) or inner (#![...]); a cfg
+# attribute's; what stops the reading of an item's head; and a ; after its body (struct S { ... };).
+RUST_ITEM = re.compile(r"(?:pub(?:\s*\([^()]*\))?\s+)?(?:(?:const|async|unsafe|safe|default|extern\s*\"s*\")\s+)*"
+                       r"(fn|impl|mod|trait|struct|enum|union(?=\s+(?:r#)?\w+\s*(?:[<{]|where\b|$))|type|use|static|"
+                       r"const|extern|macro_rules(?=\s*!))\b")
+RUST_MODULE_HEAD = re.compile(r"(?<![\w#])(?:pub(?:\s*\([^()]*\))?\s+)?mod\s+(?:r#)?\w+\s*$")
+RUST_OUTER = re.compile(r"#\s*\[")
+RUST_INNER = re.compile(r"#\s*!\s*\[")
+RUST_CFG = re.compile(r"#\s*(?:!\s*)?\[\s*cfg\s*\(")
+ITEM_STOPS = re.compile(r"[(){}\[\];<>#]")
+SEMICOLON_AFTER = re.compile(r"\s*;")
+# What comes before a macro's brackets: an invocation's name and its ! (quote! {...}, vec![...]), or a macro_rules!
+# definition's name; and how far back on a bracket's line that, or a module's head before its body's brace, is read.
+RUST_MACRO_BEFORE = re.compile(r"(?:\w!|macro_rules\s*!\s*(?:r#)?\w+)\s*$")
+BEFORE_BRACKET = 200
+
+
+def cfg_needs_test(attribute):
+    """Whether a Rust attribute, as the skeleton has it, is a cfg that holds only where test is set: cfg(test),
+    or test among all()'s predicates; not under not(), nor under any() unless each of its predicates needs
+    test too."""
+    match = RUST_CFG.match(attribute)
+    words = re.findall(r'\w+|"s*"|[(),=]', attribute[match.end():]) if match else []
+    frames = [("all", [])]  # Per bracket open, its operator and whether each of its predicates needs test.
+    for k, word in enumerate(words):
+        if words[k + 1:k + 2] == ["("]:
+            frames.append((word, []))
+        elif word == ")":
+            operator, needs = frames.pop()
+            need = any(needs) if operator == "all" else operator == "any" and bool(needs) and all(needs)
+            if not frames:
+                return need
+            frames[-1][1].append(need)
+        elif re.match(r"\w", word) and words[k - 1:k] != ["="]:  # A name, or a key given a value (feature = "x").
+            frames[-1][1].append(word == "test" and words[k + 1:k + 2] != ["="])
+    return False
+
+
+def before_space(code, i, j):
+    """The line and column of the last character before code[i][j] that isn't a space, or None; read back from
+    there, past spaces only."""
+    while i >= 0:
+        line, k = code[i], min(j, len(code[i])) - 1
+        while k >= 0 and line[k].isspace():
+            k -= 1
+        if k >= 0:
+            return i, k
+        i -= 1
+        j = len(code[i]) if i >= 0 else 0
+    return None
+
+
+def joined(code, start, end):
+    """The skeleton's text from code[start] to code[end], both included, its lines joined by spaces."""
+    (i, j), (k, m) = start, end
+    return code[i][j:m + 1] if i == k else " ".join([code[i][j:]] + code[i + 1:k] + [code[k][:m + 1]])
+
+
+def parameter_attributes(code, k, at):
+    """Where a run of attributes from code[k][at] on ends, if it's a generic parameter's, in an item's own
+    generics: after a < or a , and before a parameter, not an item (impl<#[a] T>, fn f<T, #[cfg(x)] U>); or None."""
+    before = before_space(code, k, at)
+    if not before or code[before[0]][before[1]] not in "<,":
+        return None
+    closes, after = brackets_of(code)["closes"], (k, at)
+    while after and RUST_OUTER.match(code[after[0]], after[1]):
+        end = closes.get((after[0], code[after[0]].index("[", after[1])))
+        after = js_next(code, end[0], end[1], limit=50) if end else None
+    item = RUST_ITEM.match(code[after[0]], after[1]) if after else None
+    return after if after and (not item or item.group(1) == "const") else None
+
+
+def rust_item_end(code, i, j, body=True):
+    """Where the Rust item whose head goes on from code[i][j] ends, as its line, column and character. With a body
+    (body), the bracket that closes it, the first { outside other brackets and outside a type's arguments, as a
+    const generic's (Grid<{ 2 * 3 }>), or the ; just after it (struct S { ... };); or else the ; that ends it, as a
+    declaration's. Without, as a constant, a static, a type alias or a use has none, the ; that ends it, its value's
+    or its group's braces passed whole (if cfg!(unix) { 1 } else { 2 }, a::{b, c}), however many lines its value
+    holds. None if no end comes, as when the brackets around it close first, or the next item's attribute
+    comes, not a parameter's in its own generics (parameter_attributes), or for an item with a body none comes
+    within SIGNATURE_LINES lines."""
+    closes = brackets_of(code)["closes"]
+    k, col, angles = i, j, 0
+    while k < len(code) and (not body or k - i <= SIGNATURE_LINES):
+        stop = ITEM_STOPS.search(code[k], col)
+        if stop is None:
+            k, col = k + 1, 0
+            continue
+        c, at = stop.group(), stop.start()
+        if c == ";":
+            return k, at, c
+        if c == "#":  # Another item's attribute: this one has no end. A raw name's # (r#match) goes on.
+            if RUST_INNER.match(code[k], at):
+                return None
+            if RUST_OUTER.match(code[k], at):  # Unless it's a parameter's in this item's own generics.
+                past = parameter_attributes(code, k, at) if angles > 0 else None
+                if past is None:
+                    return None
+                k, col = past
+                continue
+            col = at + 1
+            continue
+        if c in "<>":  # A type's arguments, but not an arrow's >.
+            angles += 1 if c == "<" else 0 if at and code[k][at - 1] in "-=" else -1
+            col = at + 1
+            continue
+        end = closes.get((k, at)) if c in OPEN else None
+        if end is None:
+            return None
+        if c == "{" and body and angles <= 0:
+            semicolon = SEMICOLON_AFTER.match(code[end[0]], end[1])  # Read there: the rest of the line isn't copied.
+            return end[0], semicolon.end() - 1 if semicolon else end[1] - 1, "}"
+        k, col = end  # Brackets before the body, as parameters' or an array's type, [u8; 3], are passed whole.
+    return None
+
+
+def rust_open_brackets(code, i, col, memo):
+    """The brackets open at code[i][col], as brackets_of's stacks link them, the innermost first. memo keeps those
+    open where the last call stopped on its line, so the calls on one long line, in their order, read it once."""
+    scan = memo.get("scan")
+    stack, start = (scan[2], scan[1]) if scan and scan[0] == i and scan[1] <= col else \
+        (brackets_of(code)["stacks"][i], 0)
+    for found in BRACKET.finditer(code[i], start, col):
+        if found.group() in OPEN:
+            stack = ((i, found.start(), found.group()), stack)
+        elif stack is not None:
+            stack = stack[1]
+    memo["scan"] = (i, col, stack)
+    return stack
+
+
+def rust_in_macro(code, i, col, memo):
+    """Whether code[i][col] is in a macro's brackets, an invocation's or a macro_rules! definition's, whose text is
+    the macro's, not code of its own. memo keeps the answer per bracket, so however deep a file's brackets nest,
+    each is looked at once; and for rust_open_brackets, where the last call stopped on its line."""
+    stack = rust_open_brackets(code, i, col, memo)
+    path = []
+    while stack is not None and stack[0][:2] not in memo:
+        path.append(stack[0])
+        stack = stack[1]
+    inside = memo[stack[0][:2]] if stack is not None else False
+    for line, at, _ in reversed(path):
+        inside = inside or bool(RUST_MACRO_BEFORE.search(code[line], max(0, at - BEFORE_BRACKET), at))
+        memo[(line, at)] = inside
+    return inside
+
+
+def rust_test_items(code):
+    """Rust's items compiled only for tests, in the skeleton's lines (code), as (first, last) indexes of lines, the
+    outermost only: an item, whatever it is (a module, a function, an impl, a struct, a use...), whose cfg needs
+    test (cfg_needs_test), from the line of its first attribute to the bracket that closes its body or the ; that
+    ends it, but for a line it shares with other code. The cfg is among the attributes before it, or for a module
+    first in its body (#![cfg(test)]). A module declared with mod tests; is a file of its own and sets nothing
+    aside here; a cfg on what isn't an item, as a statement in a function's body, a struct's field or a generic
+    parameter (fn f<#[cfg(test)] const N: usize>), is that code's, and so is one in a macro's text (rust_in_macro)."""
+    closes = brackets_of(code)["closes"]
+    opening = None  # Where each closing bracket's opening one is, worked out when first needed.
+    found, macros = set(), {}
+    edges = {}  # Per line, the columns of its first and last characters that aren't spaces, worked out once.
+
+    def edge(k):
+        if k not in edges:
+            text = code[k]
+            edges[k] = (len(text) - len(text.lstrip()), len(text.rstrip()) - 1)
+        return edges[k]
+    # Where the last walk over a run of attributes stopped, and the brackets an inner cfg was read in, a module's
+    # body's or not: each run, and each module, is read once, however many cfgs it holds.
+    walked, modules = (-1, -1), set()
+    for i, line in enumerate(code):
+        for cfg in RUST_CFG.finditer(line) if "cfg" in line else ():
+            if (i, cfg.start()) < walked:
+                continue
+            end = closes.get((i, line.index("[", cfg.start())))
+            if end is None or not cfg_needs_test(joined(code, (i, cfg.start()), (end[0], end[1] - 1))) or \
+                    rust_in_macro(code, i, cfg.start(), macros):
+                continue
+            if RUST_INNER.match(line, cfg.start()):  # The module's whose body it's first in.
+                stack = rust_open_brackets(code, i, cfg.start(), macros)  # As rust_in_macro just read them.
+                if stack is None or stack[0][:2] in modules:
+                    continue
+                k, c, bracket = stack[0]
+                modules.add((k, c))
+                head = RUST_MODULE_HEAD.search(code[k], max(0, c - BEFORE_BRACKET), c) if bracket == "{" else None
+                body = closes.get((k, c)) if head else None
+                if body is None:
+                    continue
+                start, end = (k, head.start()), (body[0], body[1] - 1)
+            else:  # The item after it, past any other attributes.
+                at, walked = js_next(code, end[0], end[1], limit=50), end
+                while at and RUST_OUTER.match(code[at[0]], at[1]):
+                    after = closes.get((at[0], code[at[0]].index("[", at[1])))
+                    at = js_next(code, after[0], after[1], limit=50) if after else None
+                    walked = after or walked
+                item = RUST_ITEM.match(code[at[0]], at[1]) if at else None
+                ends = rust_item_end(code, at[0], item.end(), item.group(1) not in ("const", "static", "type", "use")) \
+                    if item else None
+                if ends is None or (ends[2] == ";" and item.group(1) == "mod"):
+                    continue
+                start, end = (i, cfg.start()), ends[:2]
+            at = before_space(code, *start)
+            while at and code[at[0]][at[1]] == "]":  # The attributes before it, the nearest first.
+                if opening is None:
+                    opening = dict(((k, c - 1), begin) for begin, (k, c) in closes.items())
+                begin = before_space(code, *opening[at]) if at in opening else None
+                if not begin or code[begin[0]][begin[1]] != "#":  # Not one, or an inner one: the enclosing code's.
+                    break
+                start, at = begin, before_space(code, *begin)
+            if at and code[at[0]][at[1]] in "<,":  # No item follows a < or a ,: a generic parameter does.
+                continue
+            # Its lines, but for one it shares with other code, before its first attribute or after its end, which
+            # stays counted with that code's functions.
+            first = start[0] + (edge(start[0])[0] < start[1])
+            last = end[0] - (edge(end[0])[1] > end[1])
+            if first <= last:
+                found.add((first, last))
+    outermost = []
+    for first, last in sorted(found):
+        if not outermost or first > outermost[-1][1]:
+            outermost.append((first, last))
+    return outermost
+
+
 TYPE_ARGUMENTS_IN = re.compile(r"(?<=\w)" + ANGLED)
 
 
@@ -1360,8 +1710,11 @@ FIND["Java"], FIND["C#"] = [by_pattern(dict((lang[0], lang[2]) for lang in LANGU
                             for name in ("Java", "C#")]
 
 
-def functions(path, text):
-    """The file's code lines, its functions as (name, first line, last line, code lines, deepest), and its language."""
+def functions(path, text, set_aside=None):
+    """The file's code lines, its functions as (name, first line, last line, code lines, deepest), and its language.
+    With set_aside, a list, the code compiled only for tests (Rust's #[cfg(test)] items) is left out,
+    as test files are: its lines are in neither the file's nor a function's, and no function in it is found.
+    Each part left out is added to set_aside, as (first line, last line, code lines, functions)."""
     language = BY_EXTENSION.get(os.path.splitext(path)[1].lower())
     if text.startswith("\ufeff"):  # A byte-order mark, as Visual Studio starts a file with: not code.
         text = text[1:]
@@ -1372,7 +1725,8 @@ def functions(path, text):
     else:
         code, inside = skeleton(lines, comments, language[5] if language else "", language and language[0] == "PHP",
                                 language and language[0])
-        if language and language[0] == "C" and path.lower().endswith(".h") and CPP_IN_HEADER.search("\n".join(code)):
+        if language and language[0] == "C" and path.lower().endswith((".h", ".inl")) and \
+                cpp_header(code):
             language = BY_EXTENSION[".hpp"]
             code, inside = skeleton(lines, comments, language[5], False, language[0])
     counted = [bool(c.strip()) for c in code]
@@ -1392,6 +1746,10 @@ def functions(path, text):
     if name == "Python":  # Docstrings are documentation, as comments are.
         for i in docstrings(code, inside, continued):
             counted[i] = False
+    parts = [(first, last, sum(counted[first:last + 1])) for first, last in rust_test_items(code)] \
+        if set_aside is not None and name == "Rust" else []
+    for first, last, _ in parts:
+        counted[first:last + 1] = [False] * (last + 1 - first)
     skip = [a or b for a, b in zip(inside, continued)]
     unit = indent_unit(lines, code, skip)
     widths = [indent_of(line) for line in lines]
@@ -1424,6 +1782,16 @@ def functions(path, text):
         deepest = deepest_in(start + 1, last + 1)
         found.append((defined[0], start + 1, last + 1, before[last + 1] - before[start],
                       max(0, (deepest - widths[start]) // unit - 1) if deepest >= 0 else 0))
+    if parts:  # Each function that starts in a part is that part's, found in one pass however many parts there are.
+        part_of = [None] * len(code)
+        for n, (first, last, _) in enumerate(parts):
+            part_of[first:last + 1] = [n] * (last + 1 - first)
+        counts = [0] * len(parts)
+        for f in found:
+            if part_of[f[1] - 1] is not None:
+                counts[part_of[f[1] - 1]] += 1
+        found = [f for f in found if part_of[f[1] - 1] is None]
+        set_aside.extend((first + 1, last + 1, lines, count) for (first, last, lines), count in zip(parts, counts))
     return sum(counted), found, name
 
 
@@ -1525,7 +1893,8 @@ def main():
     parser.add_argument("--not-test", action="append", default=[], metavar="GLOB",
                         help="globs naming files that only look like tests, matched as --test's are, such as "
                              "'app/ABTest.php' or 'docs/spec/*': they're measured like the rest")
-    parser.add_argument("--keep-tests", action="store_true", help="measure test files like the rest")
+    parser.add_argument("--keep-tests", action="store_true",
+                        help="measure test files, and the tests inside files, like the rest")
     parser.add_argument("--top", type=scoping.count(0), default=25, help="files to print (default 25)")
     parser.add_argument("--show", action="append", default=[], metavar="FILE",
                         help="list this file's functions, with the first and last line of each for git log -L, "
@@ -1549,6 +1918,7 @@ def main():
     paths = [p for p in paths if p not in tests]
 
     measured, failed, unreadable, missing = {}, [], [], []
+    within = {}  # Per file, the tests inside it that are set aside (functions' set_aside), where it has any.
     for path in sorted(set(paths + shows)):
         full = os.path.join(repo, path)
         if not os.path.isfile(full):
@@ -1562,13 +1932,18 @@ def main():
         if b"\0" in data[:8000]:  # Binary, by git's own test.
             continue
         text = data.decode("utf-8", errors="replace")
+        # The tests inside a file are set aside as test files are; a test file, shown, is measured whole.
+        aside = None if args.keep_tests or scoping.is_test(path, args.test, args.not_test) else []
         try:
-            measured[path] = functions(path, text)
+            measured[path] = functions(path, text, aside)
         except Exception:
             # The last line of defence: one file this doesn't foresee never stops a run. It's measured as its
             # non-blank lines, and the output names it, so the bug shows and can be reported.
             measured[path] = (sum(1 for line in text.split("\n") if line.strip()), None, None)
             failed.append(path)
+            continue
+        if aside:
+            within[path] = aside
     in_paths = set(paths)
 
     by_language = defaultdict(lambda: ([], []))  # Per language, its files' lengths and its functions'.
@@ -1609,6 +1984,17 @@ def main():
     if not args.keep_tests:
         print("Test files: %s." % ("%d set aside from the percentiles and the table" % len(tests)
                                    if tests else "none in the scope"))
+    # The files in the scope with tests inside them, those with the most lines of them first.
+    inside = sorted(((sum(part[2] for part in parts), path) for path, parts in within.items() if path in in_paths),
+                    key=lambda kv: (-kv[0], kv[1]))
+    if inside:
+        count = sum(part[3] for _, path in inside for part in within[path])
+        print("Tests inside files, set aside as test files are: %d code lines and %d function%s compiled only for "
+              "tests (Rust's #[cfg(test)] items), in %s; a test module in a file of its own (mod tests;) is "
+              "measured unless named as a test." % (
+                  sum(n for n, _ in inside), count, "" if count == 1 else "s",
+                  "%s (%d)" % inside[0][::-1] if len(inside) == 1 else "%d files: %s" % (
+                      len(inside), a_few(["%s (%d)" % (path, n) for n, path in inside]))))
     if doubts:
         print("Set aside as tests, but maybe not: %s%s. If one isn't a test, --not-test GLOB measures it." % (
             "; ".join("%s (%s)" % d for d in doubts[:5]), "; and %d more" % (len(doubts) - 5)
@@ -1673,6 +2059,14 @@ def main():
                     (language,) + tuple(cuts[language][1]) + (
                         "; they lean on one function, so bands are by the reference points" if leans else "",))
                 if language in cuts else "no %s file in the scope, so no percentiles to compare with" % language))
+            parts = within.get(path, [])
+            if parts:  # What its lines leave out, where, so the lines listed stay the file's own.
+                spans = ["%d-%d" % part[:2] for part in parts]
+                count = sum(part[3] for part in parts)
+                print("Set aside as tests: lines %s, %d code lines and %d function%s compiled only for tests "
+                      "(#[cfg(test)]); --keep-tests lists them." % (
+                          spans[0] if len(spans) == 1 else ", ".join(spans[:-1]) + " and " + spans[-1],
+                          sum(part[2] for part in parts), count, "" if count == 1 else "s"))
             # The first and last lines, as git log -L FIRST,LAST:FILE takes them.
             spans = ["%d-%d" % (f[1], f[2]) for f in found]
             width = max([len("first-last")] + [len(s) for s in spans])

@@ -230,8 +230,8 @@ class Sizes(unittest.TestCase):
         code = ("import os, sys\nsys.dont_write_bytecode = True\n"
                 "sys.path.insert(0, os.environ['REFACTOR_PASS_SCRIPTS'])\n"
                 "import measure\nreal = measure.functions\n"
-                "def broken(path, text):\n    if path == 'src/b.py':\n        raise IndexError('planted')\n"
-                "    return real(path, text)\n"
+                "def broken(path, text, *rest):\n    if path == 'src/b.py':\n        raise IndexError('planted')\n"
+                "    return real(path, text, *rest)\n"
                 "measure.functions = broken\nsys.argv = ['measure.py'] + sys.argv[1:]\nmeasure.main()\n")
         result = support.run_python(code, "-C", self.repo)
         self.assertEqual(result.code, 0, result)
@@ -293,6 +293,72 @@ class Lopsided(unittest.TestCase):
         result = support.run("measure.py", "-C", repo.path)
         self.assertNotIn("lean on it", result.out)
         self.assertEqual(table(result.out)["src/f0.py"], ("300", "90th", "1", "300", "1", "0"))
+
+
+class TestsInsideFiles(unittest.TestCase):
+    """Rust's #[cfg(test)] items, set aside as test files are, and the output says how much and where."""
+
+    @classmethod
+    def setUpClass(cls):
+        repo = support.Repo("inline")
+        # 5 code lines of its own; a module of 68, lines 5-72, with a 61-line mock and a test; and a function of 4.
+        repo.commit("2026-01-05", "Start", {"src/b.rs": "fn b() {\n}\n", "src/lib.rs": (
+            "pub fn small() -> i32 {\n    1\n}\n\n#[cfg(test)]\nmod tests {\n    fn mock() {\n" +
+            "        f();\n" * 59 + "    }\n    #[test]\n    fn it_works() {\n        f();\n    }\n}\n" +
+            "pub fn after() {\n}\n#[cfg(test)]\npub fn fake() {\n    f();\n}\n")})
+        repo.done()
+        cls.repo = repo.path
+
+    def test_out_of_the_table_and_the_percentiles(self):
+        result = support.run("measure.py", "-C", self.repo)
+        self.assertEqual(table(result.out)["src/lib.rs"], ("5", "-", "2", "3", "0", "0"))
+        self.assertRegex(result.out, r"(?m)^Rust\s+2\s+3\s+5\s+5\s+5\s+3\s+3\s+3$")
+        self.assertIn("Test files: none in the scope.\nTests inside files, set aside as test files are: 72 code lines "
+                      "and 3 functions compiled only for tests (Rust's #[cfg(test)] items), in src/lib.rs (72); a "
+                      "test module in a file of its own (mod tests;) is measured unless named as a test.\n", result.out)
+
+    def test_show_keeps_the_files_line_numbers(self):
+        result = support.run("measure.py", "-C", self.repo, "--show", "src/lib.rs")
+        self.assertIn("src/lib.rs: Rust, 5 code lines, band -, 2 functions", result.out)
+        self.assertIn("Set aside as tests: lines 5-72 and 75-78, 72 code lines and 3 functions compiled only for "
+                      "tests (#[cfg(test)]); --keep-tests lists them.", result.out)
+        rows = [line.split() for line in result.out.splitlines() if re.match(r"\s*\d+-\d+ ", line)]
+        self.assertEqual(rows, [["1-3", "3", "0", "-", "small"], ["73-74", "2", "0", "-", "after"]])
+
+    def test_keep_tests_measures_them(self):
+        result = support.run("measure.py", "-C", self.repo, "--keep-tests", "--show", "src/lib.rs")
+        self.assertIn("src/lib.rs: Rust, 77 code lines, band -, 5 functions", result.out)
+        self.assertNotIn("set aside", result.out.lower())
+
+
+class TestsInManyFiles(unittest.TestCase):
+    """The lines that say what's set aside, with seven files in the scope, one shown from outside it, and a test
+    file shown, which is measured whole."""
+
+    @classmethod
+    def setUpClass(cls):
+        module = "#[cfg(test)]\nmod t {\n%s}\n"
+        files = dict(("src/f%d.rs" % n, module % ("    fn x() {}\n" * n)) for n in range(1, 8))  # n + 3 lines.
+        files.update({"tests/it.rs": module % "    fn y() {}\n", "other/o.rs": module % "    fn z() {}\n"})
+        repo = support.Repo("many")
+        repo.commit("2026-01-05", "Start", files)
+        repo.done()
+        cls.repo = repo.path
+
+    def test_the_most_first_and_the_totals(self):
+        result = support.run("measure.py", "-C", self.repo, "src", "--show", "other/o.rs", "--show", "tests/it.rs")
+        self.assertIn("are: 49 code lines and 28 functions compiled only for tests (Rust's #[cfg(test)] items), in 7 "
+                      "files: src/f7.rs (10), src/f6.rs (9), src/f5.rs (8), src/f4.rs (7), src/f3.rs (6) and 2 more;",
+                      result.out)
+        self.assertIn("other/o.rs: Rust, 0 code lines, band -, 0 functions", result.out)
+        self.assertIn("Set aside as tests: lines 1-4, 4 code lines and 1 function compiled only", result.out)
+        self.assertIn("tests/it.rs: Rust, 4 code lines, band -, 1 functions", result.out)
+        self.assertEqual(result.out.count("Set aside as tests: lines"), 1)
+
+    def test_one_function(self):
+        result = support.run("measure.py", "-C", self.repo, "src/f1.rs")
+        self.assertIn("are: 4 code lines and 1 function compiled only for tests (Rust's #[cfg(test)] items), in "
+                      "src/f1.rs (4);", result.out)
 
 
 class Unusual(unittest.TestCase):
