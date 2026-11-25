@@ -236,60 +236,61 @@ class Generics(unittest.TestCase):
 
 
 # Files whose reading once took a time that grew with the square of their size, or faster. Each is made at a size
-# and at SCALE times it, and read at both, the best of two runs each: at the larger it must take under RATIO times
-# as long, where a time that grows with the size takes about SCALE times as long and one that grows with its square
-# about SCALE * SCALE times, however fast the machine; and under LIMIT seconds. A case can name the step of
-# measure.py it times, given the text's lines, where the rest of the reading would hide it. Unclosed definitions,
-# nested ones each indented one more (sized by their lines' indents), and #if blocks never closed, each branch of
-# which opens a function's body. Rust's tests inside a file, each set aside, as measure.py's run asks: thousands of
-# test modules, a run of thousands of cfgs on one item or on none, of attributes before a module's inner cfgs, of
-# statics with no ;; thousands of test items on one line, or of inner cfgs, #![cfg(test)], in one module, in none,
-# in functions' bodies or each first in a module of its own; and a # and thousands of spaces on a line that says
-# cfg. A header's line of thousands of Objective-C messages, [[x y] z], none a C23 attribute, or of thousands of [[
-# before one ;.
+# and at SCALE times it, and read at both, three times over: at the larger it must take under RATIO times as long,
+# in the pair of readings that grew least, where a time that grows with the size takes about SCALE times as long and
+# one that grows with its square about SCALE * SCALE times, however fast the machine; and under LIMIT seconds. A
+# machine slow for a moment, or slower per character on a large text, slows a pair or the larger readings by up to
+# three times, so a case that seems to grow too fast is timed once more. A case can name the step of measure.py it
+# times, given the text's lines, where the rest of the reading would hide it. Unclosed definitions, nested ones
+# each indented one more (sized by their lines' indents), and #if blocks never closed, each branch of which opens a
+# function's body. Rust's tests inside a file, each set aside, as measure.py's run asks: thousands of test modules,
+# a run of thousands of cfgs on one item or on none, of attributes before a module's inner cfgs, of statics with no
+# ;; thousands of test items on one line, or of inner cfgs, #![cfg(test)], in one module, in none, in functions'
+# bodies or each first in a module of its own; and a # and thousands of spaces on a line that says cfg. A header's
+# line of thousands of Objective-C messages, [[x y] z], none a C23 attribute, or of thousands of [[ before one ;.
 GROWING = {
-    "unclosed.py": (2500, lambda n: "def f(\n" * n),
-    "unclosed.gd": (2500, lambda n: "func a(\n" * n),
-    "nested.py": (250000, lambda n: "".join(" " * i + "def f%d():\n" % i for i in range(int((2 * n) ** 0.5)))),
-    "nested.rb": (700000, lambda n: "".join(" " * i + "def f%d\n" % i for i in range(int((2 * n) ** 0.5)))),
-    "open-ifs.c": (1400, lambda n: "#if A\nint f() {\n#else\n" * n),
-    "tests.rs": (1400, lambda n: "#[cfg(test)]\nmod t {\n    fn f() {}\n}\n" * n),
-    "attributes.rs": (2500, lambda n: "#[cfg(test)]\n" * n + "fn g() {}\n"),
-    "attributes-alone.rs": (2500, lambda n: "#[cfg(test)]\n" * n),
-    "inner-cfgs.rs": (1200, lambda n: "#[a]\n" * n + "mod t {\n" + "    #![cfg(test)]\n" * n + "}\n"),
-    "line-of-fns.rs": (1300, lambda n: "#[cfg(test)] fn t() { let b = [2]; } " * n + "\n"),
-    "line-of-mods.rs": (1700, lambda n: "#[cfg(test)] mod m { } " * n + "\n"),
-    "messages.h": (7000, lambda n: "void g(void) { " + "[[x y] z]; " * n + "}\n"),
-    "statics.rs": (1200, lambda n: "#[cfg(test)]\nstatic B: u16 = 2\n" * n),
-    "openings.h": (80000, lambda n: "int x = " + "[[" * n + ";\n"),
-    "line-of-inner-cfgs.rs": (2400, lambda n: "mod m { " + "#![cfg(test)] " * n + "}\n"),
-    "inner-cfgs-alone.rs": (2400, lambda n: "#![cfg(test)] " * n + "\n"),
-    "line-of-test-mods.rs": (900, lambda n: "mod m { #![cfg(test)] fn t() {} } " * n + "\n"),
-    "line-of-fn-cfgs.rs": (1000, lambda n: "fn g() { #![cfg(test)] } " * n + "\n"),
-    "inner-after-attributes.rs": (800, lambda n: "mod m { #![allow(x)] #![cfg(test)] } " * n + "\n"),
-    "two-inner-cfgs.rs": (700, lambda n: "mod m { #![cfg(test)] #![cfg(test)] } " * n + "\n"),
-    "outer-and-inner.rs": (600, lambda n: "#[cfg(test)] mod m { #![cfg(test)] } " * n + "\n"),
-    "nested-test-mods.rs": (450, lambda n: "mod a { #![cfg(test)] mod b { #![cfg(test)] } } " * n + "\n"),
-    "hash-then-spaces.rs": (300000, lambda n: "let cfg = 1; x #" + " " * n + "y\n"),
+    "unclosed.py": (1100, lambda n: "def f(\n" * n),
+    "unclosed.gd": (1100, lambda n: "func a(\n" * n),
+    "nested.py": (100000, lambda n: "".join(" " * i + "def f%d():\n" % i for i in range(int((2 * n) ** 0.5)))),
+    "nested.rb": (280000, lambda n: "".join(" " * i + "def f%d\n" % i for i in range(int((2 * n) ** 0.5)))),
+    "open-ifs.c": (640, lambda n: "#if A\nint f() {\n#else\n" * n),
+    "tests.rs": (820, lambda n: "#[cfg(test)]\nmod t {\n    fn f() {}\n}\n" * n),
+    "attributes.rs": (1100, lambda n: "#[cfg(test)]\n" * n + "fn g() {}\n"),
+    "attributes-alone.rs": (1100, lambda n: "#[cfg(test)]\n" * n),
+    "inner-cfgs.rs": (550, lambda n: "#[a]\n" * n + "mod t {\n" + "    #![cfg(test)]\n" * n + "}\n"),
+    "line-of-fns.rs": (570, lambda n: "#[cfg(test)] fn t() { let b = [2]; } " * n + "\n"),
+    "line-of-mods.rs": (750, lambda n: "#[cfg(test)] mod m { } " * n + "\n"),
+    "messages.h": (3100, lambda n: "void g(void) { " + "[[x y] z]; " * n + "}\n"),
+    "statics.rs": (550, lambda n: "#[cfg(test)]\nstatic B: u16 = 2\n" * n),
+    "openings.h": (35000, lambda n: "int x = " + "[[" * n + ";\n"),
+    "line-of-inner-cfgs.rs": (1050, lambda n: "mod m { " + "#![cfg(test)] " * n + "}\n"),
+    "inner-cfgs-alone.rs": (1050, lambda n: "#![cfg(test)] " * n + "\n"),
+    "line-of-test-mods.rs": (380, lambda n: "mod m { #![cfg(test)] fn t() {} } " * n + "\n"),
+    "line-of-fn-cfgs.rs": (440, lambda n: "fn g() { #![cfg(test)] } " * n + "\n"),
+    "inner-after-attributes.rs": (350, lambda n: "mod m { #![allow(x)] #![cfg(test)] } " * n + "\n"),
+    "two-inner-cfgs.rs": (300, lambda n: "mod m { #![cfg(test)] #![cfg(test)] } " * n + "\n"),
+    "outer-and-inner.rs": (270, lambda n: "#[cfg(test)] mod m { #![cfg(test)] } " * n + "\n"),
+    "nested-test-mods.rs": (200, lambda n: "mod a { #![cfg(test)] mod b { #![cfg(test)] } } " * n + "\n"),
+    "hash-then-spaces.rs": (150000, lambda n: "let cfg = 1; x #" + " " * n + "y\n"),
     # Test items between long runs of text on one line, set aside on their own: each copied the rest of the line.
-    "tests-in-a-long-line": (1000000, lambda n: " " + "x" * n + " " + "#[cfg(test)] fn f() {} " * (n // 1000) +
+    "tests-in-a-long-line": (450000, lambda n: " " + "x" * n + " " + "#[cfg(test)] fn f() {} " * (n // 1000) +
                              "x" * n + " ", "rust_test_items"),
     # Thousands of /* on one line, in a language whose block comments nest.
-    "comment-openers.rs": (70000, lambda n: "/* " * n + "\n"),
+    "comment-openers.rs": (31000, lambda n: "/* " * n + "\n"),
     # A header's #ifdefs nested thousands deep around thousands of lines.
-    "deep-ifdefs.h": (2000, lambda n: "#ifdef A\n" * n + "int x;\n" * n + "#endif\n" * n),
+    "deep-ifdefs.h": (1100, lambda n: "#ifdef A\n" * n + "int x;\n" * n + "#endif\n" * n),
     # A ! and thousands of spaces in a header's #if on __cplusplus.
-    "bang-then-spaces.h": (250000, lambda n: "#if !" + " " * n + "x && __cplusplus\nint a;\n#endif\n"),
+    "bang-then-spaces.h": (110000, lambda n: "#if !" + " " * n + "x && __cplusplus\nint a;\n#endif\n"),
     # A header of thousands of blank lines, which its evidence of C++ read on from each.
-    "blank-lines.h": (6000, lambda n: "int a;\n" + "\n" * n + "int b;\n"),
+    "blank-lines.h": (2700, lambda n: "int a;\n" + "\n" * n + "int b;\n"),
     # In C#, thousands of $ before a string; and a raw string opened by thousands of quotes, holding runs of one fewer.
-    "dollars.cs": (20000, lambda n: "var s = " + "$" * n + '"{a}";\n'),
+    "dollars.cs": (8500, lambda n: "var s = " + "$" * n + '"{a}";\n'),
     # Rust test type aliases left open after a , in their generics.
-    "open-aliases.rs": (1100, lambda n: "#[cfg(test)]\ntype A<T,\n" * n),
-    "quote-runs.cs": (600000, lambda n: "var s = " + '"' * n + "\n" + ('"' * (n - 1) + "x") * 4 + "\n" + '"' * n +
+    "open-aliases.rs": (480, lambda n: "#[cfg(test)]\ntype A<T,\n" * n),
+    "quote-runs.cs": (300000, lambda n: "var s = " + '"' * n + "\n" + ('"' * (n - 1) + "x") * 4 + "\n" + '"' * n +
                       ";\n"),
 }
-SCALE, RATIO, LIMIT, TIMEOUT = 4, 8, 5, 60
+SCALE, RATIO, LIMIT, TIMEOUT = 8, 24, 5, 60
 TIME = """
 import gc, sys, time
 import measure
@@ -297,20 +298,20 @@ from test_robustness import GROWING, LIMIT, SCALE
 name = sys.argv[1]
 n, make = GROWING[name][:2]
 step = getattr(measure, GROWING[name][2]) if len(GROWING[name]) > 2 else None
-texts, best = (make(n), make(SCALE * n)), [None, None]
-for _ in range(2):
-    for k, text in enumerate(texts):
-        gc.collect()
-        gc.disable()
-        start = time.perf_counter()
-        step(text.split("\\n")) if step else measure.functions(name, text, [])
-        took = time.perf_counter() - start
-        gc.enable()
-        best[k] = took if best[k] is None else min(best[k], took)
-        if took > LIMIT:  # Too slow already.
-            print("%.3f %.3f" % (best[0], took))
-            sys.exit()
-print("%.3f %.3f" % tuple(best))
+texts = make(n), make(SCALE * n)
+def timed(text):
+    gc.collect()
+    gc.disable()
+    start = time.perf_counter()
+    step(text.split("\\n")) if step else measure.functions(name, text, [])
+    took = time.perf_counter() - start
+    gc.enable()
+    if took > LIMIT:  # Too slow already.
+        print("%.3f %.3f" % (took, took))
+        sys.exit()
+    return took
+pairs = [(timed(texts[0]), timed(texts[1])) for _ in range(3)]
+print("%.3f %.3f" % min(pairs, key=lambda pair: pair[1] / pair[0]))
 """
 
 
@@ -320,12 +321,15 @@ class Growing(unittest.TestCase):
         code = "import sys; sys.path[:0] = [%r, %r]\n" % (support.SCRIPTS, support.HERE) + TIME
         for name in sorted(GROWING):
             with self.subTest(case=name):
-                try:
-                    result = support.run_python(code, name, timeout=TIMEOUT)
-                except subprocess.TimeoutExpired:
-                    self.fail("%s took over %d seconds" % (name, TIMEOUT))
-                self.assertEqual(result.code, 0, result)
-                small, large = (float(t) for t in result.out.split())
+                for _ in range(2):  # Once more if it seems to grow too fast.
+                    try:
+                        result = support.run_python(code, name, timeout=TIMEOUT)
+                    except subprocess.TimeoutExpired:
+                        self.fail("%s took over %d seconds" % (name, TIMEOUT))
+                    self.assertEqual(result.code, 0, result)
+                    small, large = (float(t) for t in result.out.split())
+                    if large < LIMIT and large < RATIO * small:
+                        break
                 self.assertLess(large, LIMIT, name)
                 self.assertLess(large, RATIO * small, "%s: %.3f seconds at its size, %.3f at %d times it" % (
                     name, small, large, SCALE))
