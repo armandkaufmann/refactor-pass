@@ -409,6 +409,16 @@ class Strings(unittest.TestCase):
         self.assertEqual(found("a.kt", 'val x = """"a" b"""\nfun f() {\n}\n'), [["f", 2, 3, 2]])
 
 
+    def test_rust_raw_strings_after_an_at(self):
+        # An @ before a raw string is a macro's token or a binding's, as inline snapshots write: @r#"..."#, @r"...".
+        for string in ('@r#"say("(")"#', '@r"C:\\"', '@br"(\\"'):
+            with self.subTest(string=string):
+                text = "fn a() {\n    check!(run(), %s);\n}\nfn b() {\n}\n" % string
+                self.assertEqual([f[:3] for f in found("a.rs", text)], [["a", 1, 3], ["b", 4, 5]])
+        text = "#[cfg(test)]\nmod tests {\n    fn s() {\n        check!(run(), @r#\"f(\"(\")\"#);\n    }\n}\n"
+        self.assertEqual(set_aside(text)[2], [[1, 6, 6, 1]])
+
+
 class Comments(unittest.TestCase):
 
     def test_block_comments_that_nest(self):
