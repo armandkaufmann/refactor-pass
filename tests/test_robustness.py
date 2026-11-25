@@ -239,8 +239,9 @@ class Generics(unittest.TestCase):
 # grew with the square of their length or faster: unclosed definitions, nested ones each indented one more, and
 # #if blocks never closed, each branch of which opens a function's body; and Rust's tests inside a file, each
 # set aside, as measure.py's run asks, a run of thousands of cfgs on one item, or on none, and thousands of test
-# items on one line; and a header's line of thousands of Objective-C messages, [[x y] z], none a C23 attribute,
-# or of thousands of [[ before one ;.
+# items on one line, or of inner cfgs, #![cfg(test)], in one module, in none, in functions' bodies or each first
+# in a module of its own; and a header's line of thousands of Objective-C messages, [[x y] z], none a C23
+# attribute, or of thousands of [[ before one ;.
 GROWING = {
     "unclosed.py": lambda: "def f(\n" * 20000,
     "unclosed.gd": lambda: "func a(\n" * 20000,
@@ -256,6 +257,14 @@ GROWING = {
     "messages.h": lambda: "void g(void) { " + "[[x y] z]; " * 20000 + "}\n",
     "statics.rs": lambda: "#[cfg(test)]\nstatic B: u16 = 2\n" * 4000,
     "openings.h": lambda: "int x = " + "[[" * 30000 + ";\n",
+    "line-of-inner-cfgs.rs": lambda: "mod m { " + "#![cfg(test)] " * 6000 + "}\n",
+    "inner-cfgs-alone.rs": lambda: "#![cfg(test)] " * 6000 + "\n",
+    "line-of-test-mods.rs": lambda: "mod m { #![cfg(test)] fn t() {} } " * 3000 + "\n",
+    "line-of-fn-cfgs.rs": lambda: "fn g() { #![cfg(test)] } " * 3000 + "\n",
+    "inner-after-attributes.rs": lambda: "mod m { #![allow(x)] #![cfg(test)] } " * 3000 + "\n",
+    "two-inner-cfgs.rs": lambda: "mod m { #![cfg(test)] #![cfg(test)] } " * 2000 + "\n",
+    "outer-and-inner.rs": lambda: "#[cfg(test)] mod m { #![cfg(test)] } " * 3000 + "\n",
+    "nested-test-mods.rs": lambda: "mod a { #![cfg(test)] mod b { #![cfg(test)] } } " * 2000 + "\n",
 }
 TIME = """
 import sys, time
