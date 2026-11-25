@@ -106,7 +106,9 @@ class Samples(unittest.TestCase):
                 # An Objective-C message's [[ isn't an attribute that a ]] far on closes, past a ; or a brace.
                 ("p.h", "void g(void) { [[x y] z]; }\ninline int Grid::size() const { return n; }\nint v = a[b[0]];\n",
                  ("C++", 2)),
-                ("q.h", "void f(void) {\n    if ([[p q] r]) { Shape::area(m[n[0]]); }\n}\n", ("C++", 1))):
+                ("q.h", "void f(void) {\n    if ([[p q] r]) { Shape::area(m[n[0]]); }\n}\n", ("C++", 1)),
+                # What starts a line, as main reads it, after spaces.
+                ("r.h", "  template <typename T>\nT twice(T v) {\n    return v;\n}\n", ("C++", 1))):
             with self.subTest(name=name):
                 _, functions, language = measure.functions(name, text)
                 self.assertEqual((language, len(functions)), want)
@@ -169,6 +171,7 @@ class Samples(unittest.TestCase):
         for text in ("struct rule {\n    int (*operator)(long, long);\n};\nint run(const struct rule *r);\n",
                      "struct step { int operator; };\nvoid assign(struct step *s, long x) { s->operator = (int)x; }\n",
                      "struct step { int operator; };\nint plus(struct step s) { return s.operator == ('+'); }\n",
+                     "struct step { int operator; };\nint get(struct step *s) { return s -> operator + (1); }\n",
                      "enum operator { OP_A };\nenum operator read_operator(const char *s);\n",
                      "struct operator { int a; };\nstruct operator fresh();\n",
                      "union operator { int a; };\nunion operator blank();\n",
@@ -403,6 +406,13 @@ class TestsInsideFiles(unittest.TestCase):
         # A use's group and a constant's struct, whose } the item's ; follows on its line.
         text = "#[cfg(test)]\nuse a::{b, c};\n#[cfg(test)]\nconst S: Size = Size {\n    w: 1,\n};\n"
         self.assertEqual(set_aside(text)[2], [[1, 2, 2, 0], [3, 6, 4, 0]])
+        # A ; after a body's }, a space between; and a line the body's end shares with one more character.
+        for text, want in (("#[cfg(test)]\nstruct S {\n    a: u8,\n} ;\nfn g() {}\n",
+                            (1, [["g", 5, 5, 1]], [[1, 4, 4, 0]])),
+                           ("mod t {\n    #[cfg(test)]\n    struct S {\n    };}\n", (2, [], [[2, 3, 2, 0]])),
+                           ("mod t {\n    #[cfg(test)]\n    fn f() {\n    }}\n", (2, [], [[2, 3, 2, 1]]))):
+            with self.subTest(text=text):
+                self.assertEqual(set_aside(text), want)
         # union is a keyword only before a union's name: a variable so named starts a statement.
         for text in ("fn join(mut union: Vec<u8>) -> Vec<u8> {\n    #[cfg(test)]\n    union.push(2);\n    union\n}\n",
                      "fn clear(mut union: u16) -> u16 {\n    #[cfg(test)]\n    union = 0;\n    union\n}\n"):

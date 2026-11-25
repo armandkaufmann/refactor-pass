@@ -284,6 +284,8 @@ GROWING = {
     "blank-lines.h": (6000, lambda n: "int a;\n" + "\n" * n + "int b;\n"),
     # In C#, thousands of $ before a string; and a raw string opened by thousands of quotes, holding runs of one fewer.
     "dollars.cs": (20000, lambda n: "var s = " + "$" * n + '"{a}";\n'),
+    # Rust test type aliases left open after a , in their generics.
+    "open-aliases.rs": (1100, lambda n: "#[cfg(test)]\ntype A<T,\n" * n),
     "quote-runs.cs": (600000, lambda n: "var s = " + '"' * n + "\n" + ('"' * (n - 1) + "x") * 4 + "\n" + '"' * n +
                       ";\n"),
 }
