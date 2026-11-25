@@ -126,7 +126,10 @@ class Samples(unittest.TestCase):
                 ("#ifndef __cplusplus\nint pick(int a);\n#elif defined(FAST)\nint pick(int a) noexcept;\n#endif\n",
                  "C"),
                 ("#if defined(__cplusplus) || defined(OTHER)\nint f() noexcept;\n#endif\n", "C++"),
-                ("#ifdef __cplusplus\n#else\nint f() noexcept;\n#endif\n", "C++")):
+                ("#ifdef __cplusplus\n#else\nint f() noexcept;\n#endif\n", "C++"),
+                # Not C++, in brackets, which the skeleton writes as s: its #else is C++'s only.
+                ("#if !(defined(__cplusplus))\nint pick(int a);\n#else\nint pick(int a) noexcept;\n#endif\n", "C"),
+                ("#if !(defined __cplusplus)\nint pick(int a);\n#else\nint pick(int a) noexcept;\n#endif\n", "C")):
             with self.subTest(text=text):
                 self.assertEqual(measure.functions("v.h", text)[2], want)
 

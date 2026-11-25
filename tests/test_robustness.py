@@ -278,6 +278,8 @@ GROWING = {
     "comment-openers.rs": (70000, lambda n: "/* " * n + "\n"),
     # A header's #ifdefs nested thousands deep around thousands of lines.
     "deep-ifdefs.h": (2000, lambda n: "#ifdef A\n" * n + "int x;\n" * n + "#endif\n" * n),
+    # A ! and thousands of spaces in a header's #if on __cplusplus.
+    "bang-then-spaces.h": (250000, lambda n: "#if !" + " " * n + "x && __cplusplus\nint a;\n#endif\n"),
 }
 SCALE, RATIO, LIMIT, TIMEOUT = 4, 8, 5, 60
 TIME = """
