@@ -240,8 +240,8 @@ class Generics(unittest.TestCase):
 # #if blocks never closed, each branch of which opens a function's body; and Rust's tests inside a file, each
 # set aside, as measure.py's run asks, a run of thousands of cfgs on one item, or on none, and thousands of test
 # items on one line, or of inner cfgs, #![cfg(test)], in one module, in none, in functions' bodies or each first
-# in a module of its own; and a header's line of thousands of Objective-C messages, [[x y] z], none a C23
-# attribute, or of thousands of [[ before one ;.
+# in a module of its own, or a # and thousands of spaces on a line that says cfg; and a header's line of
+# thousands of Objective-C messages, [[x y] z], none a C23 attribute, or of thousands of [[ before one ;.
 GROWING = {
     "unclosed.py": lambda: "def f(\n" * 20000,
     "unclosed.gd": lambda: "func a(\n" * 20000,
@@ -265,6 +265,7 @@ GROWING = {
     "two-inner-cfgs.rs": lambda: "mod m { #![cfg(test)] #![cfg(test)] } " * 2000 + "\n",
     "outer-and-inner.rs": lambda: "#[cfg(test)] mod m { #![cfg(test)] } " * 3000 + "\n",
     "nested-test-mods.rs": lambda: "mod a { #![cfg(test)] mod b { #![cfg(test)] } } " * 2000 + "\n",
+    "hash-then-spaces.rs": lambda: "let cfg = 1; x #" + " " * 100000 + "y\n",
 }
 TIME = """
 import sys, time
