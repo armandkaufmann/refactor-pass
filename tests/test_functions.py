@@ -447,7 +447,12 @@ class TestsInsideFiles(unittest.TestCase):
                 ("#[cfg(test)]\nfn pair<#[cfg(unix)] T, #[a] #[b] U>(a: U) {\n}\n", (0, [], [[1, 3, 3, 1]])),
                 ("#[cfg(test)]\nfn width<#[a] const N: usize>() {\n}\n", (0, [], [[1, 3, 3, 1]])),
                 ("#[cfg(test)]\ntype Pair<#[cfg(unix)] T> = (T, T);\nfn after() {}\n", (1, [["after", 3, 3, 1]],
-                                                                                    [[1, 2, 2, 0]]))):
+                                                                                    [[1, 2, 2, 0]])),
+                # A cfg on a const generic parameter, after a < or a ,, is the parameter's: no item follows a < or a ,.
+                ("pub fn width<#[cfg(test)] const N: usize>() -> usize {\n    let a = 1;\n    a + 2\n}\n"
+                 "pub static LIMIT: u8 = 1;\n", (5, [["width", 1, 4, 4]], [])),
+                ("fn pair<T, #[a] #[cfg(test)] const M: usize>() {\n}\nconst SIZE: u8 = 2;\n",
+                 (3, [["pair", 1, 2, 2]], []))):
             with self.subTest(text=text):
                 self.assertEqual(set_aside(text), want)
 
