@@ -454,7 +454,13 @@ class TestsInsideFiles(unittest.TestCase):
                 ("pub fn width<#[cfg(test)] const N: usize>() -> usize {\n    let a = 1;\n    a + 2\n}\n"
                  "pub static LIMIT: u8 = 1;\n", (5, [["width", 1, 4, 4]], [])),
                 ("fn pair<T, #[a] #[cfg(test)] const M: usize>() {\n}\nconst SIZE: u8 = 2;\n",
-                 (3, [["pair", 1, 2, 2]], []))):
+                 (3, [["pair", 1, 2, 2]], [])),
+                # A test item after it on its line is still read, whether a ; ends the struct the parameter's in or not.
+                ("fn span<#[cfg(test)] const N: usize>() {} #[cfg(test)] mod probes {\n    fn first() {}\n"
+                 "    fn second() {}\n}\nfn later() {}\n",
+                 (2, [["span", 1, 1, 1], ["later", 5, 5, 1]], [[2, 4, 3, 2]])),
+                ("struct Mark<#[cfg(test)] const N: usize>; #[cfg(test)] mod probes {\n    fn first() {}\n"
+                 "    fn second() {}\n}\nfn later() {}\n", (2, [["later", 5, 5, 1]], [[2, 4, 3, 2]]))):
             with self.subTest(text=text):
                 self.assertEqual(set_aside(text), want)
 
