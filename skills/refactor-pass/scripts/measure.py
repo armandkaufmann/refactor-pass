@@ -277,16 +277,41 @@ def without_attributes(text):
     return "".join(kept)
 
 
+# A conditional's directive, and a __cplusplus it's true without, in the skeleton, whose brackets are s.
+CONDITIONAL = re.compile(r"\s*#\s*(if|ifdef|ifndef|elif|else|endif)\b(.*)")
+NOT_CPLUSPLUS = re.compile(r"!\s*(?:defined)?[s\s]*__cplusplus")
+
+
+def cplusplus_branch(word, condition):
+    """Whether the branch an #if, #ifdef or #ifndef opens with this condition is compiled only as C++, and whether
+    only as C, so that its #else is only C++: by __cplusplus, alone or with &&; not with ||."""
+    if "__cplusplus" not in condition or "||" in condition:
+        return False, False
+    c = word == "ifndef" or bool(NOT_CPLUSPLUS.search(condition))
+    return not c, c
+
+
 def cpp_header(code):
     """Whether a .h or an .inl file, as C's skeleton has its lines (code), is C++'s: by CPP_IN_HEADER, or by
-    CPP_IN_CODE in its code, not in a macro, which a C header can define for C++, nor in a C23 attribute."""
+    CPP_IN_CODE in its code, not in a macro, which a C header can define for C++, nor in a C23 attribute, nor
+    under __cplusplus to its #else or #endif, as a C header offers C++ callers its operators."""
     if CPP_IN_HEADER.search("\n".join(code)):
         return True
     kept, going_on = [], False
+    frames = []  # Per #if open: whether its branch now is C++'s only, and whether its #else is.
     for line in code:
         directive = going_on or line.lstrip().startswith("#")
         going_on = directive and line.rstrip().endswith("\\")
-        kept.append("" if directive else line)
+        found = CONDITIONAL.match(line) if directive else None
+        if found and found.group(1) in ("if", "ifdef", "ifndef"):
+            frames.append(list(cplusplus_branch(*found.groups())))
+        elif found and frames and found.group(1) == "elif":
+            frames[-1][0] = frames[-1][1] or cplusplus_branch("if", found.group(2))[0]
+        elif found and frames and found.group(1) == "else":
+            frames[-1][0] = frames[-1][1]
+        elif found and frames and found.group(1) == "endif":
+            frames.pop()
+        kept.append("" if directive or any(cpp for cpp, _ in frames) else line)
     return bool(CPP_IN_CODE.search(C_TAG_OPERATOR.sub(" ", without_attributes("\n".join(kept)))))
 
 # JavaScript and TypeScript: how a definition's line starts, up to the bracket that opens its parameters
