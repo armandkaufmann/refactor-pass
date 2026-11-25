@@ -342,6 +342,22 @@ class TestsInsideFiles(unittest.TestCase):
         self.assertEqual(set_aside("#[cfg(test)]\nunion Bits {\n    a: u8,\n}\n")[2], [[1, 4, 4, 0]])
 
 
+    def test_where_an_item_ends(self):
+        # A constant's braces are its value's, to its ;; an impl's or a struct's in a type's arguments, as a const
+        # generic's, are not its body.
+        for text, want in (
+                ("#[cfg(test)]\nconst MAX: u8 = if cfg!(unix) {\n    1\n} else {\n    2\n};\nfn next() {\n}\n",
+                 (2, [["next", 7, 8, 2]], [[1, 6, 6, 0]])),
+                ("#[cfg(test)]\nconst MIN: u8 = if cfg!(unix) { 1 } else { 2 };\n", (0, [], [[1, 2, 2, 0]])),
+                ("#[cfg(test)]\nimpl Fixed for Grid<{ 2 * 3 }> {\n    fn width(&self) -> u8 {\n        6\n    }\n}\n"
+                 "fn after() {\n}\n", (2, [["after", 7, 8, 2]], [[1, 6, 6, 1]])),
+                ("#[cfg(test)]\nstruct Wide<const N: usize = { 1 + 1 }> {\n    a: [u8; N],\n}\n",
+                 (0, [], [[1, 4, 4, 0]])),
+                # Type parameters over lines, the > that closes them starting its line.
+                ("#[cfg(test)]\nimpl<\n    T: Clone,\n> Shelf for T {\n}\n", (0, [], [[1, 5, 5, 0]]))):
+            with self.subTest(text=text):
+                self.assertEqual(set_aside(text), want)
+
     def test_a_line_it_shares_with_other_code(self):
         # Stays counted, with its functions, whether that code comes before the item's attribute or after its end.
         for text, want in (("fn b() {} #[cfg(test)]\nmod t {\n    fn c() {}\n}\nfn d() {}\n",
