@@ -274,6 +274,8 @@ GROWING = {
     # Test items between long runs of text on one line, set aside on their own: each copied the rest of the line.
     "tests-in-a-long-line": (1000000, lambda n: " " + "x" * n + " " + "#[cfg(test)] fn f() {} " * (n // 1000) +
                              "x" * n + " ", "rust_test_items"),
+    # Thousands of /* on one line, in a language whose block comments nest.
+    "comment-openers.rs": (70000, lambda n: "/* " * n + "\n"),
 }
 SCALE, RATIO, LIMIT, TIMEOUT = 4, 8, 5, 60
 TIME = """
