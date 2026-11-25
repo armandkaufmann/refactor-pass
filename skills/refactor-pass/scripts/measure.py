@@ -1421,7 +1421,7 @@ def docstrings(code, inside, continued):
 # Rust's item, after its visibility (pub, pub(crate)) and qualifiers (const fn, unsafe impl, extern "C" fn): the
 # keyword that says which, union only before a union's name and what follows that, as it can name a variable; a
 # module's head, before its body's bracket; an attribute's opening, outer (#[...]) or inner (#![...]); a cfg
-# attribute's; and what stops the reading of an item's head.
+# attribute's; what stops the reading of an item's head; and a ; after its body (struct S { ... };).
 RUST_ITEM = re.compile(r"(?:pub(?:\s*\([^()]*\))?\s+)?(?:(?:const|async|unsafe|safe|default|extern\s*\"s*\")\s+)*"
                        r"(fn|impl|mod|trait|struct|enum|union(?=\s+(?:r#)?\w+\s*(?:[<{]|where\b|$))|type|use|static|"
                        r"const|extern|macro_rules(?=\s*!))\b")
@@ -1430,6 +1430,7 @@ RUST_OUTER = re.compile(r"#\s*\[")
 RUST_INNER = re.compile(r"#\s*!\s*\[")
 RUST_CFG = re.compile(r"#\s*(?:!\s*)?\[\s*cfg\s*\(")
 ITEM_STOPS = re.compile(r"[(){}\[\];<>#]")
+SEMICOLON_AFTER = re.compile(r"\s*;")
 # What comes before a macro's brackets: an invocation's name and its ! (quote! {...}, vec![...]), or a macro_rules!
 # definition's name; and how far back on a bracket's line that, or a module's head before its body's brace, is read.
 RUST_MACRO_BEFORE = re.compile(r"(?:\w!|macro_rules\s*!\s*(?:r#)?\w+)\s*$")
@@ -1508,8 +1509,8 @@ def rust_item_end(code, i, j, body=True):
         if end is None:
             return None
         if c == "{" and body and angles <= 0:
-            after = code[end[0]][end[1]:]
-            return end[0], end[1] + (len(after) - len(after.lstrip()) if after.lstrip()[:1] == ";" else -1), "}"
+            semicolon = SEMICOLON_AFTER.match(code[end[0]], end[1])  # Read there: the rest of the line isn't copied.
+            return end[0], semicolon.end() - 1 if semicolon else end[1] - 1, "}"
         k, col = end  # Brackets before the body, as parameters' or an array's type, [u8; 3], are passed whole.
     return None
 
