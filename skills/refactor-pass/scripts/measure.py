@@ -1427,8 +1427,9 @@ RUST_INNER = re.compile(r"#\s*!\s*\[")
 RUST_CFG = re.compile(r"#\s*!?\s*\[\s*cfg\s*\(")
 ITEM_STOPS = re.compile(r"[(){}\[\];<>#]")
 # What comes before a macro's brackets: an invocation's name and its ! (quote! {...}, vec![...]), or a macro_rules!
-# definition's name.
+# definition's name; and how far back on a bracket's line that, or a module's head before its body's brace, is read.
 RUST_MACRO_BEFORE = re.compile(r"(?:\w!|macro_rules\s*!\s*(?:r#)?\w+)\s*$")
+BEFORE_BRACKET = 200
 
 
 def cfg_needs_test(attribute):
@@ -1509,11 +1510,9 @@ def rust_item_end(code, i, j, body=True):
     return None
 
 
-def rust_in_macro(code, i, col, memo):
-    """Whether code[i][col] is in a macro's brackets, an invocation's or a macro_rules! definition's, whose text is
-    the macro's, not code of its own. memo keeps the answer per bracket, so however deep a file's brackets nest,
-    each is looked at once; and the brackets open where the last call stopped on its line, so the calls on one long
-    line, in their order, read it once."""
+def rust_open_brackets(code, i, col, memo):
+    """The brackets open at code[i][col], as brackets_of's stacks link them, the innermost first. memo keeps those
+    open where the last call stopped on its line, so the calls on one long line, in their order, read it once."""
     scan = memo.get("scan")
     stack, start = (scan[2], scan[1]) if scan and scan[0] == i and scan[1] <= col else \
         (brackets_of(code)["stacks"][i], 0)
@@ -1523,13 +1522,21 @@ def rust_in_macro(code, i, col, memo):
         elif stack is not None:
             stack = stack[1]
     memo["scan"] = (i, col, stack)
+    return stack
+
+
+def rust_in_macro(code, i, col, memo):
+    """Whether code[i][col] is in a macro's brackets, an invocation's or a macro_rules! definition's, whose text is
+    the macro's, not code of its own. memo keeps the answer per bracket, so however deep a file's brackets nest,
+    each is looked at once; and for rust_open_brackets, where the last call stopped on its line."""
+    stack = rust_open_brackets(code, i, col, memo)
     path = []
     while stack is not None and stack[0][:2] not in memo:
         path.append(stack[0])
         stack = stack[1]
     inside = memo[stack[0][:2]] if stack is not None else False
     for line, at, _ in reversed(path):
-        inside = inside or bool(RUST_MACRO_BEFORE.search(code[line], max(0, at - 200), at))
+        inside = inside or bool(RUST_MACRO_BEFORE.search(code[line], max(0, at - BEFORE_BRACKET), at))
         memo[(line, at)] = inside
     return inside
 
@@ -1552,8 +1559,8 @@ def rust_test_items(code):
             text = code[k]
             edges[k] = (len(text) - len(text.lstrip()), len(text.rstrip()) - 1)
         return edges[k]
-    # Where the last walk over a run of attributes stopped, and the modules whose inner cfgs were read: each run, and
-    # each module, is read once, however many cfgs it holds.
+    # Where the last walk over a run of attributes stopped, and the brackets an inner cfg was read in, a module's
+    # body's or not: each run, and each module, is read once, however many cfgs it holds.
     walked, modules = (-1, -1), set()
     for i, line in enumerate(code):
         for cfg in RUST_CFG.finditer(line) if "cfg" in line else ():
@@ -1564,13 +1571,16 @@ def rust_test_items(code):
                     rust_in_macro(code, i, cfg.start(), macros):
                 continue
             if RUST_INNER.match(line, cfg.start()):  # The module's whose body it's first in.
-                opener = js_opener(code, i, cfg.start())
-                head = RUST_MODULE_HEAD.search(code[opener[0]][:opener[1]]) if opener and opener[2] == "{" else None
-                body = closes.get(opener[:2]) if head and opener[:2] not in modules else None
+                stack = rust_open_brackets(code, i, cfg.start(), macros)  # As rust_in_macro just read them.
+                if stack is None or stack[0][:2] in modules:
+                    continue
+                k, c, bracket = stack[0]
+                modules.add((k, c))
+                head = RUST_MODULE_HEAD.search(code[k], max(0, c - BEFORE_BRACKET), c) if bracket == "{" else None
+                body = closes.get((k, c)) if head else None
                 if body is None:
                     continue
-                modules.add(opener[:2])
-                start, end = (opener[0], head.start()), (body[0], body[1] - 1)
+                start, end = (k, head.start()), (body[0], body[1] - 1)
             else:  # The item after it, past any other attributes.
                 at, walked = js_next(code, end[0], end[1], limit=50), end
                 while at and RUST_OUTER.match(code[at[0]], at[1]):
