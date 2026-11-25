@@ -405,7 +405,9 @@ RUST_TOKEN = re.compile(r"""(//[^\n]*|/\*)|(b?r\#*")|(b?"(?:\\.|[^"\\])*(?:"|\\?
                         r"""(?:[^/"'\#{}\[\];\w]+|(?!\bmod\b)(?!b?r\#*")(?!b?["'])\w+|/(?![/*])|"""
                         r"""'(?![^'\\\n]'|\\)|\#(?!!?\s*\[))+|\w+|.""", re.S)
 RUST_GAP = r"(?:\s|/\*.*?\*/|//[^\n]*)*"
-RUST_READ = re.compile(r"\bmod\b" + RUST_GAP + r"(?:r#)?\w+" + RUST_GAP + r";|#\s*!\s*\[\s*cfg|\binclude\s*!", re.S)
+# What a file must hold to be read so, each found on its own, which is quicker: a declaration, an inner cfg, include!.
+RUST_READ = (re.compile(r"mod" + RUST_GAP + r"(?:r#)?\w+" + RUST_GAP + r";", re.S), re.compile(r"#\s*!\s*\[\s*cfg"),
+             re.compile(r"include\s*!"))
 BLOCK_COMMENT = re.compile(r"/\*|\*/")
 KINDS = (None, "comment", "raw", "string", "attribute", "mod", "bracket")
 RUST_NAME = re.compile(r"\s*((?:r#)?[A-Za-z_]\w*)\s*$")
@@ -587,7 +589,7 @@ def rust_test_modules(tracked, read):
     known = set(p for p in tracked if p.endswith(".rs"))
     manifests = [p for p in tracked if posixpath.basename(p) == "Cargo.toml"]
     texts = read(sorted(known) + manifests) if known else {}
-    parsed = dict((p, rust_modules(t)) for p, t in texts.items() if p in known and RUST_READ.search(t))
+    parsed = dict((p, rust_modules(t)) for p, t in texts.items() if p in known and any(r.search(t) for r in RUST_READ))
     # The folders the tracked files are in, numbered, each with its parent and its files and folders by name. A folder
     # elsewhere is one of these and a count of the folders under it that hold none: (number, count).
     parent, child, files, own = [None], {}, {}, {}
