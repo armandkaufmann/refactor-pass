@@ -253,7 +253,26 @@ CPP_IN_HEADER = re.compile(r"^\s*(?:template\s*<|namespace(?:\s+[\w:]+)?\s*\{|(?
 # a type's name (operator bool, operator new[]), then its parameters; operator_rank( is a C function's name.
 CPP_IN_CODE = re.compile(r"\w\s*::\s*~?\w|\bnoexcept\b|\boperator\b[ \t]*(?:\(\)[ \t]*\(|[^\w\s(]+\w*[ \t]*\(|"
                          r"(?<=[ \t])\w[\w:<>*&\[\] \t]{0,80}?\()")
-C23_ATTRIBUTE = re.compile(r"\[\[.*?\]\]")
+# What ends a C23 attribute, [[...]], or shows that a [[ opens none, as an Objective-C message's [[x y] z]: a ;
+# or a brace first.
+C23_ATTRIBUTE_END = re.compile(r"\]\]|[;{}]")
+
+
+def without_attributes(text):
+    """text without its C23 attributes, [[...]], however many lines each runs over; in one pass, since a [[ that no
+    ]] closes before a ; or a brace opens none, nor does any other [[ before that."""
+    kept, i, k = [], 0, 0
+    while True:
+        start = text.find("[[", k)
+        stop = C23_ATTRIBUTE_END.search(text, start + 2) if start >= 0 else None
+        if stop is None:
+            break
+        if stop.group() == "]]":
+            kept.append(text[i:start])
+            i = stop.end()
+        k = stop.end()
+    kept.append(text[i:])
+    return "".join(kept)
 
 
 def cpp_header(code):
@@ -265,8 +284,8 @@ def cpp_header(code):
     for line in code:
         directive = going_on or line.lstrip().startswith("#")
         going_on = directive and line.rstrip().endswith("\\")
-        kept.append("" if directive else C23_ATTRIBUTE.sub("", line))
-    return bool(CPP_IN_CODE.search("\n".join(kept)))
+        kept.append("" if directive else line)
+    return bool(CPP_IN_CODE.search(without_attributes("\n".join(kept))))
 
 # JavaScript and TypeScript: how a definition's line starts, up to the bracket that opens its parameters
 # (or its type parameters). What follows the parameters then says whether it's a function (js_function).
