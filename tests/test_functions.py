@@ -135,8 +135,10 @@ class Samples(unittest.TestCase):
                  "#endif\n", "C"),
                 ("#ifdef SMALL\nint w;\n#else\ninline int Shape::area() const { return n; }\n#endif\n", "C++"),
                 ("int x;\n#endif\n", "C"),
-                # Not C++, in brackets, which the skeleton writes as s: its #else is C++'s only.
+                # Not C++, in brackets, which the skeleton writes as s, or with no defined: its #else is C++'s only.
                 ("#if !(defined(__cplusplus))\nint pick(int a);\n#else\nint pick(int a) noexcept;\n#endif\n", "C"),
+                ("#if !__cplusplus\nint pick(int a);\n#else\nint pick(int a) noexcept;\n#endif\n", "C"),
+                ("#if ! __cplusplus\nint pick(int a);\n#else\nint pick(int a) noexcept;\n#endif\n", "C"),
                 ("#if !(defined __cplusplus)\nint pick(int a);\n#else\nint pick(int a) noexcept;\n#endif\n", "C"),
                 # The #else after an #elif that's C's only.
                 ("#if defined(PLAIN)\nint pick(int a);\n#elif !defined(__cplusplus)\nint pick(int a);\n#else\n"
