@@ -376,8 +376,9 @@ class TestsInsideFiles(unittest.TestCase):
                 ("#[allow(dead_code)]\n#[inline]\n#[cfg(test)]\nfn f() {\n}\n", (0, [], [[1, 5, 5, 1]])),
                 # An inner attribute before it is the file's, not the item's.
                 ("#![allow(dead_code)]\n#[cfg(test)]\nfn f() {\n}\n", (1, [], [[2, 4, 3, 1]])),
-                # Indented attributes before it, a method's.
+                # Indented attributes before it, a method's, by spaces or tabs.
                 ("impl S {\n    #[inline]\n    #[cfg(test)]\n    fn f() {}\n}\n", (2, [], [[2, 4, 3, 1]])),
+                ("impl S {\n\t#[inline]\n\t#[cfg(test)]\n\tfn f() {}\n}\n", (2, [], [[2, 4, 3, 1]])),
                 ("#[cfg(test)]\n// A.\n// B.\n// C.\nfn f() {\n}\n", (0, [], [[1, 6, 3, 1]])),
                 ("pub(crate) mod t {\n    #![cfg(test)]\n}\n", (0, [], [[1, 3, 3, 0]])),
                 # A longer pub(in ...); the innermost module an inner cfg is first in; a # and a ! apart from their [.
@@ -403,9 +404,14 @@ class TestsInsideFiles(unittest.TestCase):
         text = "#[cfg(test)]\nuse a::{b, c};\n#[cfg(test)]\nconst S: Size = Size {\n    w: 1,\n};\n"
         self.assertEqual(set_aside(text)[2], [[1, 2, 2, 0], [3, 6, 4, 0]])
         # union is a keyword only before a union's name: a variable so named starts a statement.
-        text = "fn join(mut union: Vec<u8>) -> Vec<u8> {\n    #[cfg(test)]\n    union.push(2);\n    union\n}\n"
-        self.assertEqual(set_aside(text), (5, [["join", 1, 5, 5]], []))
-        self.assertEqual(set_aside("#[cfg(test)]\nunion Bits {\n    a: u8,\n}\n")[2], [[1, 4, 4, 0]])
+        for text in ("fn join(mut union: Vec<u8>) -> Vec<u8> {\n    #[cfg(test)]\n    union.push(2);\n    union\n}\n",
+                     "fn clear(mut union: u16) -> u16 {\n    #[cfg(test)]\n    union = 0;\n    union\n}\n"):
+            with self.subTest(text=text):
+                self.assertEqual(set_aside(text), (5, [[text[3:text.index("(")], 1, 5, 5]], []))
+        for text in ("#[cfg(test)]\nunion Bits {\n    a: u8,\n}\n", "#[cfg(test)]\nunion r#type {\n    a: u8,\n}\n",
+                     "#[cfg(test)]\nunion Cell<T: Copy> {\n    a: T,\n}\n"):
+            with self.subTest(text=text):
+                self.assertEqual(set_aside(text)[2], [[1, 4, 4, 0]])
 
 
     def test_where_an_item_ends(self):
@@ -451,7 +457,11 @@ class TestsInsideFiles(unittest.TestCase):
                            ("mod a {\n} #[cfg(test)] mod u {\n    fn x() {}\n}\nfn d() {}\n",
                             (3, [["d", 5, 5, 1]], [[3, 4, 2, 1]])),
                            ("#[cfg(test)]\nmod t {\n    fn c() {}\n} fn d() {}\n",
-                            (1, [], [[1, 3, 3, 1]]))):
+                            (1, [], [[1, 3, 3, 1]])),
+                           # A module whose inner cfg says so, its head after other code; a } with no {.
+                           ("fn keep() {} mod inner { #![cfg(test)]\n    fn gone() {}\n}\nfn after() {}\n",
+                            (2, [["keep", 1, 1, 1], ["after", 4, 4, 1]], [[2, 3, 2, 1]])),
+                           ("fn one() {}\n} #[cfg(test)] fn two() {}\n", (2, [["one", 1, 1, 1]], []))):
             with self.subTest(text=text):
                 self.assertEqual(set_aside(text), want)
 
@@ -463,6 +473,9 @@ class TestsInsideFiles(unittest.TestCase):
                             (8, [["quoting", 1, 8, 8], ["t", 5, 5, 1]], [])),
                            ("macro_rules! tests {\n    () => {\n        #[cfg(test)]\n        mod t {}\n    };\n}\n",
                             (6, [], [])),
+                           # A macro's name of 150 characters before its bracket.
+                           ("macro_rules! " + "long_" * 30 + "name {\n    () => {\n        #[cfg(test)]\n"
+                            "        mod t {}\n    };\n}\n", (6, [], [])),
                            # After a test item of its own: each cfg's brackets are its line's.
                            ("#[cfg(test)]\nfn a() {}\nfn q() -> T {\n    quote! {\n        #[cfg(test)]\n"
                             "        mod t {}\n    }\n}\n", (6, [["q", 3, 8, 6]], [[1, 2, 2, 1]]))):
