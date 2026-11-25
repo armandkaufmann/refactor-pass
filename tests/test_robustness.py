@@ -282,6 +282,10 @@ GROWING = {
     "bang-then-spaces.h": (250000, lambda n: "#if !" + " " * n + "x && __cplusplus\nint a;\n#endif\n"),
     # A header of thousands of blank lines, which its evidence of C++ read on from each.
     "blank-lines.h": (6000, lambda n: "int a;\n" + "\n" * n + "int b;\n"),
+    # In C#, thousands of $ before a string; and a raw string opened by thousands of quotes, holding runs of one fewer.
+    "dollars.cs": (20000, lambda n: "var s = " + "$" * n + '"{a}";\n'),
+    "quote-runs.cs": (600000, lambda n: "var s = " + '"' * n + "\n" + ('"' * (n - 1) + "x") * 4 + "\n" + '"' * n +
+                      ";\n"),
 }
 SCALE, RATIO, LIMIT, TIMEOUT = 4, 8, 5, 60
 TIME = """
