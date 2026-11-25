@@ -100,7 +100,9 @@ class Samples(unittest.TestCase):
                 ("d.inl", "inline Grid operator+(Grid a, Grid b)\n{\n    return a;\n}\n", ("C++", 1)),
                 ("m.h", "#ifdef __cplusplus\n#define CALL(x) \\\n    ns::call(x)\n#endif\nint one(void) {\n"
                         "    return 1;\n}\n", ("C", 1)),
-                ("n.h", "[[gnu::always_inline]] static inline int one(void) {\n    return 1;\n}\n", ("C", 1))):
+                ("n.h", "[[gnu::always_inline]] static inline int one(void) {\n    return 1;\n}\n", ("C", 1)),
+                ("o.h", "[[gnu::cold,\n  gnu::noinline]]\nstatic inline int one(void) {\n    return 1;\n}\n",
+                 ("C", 1))):
             with self.subTest(name=name):
                 _, functions, language = measure.functions(name, text)
                 self.assertEqual((language, len(functions)), want)
