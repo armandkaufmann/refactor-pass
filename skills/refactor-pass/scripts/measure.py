@@ -249,10 +249,12 @@ CPP_SHAPES = (r"^\s*" + TEMPLATE + MODIFIERS + r"(?:" + TYPE_WORD + r"\s+)*[*&]*
 # them opens (cpp_header).
 CPP_IN_HEADER = re.compile(r"^\s*(?:template\s*<|namespace(?:\s+[\w:]+)?\s*\{|(?:public|private|protected)\s*:|"
                            r"class\s+\w)|\bstd::", re.M)
-# An operator's definition is the word operator whole, then (), a symbol (operator==, operator""_km), or a space and
-# a type's name (operator bool, operator new[]), then its parameters; operator_rank( is a C function's name.
-CPP_IN_CODE = re.compile(r"\w\s*::\s*~?\w|\bnoexcept\b|\boperator\b[ \t]*(?:\(\)[ \t]*\(|[^\w\s(]+\w*[ \t]*\(|"
-                         r"(?<=[ \t])\w[\w:<>*&\[\] \t]{0,80}?\()")
+# An operator's definition is the word operator whole, then (), an operator's symbols, [] or a literal's ""
+# (operator==, operator""_km), or a space and a type's name (operator bool, operator new[]), then its parameters;
+# not operator_rank(, a C function's name, a member so named, (*operator)(, nor C's tag (enum operator).
+CPP_IN_CODE = re.compile(r"\w\s*::\s*~?\w|\bnoexcept\b|\boperator\b[ \t]*(?:\(\)[ \t]*\(|"
+                         r"(?:[-+*/%^&|~!=<>,]+|\[\s*\]|\"\"[ \t]*\w+)[ \t]*\(|(?<=[ \t])\w[\w:<>*&\[\] \t]{0,80}?\()")
+C_TAG_OPERATOR = re.compile(r"\b(?:enum|struct|union)\s+operator\b")
 # What ends a C23 attribute, [[...]], or shows that a [[ opens none, as an Objective-C message's [[x y] z]: a ;
 # or a brace first.
 C23_ATTRIBUTE_END = re.compile(r"\]\]|[;{}]")
@@ -285,7 +287,7 @@ def cpp_header(code):
         directive = going_on or line.lstrip().startswith("#")
         going_on = directive and line.rstrip().endswith("\\")
         kept.append("" if directive else line)
-    return bool(CPP_IN_CODE.search(without_attributes("\n".join(kept))))
+    return bool(CPP_IN_CODE.search(C_TAG_OPERATOR.sub(" ", without_attributes("\n".join(kept)))))
 
 # JavaScript and TypeScript: how a definition's line starts, up to the bracket that opens its parameters
 # (or its type parameters). What follows the parameters then says whether it's a function (js_function).
