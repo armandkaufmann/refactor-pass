@@ -169,10 +169,10 @@ python3 <this skill's directory>/scripts/measure.py -C <repo> <scope ...> [--sho
 ```
 
 Give it the heatmap's scope; it sets test files aside as the heatmap does,
-Rust's test modules in files of their own (`#[cfg(test)] mod tests;`)
-among them, so they stay out of the percentiles, and Rust's `#[cfg(test)]`
-items too (a module, a function, an impl), which the heatmap counts in
-their file. It gives each language's 70th, 80th
+Rust files compiled only for tests (`#[cfg(test)] mod tests;`, or
+`#![cfg(test)]`) among them, so they stay out of the percentiles, and
+Rust's `#[cfg(test)]` items too (a module, a function, an impl), which the
+heatmap counts in their file. It gives each language's 70th, 80th
 and 90th percentiles of file and function length, weighted by lines as
 Alves et al. do, then each file's code lines (blank lines, comment-only
 lines and Python's docstrings left out) and band, functions, longest

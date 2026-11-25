@@ -351,10 +351,10 @@ def flat(name):
 def owns(test, path, stems, modules=None):
     """Whether path is the test's own file: the same name less the test's marker; or, when no file in
     stems (the production files' flat stems) has that name, the same name and an entry point's suffix,
-    as ShowDashboardTest.php and ShowDashboardController.php; or, for one of Rust's test modules, a file whose
-    declarations bring it in (modules, as rust_test_modules gives them)."""
-    if path in (modules or {}).get(test, ()):
-        return True
+    as ShowDashboardTest.php and ShowDashboardController.php. One of Rust's test modules owns only the files
+    whose declarations bring it in (modules, as rust_test_modules gives them), whatever their names."""
+    if modules and test in modules:
+        return path in modules[test][1]
     mine, theirs = flat(stem(test, True)), flat(stem(path, False))
     return theirs == mine or (mine not in stems and any(theirs == mine + part for part in ENTRY_POINTS))
 
@@ -362,48 +362,61 @@ def owns(test, path, stems, modules=None):
 # Rust's test modules in files of their own (#[cfg(test)] mod tests;). A cfg needs test when it holds only where
 # test is set (cfg_needs_test), which reads an attribute as measure.py's skeleton has it, its strings written "s".
 RUST_CFG = re.compile(r"#\s*(?:!\s*)?\[\s*cfg\s*\(")
+RUST_CFG_ATTR = re.compile(r"#\s*\[\s*cfg_attr\s*\(")
+
+
+def cfg_terms(attribute, opening):
+    """Of the cfg predicate in a Rust attribute after the opening matched (cfg's, or a cfg_attr's first), whether it
+    holds only where test is set, and whether it holds wherever test isn't: test does the first; all() when one of
+    its predicates does, and the second when each does; any() the first when each does, the second when one does;
+    not() swaps them. Anything else holds either way, so does neither."""
+    words = re.findall(r'\w+|"s*"|[(),=]', attribute[opening.end():]) if opening else []
+    frames = [("all", [])]  # Per bracket open, its operator and its predicates' terms.
+    for k, word in enumerate(words):
+        if words[k + 1:k + 2] == ["("]:
+            frames.append((word, []))
+        elif word == ")" or (word == "," and len(frames) == 1):  # A cfg_attr's predicate ends at its first ,.
+            operator, terms = frames.pop()
+            only, without = [t[0] for t in terms], [t[1] for t in terms]
+            term = (any(only), all(without)) if operator == "all" else \
+                (bool(terms) and all(only), any(without)) if operator == "any" else \
+                (without[0], only[0]) if operator == "not" and len(terms) == 1 else (False, False)
+            if not frames:
+                return term
+            frames[-1][1].append(term)
+        elif re.match(r"\w", word) and words[k - 1:k] != ["="]:  # A name, or a key given a value (feature = "x").
+            frames[-1][1].append((word == "test" and words[k + 1:k + 2] != ["="], False))
+    return False, False
 
 
 def cfg_needs_test(attribute):
     """Whether a Rust attribute, as the skeleton has it, is a cfg that holds only where test is set: cfg(test),
-    or test among all()'s predicates; not under not(), nor under any() unless each of its predicates needs
-    test too."""
-    match = RUST_CFG.match(attribute)
-    words = re.findall(r'\w+|"s*"|[(),=]', attribute[match.end():]) if match else []
-    frames = [("all", [])]  # Per bracket open, its operator and whether each of its predicates needs test.
-    for k, word in enumerate(words):
-        if words[k + 1:k + 2] == ["("]:
-            frames.append((word, []))
-        elif word == ")":
-            operator, needs = frames.pop()
-            need = any(needs) if operator == "all" else operator == "any" and bool(needs) and all(needs)
-            if not frames:
-                return need
-            frames[-1][1].append(need)
-        elif re.match(r"\w", word) and words[k - 1:k] != ["="]:  # A name, or a key given a value (feature = "x").
-            frames[-1][1].append(word == "test" and words[k + 1:k + 2] != ["="])
-    return False
+    test among all()'s predicates, each of any()'s needing it, or not() of what holds wherever test isn't
+    (not(not(test)))."""
+    return cfg_terms(attribute, RUST_CFG.match(attribute))[0]
 
 
 # What a Rust file's text is read in, past its comments and strings: a comment's or a string's opening, an
-# attribute's (#[ or #![), a module's head (mod name, then ; or {), a brace, a bracket or a ;; and anything else at
-# once, in runs. A string never closed runs to the end. A file that holds neither a mod declaration nor an inner cfg
-# isn't read so.
+# attribute's (#[ or #![), the word mod, a brace, a bracket or a ;; and anything else at once, in runs. A string
+# never closed runs to the end. A file in which no mod declaration, inner cfg or include! may be isn't read so.
 RUST_TOKEN = re.compile(r"""(//[^\n]*|/\*)|(b?r\#*")|(b?"(?:\\.|[^"\\])*(?:"|\\?\Z)|"""
                         r"""b?'(?:\\(?:x[0-9a-fA-F]{2}|u\{[0-9a-fA-F]{1,6}\}|.)|[^'\\\n])')|(\#!?\s*\[)|"""
-                        r"""\bmod\s+((?:r\#)?[A-Za-z_]\w*)\s*(?=[;{])|([{}\[\];])|"""
+                        r"""(\bmod\b)|([{}\[\];])|"""
                         r"""(?:[^/"'\#{}\[\];\w]+|(?!\bmod\b)(?!b?r\#*")(?!b?["'])\w+|/(?![/*])|"""
                         r"""'(?![^'\\\n]'|\\)|\#(?!!?\s*\[))+|\w+|.""", re.S)
-RUST_DECLARES = re.compile(r"mod\s+(?:r#)?\w+\s*;")
-RUST_INNER_CFG = re.compile(r"#\s*!\s*\[\s*cfg")
+RUST_GAP = r"(?:\s|/\*.*?\*/|//[^\n]*)*"
+RUST_READ = re.compile(r"\bmod\b" + RUST_GAP + r"(?:r#)?\w+" + RUST_GAP + r";|#\s*!\s*\[\s*cfg|\binclude\s*!", re.S)
 BLOCK_COMMENT = re.compile(r"/\*|\*/")
-KINDS = (None, "comment", "raw", "string", "attribute", "head", "bracket")
+KINDS = (None, "comment", "raw", "string", "attribute", "mod", "bracket")
+RUST_NAME = re.compile(r"\s*((?:r#)?[A-Za-z_]\w*)\s*$")
+MACRO_BEFORE_BRACE = re.compile(r"(?:\w\s*!|macro_rules\s*!\s*(?:r#)?\w+)\s*$")  # pick! {, macro_rules! m {
+INCLUDE_BEFORE = re.compile(r"\binclude\s*!\s*[(\[{]\s*$")
 
 
 def rust_tokens(text):
     """A Rust file's tokens, as (kind, text), past its comments: a string or a character, whole ("string"), an
-    attribute's opening ("attribute"), a module's head, its name as its text ("head"), a brace, a bracket or a ;
-    ("bracket"), and anything else in runs (None)."""
+    attribute's opening ("attribute"), the word mod ("mod"), a brace, a bracket or a ; ("bracket"), and anything
+    else in runs (None)."""
     i = 0
     while i < len(text):
         found = RUST_TOKEN.match(text, i)
@@ -425,13 +438,20 @@ def rust_tokens(text):
             close = text.find('"' + "#" * hashes, i)
             i = close + 1 + hashes if close >= 0 else len(text)
             kind = "string"
-        yield kind, found.group(5) if kind == "head" else text[found.start():i]
+        yield kind, text[found.start():i]
+
+
+def string_text(token):
+    """A string token's text, without its quotes or prefix, each \\ read as / (an escaped \\\\ is two /, which a
+    path reads as one)."""
+    return token.lstrip("br").strip("#")[1:-1].replace("\\", "/")
 
 
 def rust_attribute(tokens, opening):
-    """An attribute read from tokens after its opening: its text, written for cfg_needs_test (its strings "s"),
-    and the file a path attribute names (#[path = "x.rs"]), its \\ read as /, or None."""
-    parts, depth, path, first = [opening], 1, None, True
+    """An attribute read from tokens after its opening: its text, written for cfg_needs_test (its strings "s"); the
+    file a path attribute names (#[path = "x.rs"]), or None; and the one a cfg_attr gives (#[cfg_attr(windows,
+    path = "win.rs")]), or None."""
+    parts, depth, parens, path, choice, first = [opening], 1, 0, None, None, True
     for kind, token in tokens:
         if kind == "bracket" and token in "[]":
             depth += 1 if token == "[" else -1
@@ -439,123 +459,287 @@ def rust_attribute(tokens, opening):
                 break
         if kind == "string":
             if first and re.match(r"\s*path\s*=\s*$", "".join(parts[1:])):  # Its first string only.
-                raw = token.lstrip("br").strip("#")
-                path = raw[1:-1].replace("\\", "/")  # An escaped \\ is two /, which a path reads as one.
+                path = string_text(token)
+            elif choice is None and parens == 1 and re.search(r",\s*path\s*=\s*$", parts[-1]) and \
+                    re.match(r"\s*cfg_attr\s*\(", parts[1]):
+                choice = string_text(token)
             token, first = '"s"', False
-        parts.append(token if kind != "head" else "mod " + token)
-    return "".join(parts) + "]", path
+        elif kind is None:
+            parens += token.count("(") - token.count(")")
+        parts.append(token)
+    return "".join(parts) + "]", path, choice
 
 
 def rust_modules(text):
-    """A Rust file's mod declarations, as (name, path, inline, test): the module's name, its #[path] if it has
-    one, the folders of the inline modules it's in (each its #[path], or its name), and whether its cfg, or
-    the code it's in, needs test; and whether the whole file does, by #![cfg(test)] before anything else in
-    it. In a block that's no module's, as a macro's (pick! { if #[cfg(test)] { mod t; } }), a declaration is
-    read as if the block weren't there, its cfg before the block's brace."""
-    # Per block open: whether it's an inline module's, whether its code needs test, and whether nothing but inner
-    # attributes has come in it yet; and the folders of the inline modules open.
-    frames, inline = [[False, False, True]], []
-    declared, pending, name, tokens = [], [], None, rust_tokens(text)
+    """A Rust file's modules as rustc reads them: (marked, scopes, declared, included). marked: whether the whole
+    file needs test, by #![cfg(test)] before anything else in it (past a shebang line). scopes: per block it opens
+    where a mod declaration's file is found otherwise, its parent's index and what it is: ("module", name) for an
+    inline module, ("path", folder) for one with a #[path], ("block", None) for a function's body or any other
+    block that isn't a macro's or a module's, in which a declaration needs a #[path]; scope 0 is the file's own. A
+    macro's brackets (pick! { if #[cfg(test)] { mod t; } }) open none: a declaration in them is read as if they
+    weren't there, the cfg before their brace counted. declared: per mod declaration, (name, path, scope, test,
+    choices): its #[path] or None, the scope it's in, whether its cfg or the code it's in needs test, and the
+    files its cfg_attrs may name instead, each with its cfg's terms (cfg_terms). included: the files a plain
+    include!("x.rs") outside test code names."""
+    if text.startswith("\ufeff"):
+        text = text[1:]
+    if text.startswith("#!") and not re.match(r"#!\s*\[", text):  # A shebang line, which rustc passes over.
+        text = text[text.find("\n") + 1:] if "\n" in text else ""
+    scopes = [(None, None, None)]
+    # Per bracket open: its scope, whether its code needs test, whether nothing but inner attributes has come in it
+    # yet, and whether it's a macro's.
+    frames = [[0, False, True, False]]
+    declared, included, pending, name, before, tokens = [], [], [], None, "", rust_tokens(text)
+    pending_test = False  # Whether an attribute pending, before the item it's on, is a cfg that needs test.
     for kind, token in tokens:
         if kind == "attribute":
-            attribute, path = rust_attribute(tokens, token)
+            attribute, path, choice = rust_attribute(tokens, token)
             if "!" in token:
                 if frames[-1][2] and cfg_needs_test(attribute):
                     frames[-1][1] = True
             else:
-                pending.append((attribute, path))
+                pending.append((attribute, path, choice))
+                pending_test = pending_test or cfg_needs_test(attribute)
                 frames[-1][2] = False
+            before = ""
             continue
-        if kind is None and not token.strip():
+        if kind is None:
+            if not token.strip():
+                continue
+            found = RUST_NAME.match(token) if name == "" else None  # After mod, the module's name.
+            name = (found.group(1)[2:] if found.group(1).startswith("r#") else found.group(1)) if found else None
+            before = token
+            frames[-1][2] = False
             continue
         frames[-1][2] = False
-        if kind == "head":
-            name = token[2:] if token.startswith("r#") else token
-        elif kind == "bracket" and token in ";{}":
-            test = frames[-1][1] or any(cfg_needs_test(a) for a, _ in pending)
-            path = next((p for _, p in pending if p is not None), None)
+        if kind == "mod":
+            name, before = "", ""
+            continue
+        if kind == "string":
+            if INCLUDE_BEFORE.search(before) and not (frames[-1][1] or pending_test):
+                included.append(string_text(token))
+        elif token in ";{}":
+            test = frames[-1][1] or pending_test
             if token == ";":
                 if name:
-                    declared.append((name, path, tuple(inline), test))
+                    path = next((p for _, p, _ in pending if p is not None), None)
+                    choices = [(c, cfg_terms(a, RUST_CFG_ATTR.match(a))) for a, _, c in pending if c is not None]
+                    declared.append((name, path, frames[-1][0], test, choices))
             elif token == "{":
-                frames.append([bool(name), test, True])
                 if name:
-                    inline.append(path or name)
-            elif len(frames) > 1 and frames.pop()[0]:
-                inline.pop()
-            pending, name = [], None
-    return frames[0][1], declared
+                    path = next((p for _, p, _ in pending if p is not None), None)
+                    scopes.append((frames[-1][0], "module", name) if path is None else (frames[-1][0], "path", path))
+                    frames.append([len(scopes) - 1, test, True, False])
+                elif frames[-1][3] or MACRO_BEFORE_BRACE.search(before):
+                    frames.append([frames[-1][0], test, True, True])
+                else:
+                    scopes.append((frames[-1][0], "block", None))
+                    frames.append([len(scopes) - 1, test, True, False])
+            elif len(frames) > 1:
+                frames.pop()
+            pending, pending_test = [], False
+        name, before = None, ""
+    return frames[0][1], scopes, declared, included
+
+
+def cargo_roots(manifests, folder_of, find):
+    """The crate roots Cargo's manifests (their texts, by path) name by their paths ([[bin]] path = "...", [package]
+    build = "..."), of the .rs files git tracks: (roots, code), code being those it builds other than as tests: a
+    library, a binary, an example, a bench or a build script. A path in any other table that names a .rs file, as
+    an inline [[bin]]'s, is taken for one too. folder_of(path) gives a manifest's folder; find(folder, path) the
+    tracked .rs file a path names from it, or None."""
+    roots, code = set(), set()
+    for manifest, text in sorted(manifests.items()):
+        table = ""
+        for line in text.splitlines():
+            if line.lstrip().startswith("#"):
+                continue
+            header = re.match(r"\s*\[\[?\s*([^\]]*?)\s*\]", line)
+            if header:
+                table = header.group(1)
+                continue
+            for key, value, literal in re.findall(r"""\b(path|build)\s*=\s*(?:"((?:\\.|[^"\\])*)"|'([^']*)')""", line):
+                if key == "build" and table != "package":
+                    continue
+                target = find(folder_of(manifest), literal or re.sub(r"\\(.)", r"\1", value))
+                if target:
+                    roots.add(target)
+                    if table != "test" and not re.match(r"\s*test\s*=", line):
+                        code.add(target)
+    return roots, code
 
 
 def rust_test_modules(tracked, read):
     """Rust's test modules in files of their own: each tracked .rs file every mod declaration of which, in a tracked
-    file, needs test, by its cfg or by the code it's in (an inline module compiled only for tests, or a file that's
-    a test module itself); and each marked #![cfg(test)] before anything else in it. A file is where rustc finds it:
-    name.rs or name/mod.rs in the folder of a mod.rs, a lib.rs or a main.rs, or of a module file name's own
-    (src/disk.rs's in src/disk/), an inline module's folder added; or the file a #[path] names, from the file's
-    folder, or from the inline module's, which rustc then reads as a mod.rs. A crate root with another name (a
-    binary's, an example's), not known without Cargo.toml, is a file no declaration could bring in, and is read as a
-    lib.rs; a file no declaration reaches from those, nor from a mod.rs, a lib.rs or a main.rs, looks in its own
-    folder's first and then beside itself. read(paths) gives the files' texts. Per test module, the files that
-    aren't tests whose declarations bring it in, or bring in the test module it's in: its own files."""
+    file, needs test, by its cfg or by the code it's in (an inline module compiled only for tests, or a file that's a
+    test module itself); and each marked #![cfg(test)] before anything else in it. A file Cargo builds as a crate of
+    its own other than as a test (cargo_roots), or one that code outside tests include!s, is never one by its
+    declarations; a crate it builds only as a test is one, as are its modules. read(paths) gives the files' texts.
+    Per test module, (how, declared): how it's known, "declared", "marked" (#![cfg(test)]) or "crate" (Cargo's test
+    crate), and the files whose declarations bring it in.
+
+    A declaration's file is where rustc finds it: from a crate root's or a mod.rs's folder, or a module file's
+    own (src/disk.rs's src/disk/), with each inline module's name, or its #[path], added; name.rs there, or
+    name/mod.rs; or in a block (a function's body), only by its #[path]. A #[path] is from the folder, without a
+    module file's own, and the file it names is read as a mod.rs. A file reached two ways is read both ways. A
+    crate root no manifest names is a file no declaration could bring in; a file no declaration reaches from the
+    roots looks in its own folder first, then beside itself."""
     known = set(p for p in tracked if p.endswith(".rs"))
-    texts = read(sorted(known)) if known else {}
-    parsed = dict((p, rust_modules(t)) for p, t in texts.items()
-                  if p in known and (RUST_DECLARES.search(t) or RUST_INNER_CFG.search(t)))
+    manifests = [p for p in tracked if posixpath.basename(p) == "Cargo.toml"]
+    texts = read(sorted(known) + manifests) if known else {}
+    parsed = dict((p, rust_modules(t)) for p, t in texts.items() if p in known and RUST_READ.search(t))
+    # The folders the tracked files are in, numbered, each with its parent and its files and folders by name. A folder
+    # elsewhere is one of these and a count of the folders under it that hold none: (number, count).
+    parent, child, files, own = [None], {}, {}, {}
+    for path in sorted(known) + manifests:
+        folder = 0
+        for part in path.split("/")[:-1]:
+            if (folder, part) not in child:
+                child[(folder, part)] = len(parent)
+                parent.append(folder)
+            folder = child[(folder, part)]
+        own[path] = folder
+        if path in known:
+            files[(folder, posixpath.basename(path))] = path
 
-    def places(path, bases, name, attribute, inline):
-        """Where a declaration in path may point, from the folders given (bases), the likelier first."""
-        folder = posixpath.dirname(path)
-        if attribute and not inline:
-            return [posixpath.normpath(posixpath.join(folder, attribute))]
-        found = []
-        for base in bases:
-            where = posixpath.join(base, *inline)
-            found += [posixpath.join(where, attribute)] if attribute else \
-                [posixpath.join(where, name + ".rs"), posixpath.join(where, name, "mod.rs")]
-        return [posixpath.normpath(p) for p in found]
+    def down(where, name):
+        if where is None:
+            return None
+        if not where[1] and (where[0], name) in child:
+            return child[(where[0], name)], 0
+        return where[0], where[1] + 1
 
-    def folders(path, kind):
-        """The folders a file's modules are in: a mod.rs's own; a module file's of its name; either, else."""
-        folder = posixpath.dirname(path)
-        own = posixpath.join(folder, posixpath.splitext(posixpath.basename(path))[0])
-        return {"mod-rs": [folder], "module": [own], None: [own, folder]}[kind]
-    # Per file read for its declarations: a mod.rs (as a lib.rs, a main.rs, a crate root of another name, or a
-    # file a #[path] names), a module file, or neither known. A file no declaration could bring in is a crate root.
-    maybe = set()
-    for path, (_, declared) in parsed.items():
-        for name, attribute, inline, _ in declared:
-            maybe.update(places(path, folders(path, None), name, attribute, inline))
-    kinds = dict((p, "mod-rs") for p in parsed if posixpath.basename(p) in ("mod.rs", "lib.rs", "main.rs")
-                 or p not in maybe)
-    queue, unknown, k = sorted(kinds, reverse=True), sorted(parsed), 0
-    edges = {}  # Per file a declaration brings in, the declaring files and whether each declaration needs test.
-    while queue or k < len(unknown):
-        if not queue:  # No declaration from a known file reaches it.
-            path, k = unknown[k], k + 1
-            if path in kinds:
+    def walk(where, path):
+        """The folder a path names from where, or None outside the repo or at an absolute path."""
+        if path.startswith("/") or re.match(r"[A-Za-z]:", path):
+            return None
+        for part in path.split("/"):
+            if where is None or part in ("", "."):
                 continue
-            kinds[path] = None
-            queue.append(path)
-        path = queue.pop()
-        for name, attribute, inline, test in parsed[path][1]:
-            target = next((p for p in places(path, folders(path, kinds[path]), name, attribute, inline)
-                           if p in known), None)
-            if target:
-                edges.setdefault(target, []).append((path, test))
-                if target in parsed and target not in kinds:  # A file a #[path] names is read as a mod.rs.
-                    mod_rs = attribute or posixpath.basename(target) == "mod.rs"
-                    kinds[target] = "mod-rs" if mod_rs else "module"
-                    queue.append(target)
-    # The tests: each file marked so, then each whose declarations all need test or are in tests, from those up.
-    tests, waiting, unmet = [p for p in sorted(parsed) if parsed[p][0]], {}, {}
+            if part != "..":
+                where = down(where, part)
+            elif where[1]:
+                where = where[0], where[1] - 1
+            else:
+                where = (parent[where[0]], 0) if parent[where[0]] is not None else None
+        return where
+
+    def file_in(where, name):
+        return files.get((where[0], name)) if where is not None and not where[1] else None
+
+    def find(where, path):
+        """The tracked .rs file a path names from where."""
+        head, _, name = path.rpartition("/")
+        return file_in(walk(where, head), name) if name not in ("", ".", "..") else None
+
+    roots, code = cargo_roots(dict((p, texts.get(p, "")) for p in manifests), lambda p: (own[p], 0), find)
+    has_manifest = set(own[p] for p in manifests)
+    covered = [False] * len(parent)  # Per folder, whether a manifest is in it or above it.
+    for folder in range(len(parent)):
+        covered[folder] = folder in has_manifest or (parent[folder] is not None and covered[parent[folder]])
+    # Where Cargo looks for a crate's roots by default, beside its manifest: src/lib.rs, src/main.rs, src/bin/x.rs,
+    # src/bin/x/main.rs, build.rs, and x.rs or x/main.rs in the folders examples, benches and tests (tests' roots).
+    # A file in one of those places but a test's with no manifest beside or above it, where it can't be known, is
+    # taken for a crate's.
+    for path in known:
+        parts = path.split("/")
+        name, folders, tests = parts[-1], parts[:-1], False
+        if name == "build.rs":
+            up = 0
+        elif folders[-1:] == ["src"] and name in ("lib.rs", "main.rs"):
+            up = 1
+        elif folders[-2:] == ["src", "bin"]:
+            up = 2
+        elif folders[-1:] in (["examples"], ["benches"], ["tests"]):
+            up, tests = 1, folders[-1] == "tests"
+        elif name == "main.rs" and folders[-3:-1] == ["src", "bin"]:
+            up = 3
+        elif name == "main.rs" and folders[-2:-1] in (["examples"], ["benches"], ["tests"]):
+            up, tests = 2, folders[-2] == "tests"
+        else:
+            continue
+        top = own[path]
+        for _ in range(up):
+            top = parent[top]
+        if top in has_manifest or not (covered[top] or tests):
+            roots.add(path)
+            if not tests:
+                code.add(path)
+
+    def states(path, kind):
+        """Per scope of a file read as a mod.rs or a module file, its folder, the name its own folder adds, and
+        whether a declaration without #[path] may be read there."""
+        out = [((own[path], 0), posixpath.basename(path)[:-3] if kind == "module" else None, True)]
+        for up_scope, what, value in parsed[path][1][1:]:
+            where, relative, owned = out[up_scope]
+            if what == "module":
+                out.append((down(down(where, relative) if owned and relative else where, value), None, owned))
+            elif what == "path":
+                out.append((walk(where, value), None, True))
+            else:
+                out.append((where, None, False))
+        return out
+
+    def targets(state, declaration):
+        """The files a declaration brings in, read in a state, each with how rustc reads it and whether it's
+        brought in only for tests."""
+        name, path, scope, test, choices = declaration
+        where, relative, owned = state[scope]
+        found = [(find(where, choice), "mod-rs", test or terms[0]) for choice, terms in choices]
+        test = test or any(terms[1] for _, terms in choices)  # The default where no cfg_attr's path applies.
+        if path is not None:
+            found.append((find(where, path), "mod-rs", test))
+        elif owned:
+            base = down(where, relative) if relative else where
+            module = file_in(base, name + ".rs")
+            found.append((module, "module", test) if module else (file_in(down(base, name), "mod.rs"), "mod-rs", test))
+        return [f for f in found if f[0]]
+
+    # A crate root no manifest names: a file no declaration could bring in, read either way.
+    maybe = set()
+    for path in parsed:
+        for kind in ("mod-rs", "module"):
+            state = states(path, kind)
+            for declaration in parsed[path][2]:
+                maybe.update(t for t, _, _ in targets(state, declaration))
+    tested = roots - code  # The crates Cargo builds only as tests, whose code is a test's.
+    roots |= set(p for p in parsed if p not in maybe)
+    for path in parsed:  # What code outside tests include!s is code.
+        code.update(t for t in (find((own[path], 0), p) for p in parsed[path][3]) if t)
+    # Each file is read once per way it's brought in (a reading: the file, and "root", "mod-rs", "module", or None
+    # for a file no reading reaches, read as either), each declaration in it pointing to a reading of its file.
+    queue = sorted(((p, "root") for p in roots if p in parsed), reverse=True)
+    done, unknown, k = set(queue), sorted(parsed), 0
+    edges = {}  # Per reading brought in, per declaration (the reading it's in, its number), whether it needs test.
+    while queue or k < len(unknown):
+        if not queue:
+            path, k = unknown[k], k + 1
+            if any((path, kind) in done for kind in ("root", "mod-rs", "module")):
+                continue
+            done.add((path, None))
+            queue.append((path, None))
+        reading = queue.pop()
+        path, kind = reading
+        found_in = [states(path, "module"), states(path, "mod-rs")] if kind is None and \
+            posixpath.basename(path) != "mod.rs" else [states(path, "module" if kind == "module" else "mod-rs")]
+        for number, declaration in enumerate(parsed[path][2]):
+            for target, read_as, test in next((f for f in (targets(s, declaration) for s in found_in) if f), []):
+                declared = edges.setdefault((target, read_as), {})
+                declared[(reading, number)] = declared.get((reading, number), True) and test
+                if target in parsed and (target, read_as) not in done:
+                    done.add((target, read_as))
+                    queue.append((target, read_as))
+    # The readings only for tests: a test crate's root, and each whose declarations all need test or are in such
+    # readings, from those up (a marked file's declarations all need test). Another root's isn't.
+    marked = set(p for p in parsed if parsed[p][0])
+    waiting, unmet = {}, {}
     for target, declared in edges.items():
-        unmet[target] = sum(1 for _, test in declared if not test)
-        for source, test in declared:
+        unmet[target] = sum(1 for test in declared.values() if not test)
+        for (source, _), test in declared.items():
             if not test:
                 waiting.setdefault(source, []).append(target)
-    seen = set(tests)
-    tests += [t for t in sorted(edges) if not unmet[t] and t not in seen]
+    tests = sorted((r for r in done | set(edges) if not unmet.get(r, 1) or (r[1] == "root" and r[0] in tested)),
+                   key=str)
     seen, k = set(tests), 0
     while k < len(tests):
         for target in waiting.get(tests[k], ()):
@@ -564,21 +748,46 @@ def rust_test_modules(tracked, read):
                 seen.add(target)
                 tests.append(target)
         k += 1
-    # Their own files, carried down from the files that aren't tests to the tests their declarations bring in.
-    owners = dict((t, set(s for s, _ in edges.get(t, ()) if s not in seen)) for t in tests)
-    below = {}  # Per test, the tests its declarations bring in.
-    for target in tests:
-        for source, _ in edges.get(target, ()):
-            if source in seen:
-                below.setdefault(source, []).append(target)
-    queue = list(tests)
-    while queue:
-        source = queue.pop()
-        for target in below.get(source, ()):
-            if not owners[source] <= owners[target]:
-                owners[target] |= owners[source]
-                queue.append(target)
-    return dict((t, frozenset(owners[t])) for t in tests)
+    # A file is a test when it's marked, or when every reading of it is a test's, and it's no crate's or included.
+    readings = {}
+    for reading in done | set(edges):
+        readings.setdefault(reading[0], []).append(reading)
+    found = {}
+    for path in sorted(readings):
+        if path in marked or (path not in code and all(r in seen for r in readings[path])):
+            found[path] = ("marked" if path in marked else "crate" if path in tested else "declared",
+                           frozenset(source[0] for r in readings[path] for source, _ in edges.get(r, ())))
+    return found
+
+
+def and_list(names):
+    """Names joined by commas and an and."""
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+
+
+def rust_test_reason(path, modules):
+    """Why one of Rust's test modules (rust_test_modules) is one, said of that file."""
+    how, declared = modules[path]
+    return "Rust compiled only for tests, by the #![cfg(test)] at its top" if how == "marked" else \
+        "a Rust crate Cargo builds only as a test" if how == "crate" else \
+        "one of Rust's test modules, declared only for tests, in " + and_list(sorted(declared))
+
+
+def rust_tests_said(found, modules, show):
+    """For the Test files line, the files found that are tests by Rust's declarations and not by their names, every
+    one, and why: by their declarations, by their own #![cfg(test)], or as Cargo's test crates; show follows the
+    first."""
+    declared, marked, crates = (sorted(p for p in found if modules[p][0] == how)
+                                for how in ("declared", "marked", "crate"))
+    parts = [("1 of them a Rust test module in a file of its own, known by its declaration, not its name: "
+              if len(declared) == 1 else "%d of them Rust test modules in files of their own, known by their "
+              "declarations, not their names: " % len(declared)) + and_list(declared) + show] if declared else []
+    parts += [("1 of them Rust compiled only for tests by the #![cfg(test)] at its top: " if len(marked) == 1 else
+               "%d of them Rust compiled only for tests, each by the #![cfg(test)] at its top: " % len(marked)) +
+              and_list(marked)] if marked else []
+    parts += [("1 of them a Rust crate Cargo builds only as a test: " if len(crates) == 1 else "%d of them Rust "
+               "crates Cargo builds only as tests: " % len(crates)) + and_list(crates)] if crates else []
+    return "".join("; " + part for part in parts)
 
 
 def tracked_files(repo, rev=None):

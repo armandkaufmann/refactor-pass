@@ -25,8 +25,7 @@ of recent commits:
             differ from what the window's own commits added and removed
 
 Files are listed by commits times size, so the top ones are both busy and
-big. A small file changed often, like a config, and a big one rarely
-changed both come lower. Under them, the newest work they leave out: files
+big. Under them, the newest work they leave out: files
 past --top that 2 or more of the commits of the window's last 60 days (its
 newer half at most) changed, 10 at most; renames, commits of more than
 --max-files files, documentation, tests, CI, build and dependency files and
@@ -38,11 +37,14 @@ author dates, which a rebase or a cherry-pick keeps. This shows these:
 Test files are set aside, so a spec beside its source doesn't top the list:
 those named as the common frameworks name them (Board.spec.ts, test_x.py,
 x_test.go, XTest.php...), anything in a folder named test, tests,
-__tests__, spec or the like, and Rust's test modules by their declarations
-(#[cfg(test)] mod x;). --test adds a pattern, --not-test keeps a file that
-only looks like a test, and --keep-tests counts them all like the rest. The
-output names any set aside in doubt: a name such as ABTest.php in no folder
-of tests, or a spec folder in which no file is named like a test.
+__tests__, spec or the like, and Rust files compiled only for tests: by
+every mod declaration that brings one in (#[cfg(test)] mod x;, or any in
+such a file) or their own #![cfg(test)], unless Cargo builds one as a
+crate; the output names them. --test adds a pattern, --not-test counts a
+file set aside that isn't a test, and --keep-tests counts them all like the
+rest. The output names any set aside in doubt: a name such as
+ABTest.php in no folder of tests, or a spec folder in which no file is
+named like a test or is a Rust test module.
 
 Then the files that keep changing in the same commits, with two measures:
 of the quieter file's commits, the share that changed both (how likely the
@@ -60,8 +62,8 @@ says how many; in a repo that squash-merges, that can be most of them.
 Last, the tests that change together with several production files besides
 their own: the file of the same name less the test's marker or, when there
 is none, the controller, handler or command of that name, as a feature test
-names it (ShowDashboardTest.php and ShowDashboardController.php). Each is a
-lead, not a verdict: a test that reaches into those files' private members
+names it (ShowDashboardTest.php and ShowDashboardController.php); a Rust
+test module's, those declaring it. Each is a lead, not a verdict: a test that reaches into those files' private members
 or internal paths is tied to their internals, while a broad test that
 follows features through them, or follows files that already change
 together, isn't.
@@ -104,8 +106,8 @@ where they don't (references/smells.md, Counting fixes, has the account).
 
 --show FILE prints a file's commits in the window instead, newest first: hash,
 date, half, subject and how it reads as a fix; --messages adds what each
-changed and its message, without who signed it, cut at 12 lines, and any line
-it prints is cut at 200 characters. The file is one git tracks or the window
+changed and its message, without who signed it, cut at 12 lines, any line at
+200 characters. The file is one git tracks or the window
 changed (one deleted, or a name before a rename, meaning the file today); any
 other is an error, as a scope is.
 
@@ -151,8 +153,6 @@ matches no tracked file is an error. Reads git and the checklists; writes nothin
 
 Examples:
   heatmap.py src tests
-  heatmap.py -n 300 --exclude-commits 9e1d16e,b7fc306 src lib
-  heatmap.py --since v2.0.0 app
   heatmap.py --page .refactor-pass/2026-11-10.html src
   heatmap.py --show src/app/main.py
   heatmap.py --checklists
@@ -1447,7 +1447,7 @@ def main():
     parser.add_argument("--exclude-commits", default="", metavar="SHAS",
                         help="comma-separated commits to leave out, such as a mass reformat or a vendored "
                              "import, which would make every file they touched look hot: each a hash (7 or more "
-                             "of its characters, in any case), a tag or a branch. One that names no commit is an "
+                             "characters, any case), a tag or a branch. One that names no commit is an "
                              "error, and one outside the window is named")
     parser.add_argument("--ignore", action="append", default=[], metavar="GLOB",
                         help="more file globs to leave out (added to the defaults: %s)"
@@ -1457,8 +1457,8 @@ def main():
                              "(added to the defaults: %s, and folders named %s)"
                              % (", ".join(scoping.TEST_NAMES), ", ".join(scoping.TEST_FOLDERS)))
     parser.add_argument("--not-test", action="append", default=[], metavar="GLOB",
-                        help="globs naming files that only look like tests, matched as --test's are, such as "
-                             "'app/ABTest.php' or 'docs/spec/*': they count like the rest")
+                        help="globs naming files set aside as tests that aren't, matched as --test's are, such "
+                             "as 'app/ABTest.php' or 'docs/spec/*': they count like the rest")
     parser.add_argument("--keep-tests", action="store_true",
                         help="count test files like the rest, in the table and the pairs")
     parser.add_argument("--top", type=scoping.count(0), default=25,
@@ -1951,10 +1951,8 @@ def main():
                     not scoping.is_test(p, args.test, args.not_test)]
         print("Test files: %s%s." % ("%d changed in the window, set aside from the table and the pairs" % len(tests)
                                      if tests else "none in the scope changed in the window",
-                                     (", 1 of them a Rust test module in a file of its own, known by its "
-                                      "declaration" if len(declared) == 1 else ", %d of them Rust test modules in "
-                                      "files of their own, known by their declarations" % len(declared))
-                                     if declared else ""))
+                                     scoping.rust_tests_said(declared, modules() if declared else {},
+                                                             " (measure.py --show FILE names what declares each)")))
     if doubts:
         print("Set aside as tests, but maybe not: %s%s. If one isn't a test, --not-test GLOB counts it." % (
             "; ".join("%s (%s)" % d for d in doubts[:5]), "; and %d more" % (len(doubts) - 5)

@@ -101,10 +101,11 @@ tracks. In a glob, * matches across folders too, so 'app/*.py' takes
 app/sub/deep.py; and **/ matches any number of folders, none included, so
 'app/**/*.py' takes app/main.py too. Use the same scope as the heatmap.
 Test files are set aside as the heatmap sets them aside, by name or folder,
-or for Rust's test modules in files of their own by the declarations that
-bring them in (#[cfg(test)] mod tests;), so they stay out of the
-percentiles, and the output names any set aside in doubt; --test and
---not-test correct it. So are the tests inside a file, Rust's items
+and Rust files compiled only for tests by every mod declaration that brings
+one in (#[cfg(test)] mod tests;, or any in such a file) or by their own
+#![cfg(test)], unless Cargo builds one as a crate of its own, so they stay
+out of the percentiles; the output names those, and any set aside in doubt;
+--test and --not-test correct it. So are the tests inside a file, Rust's items
 compiled only for tests (#[cfg(test)] on a mod tests {...}, a fn, an
 impl...), which the heatmap counts in the file: the output says how many
 lines and in which files, and --show which lines. --keep-tests measures
@@ -1865,11 +1866,6 @@ def working_texts(repo, paths):
     return texts
 
 
-def and_list(names):
-    """Names joined by commas and an and."""
-    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
-
-
 def a_few(paths):
     """The first five paths, and how many more."""
     names = paths[:5] + (["%d more" % (len(paths) - 5)] if len(paths) > 5 else [])
@@ -1891,8 +1887,8 @@ def main():
                              "(added to the defaults: %s, and folders named %s)"
                              % (", ".join(scoping.TEST_NAMES), ", ".join(scoping.TEST_FOLDERS)))
     parser.add_argument("--not-test", action="append", default=[], metavar="GLOB",
-                        help="globs naming files that only look like tests, matched as --test's are, such as "
-                             "'app/ABTest.php' or 'docs/spec/*': they're measured like the rest")
+                        help="globs naming files set aside as tests that aren't, matched as --test's are, such "
+                             "as 'app/ABTest.php' or 'docs/spec/*': they're measured like the rest")
     parser.add_argument("--keep-tests", action="store_true",
                         help="measure test files, and the tests inside files, like the rest")
     parser.add_argument("--top", type=scoping.count(0), default=25, help="files to print (default 25)")
@@ -1990,12 +1986,9 @@ def main():
           % (REFERENCE["file"][0], REFERENCE["function"][0]))
     if not args.keep_tests:
         print("Test files: %s%s." % ("%d set aside from the percentiles and the table" % len(tests)
-                                     if tests else "none in the scope", (
-                                         ", 1 of them a Rust test module in a file of its own, known by its "
-                                         "declaration, not its name: " if len(declared) == 1 else
-                                         ", %d of them Rust test modules in files of their own, known by their "
-                                         "declarations, not their names: " % len(declared)) + a_few(declared)
-                                     if declared else ""))
+                                     if tests else "none in the scope",
+                                     scoping.rust_tests_said(declared, modules,
+                                                             " (--show FILE names what declares each)")))
     # The files in the scope with tests inside them, those with the most lines of them first.
     inside = sorted(((sum(part[2] for part in parts), path) for path, parts in within.items() if path in in_paths),
                     key=lambda kv: (-kv[0], kv[1]))
@@ -2072,9 +2065,7 @@ def main():
                 if language in cuts else "no %s file in the scope, so no percentiles to compare with" % language))
             if path in modules and not scoping.is_test(path, args.test, args.not_test) and \
                     scoping.is_test(path, args.test, args.not_test, modules):
-                print("A test file: %s; measured whole here." % (
-                    "one of Rust's test modules, compiled only for the tests of %s" % and_list(sorted(modules[path]))
-                    if modules[path] else "Rust compiled only for tests, by the #![cfg(test)] at its top"))
+                print("A test file: %s; measured whole here." % scoping.rust_test_reason(path, modules))
             parts = within.get(path, [])
             if parts:  # What its lines leave out, where, so the lines listed stay the file's own.
                 spans = ["%d-%d" % part[:2] for part in parts]
