@@ -239,15 +239,19 @@ class Generics(unittest.TestCase):
 # and at SCALE times it, and read at both, three times over: at the larger, its fastest reading must take under
 # RATIO times as long as its fastest at the smaller, where a time that grows with the size takes about SCALE times
 # as long and one that grows with its square about SCALE * SCALE times, however fast the machine; and under LIMIT
-# seconds. A machine slow for a moment, or slower per character on a large text, slows the larger readings by up to
-# three times, so a case that seems to grow too fast is timed once more. A case can name the step of measure.py it
-# times, given the text's lines, where the rest of the reading would hide it. Unclosed definitions, nested ones
-# each indented one more (sized by their lines' indents), and #if blocks never closed, each branch of which opens a
-# function's body. Rust's tests inside a file, each set aside, as measure.py's run asks: thousands of test modules,
-# a run of thousands of cfgs on one item or on none, of attributes before a module's inner cfgs, of statics with no
-# ;; thousands of test items on one line, or of inner cfgs, #![cfg(test)], in one module, in none, in functions'
-# bodies or each first in a module of its own; and a # and thousands of spaces on a line that says cfg. A header's
-# line of thousands of Objective-C messages, [[x y] z], none a C23 attribute, or of thousands of [[ before one ;.
+# seconds. The time is the processor's, spent on the reading alone, which a busy machine doesn't stretch, though it
+# stretches a long reading's time on the clock more than a short one's. On Windows, whose processor time advances in
+# ticks of about 15.6 ms, too coarse for readings of 7 to 80 ms, it's the clock's, so a busy Windows machine can
+# still make a case seem to grow too fast. A case that seems to is timed once more, as a reading slower per
+# character on a large text can also make it seem to; and one whose readings take over TIMEOUT seconds on the clock
+# fails. A case can name the step of measure.py it times, given the text's lines, where the rest of the reading
+# would hide it. Unclosed definitions, nested ones each indented one more (sized by their lines' indents), and #if
+# blocks never closed, each branch of which opens a function's body. Rust's tests inside a file, each set aside, as
+# measure.py's run asks: thousands of test modules, a run of thousands of cfgs on one item or on none, of attributes
+# before a module's inner cfgs, of statics with no ;; thousands of test items on one line, or of inner cfgs,
+# #![cfg(test)], in one module, in none, in functions' bodies or each first in a module of its own; and a # and
+# thousands of spaces on a line that says cfg. A header's line of thousands of Objective-C messages, [[x y] z], none
+# a C23 attribute, or of thousands of [[ before one ;.
 GROWING = {
     "unclosed.py": (1100, lambda n: "def f(\n" * n),
     "unclosed.gd": (1100, lambda n: "func a(\n" * n),
@@ -299,12 +303,13 @@ name = sys.argv[1]
 n, make = GROWING[name][:2]
 step = getattr(measure, GROWING[name][2]) if len(GROWING[name]) > 2 else None
 texts = make(n), make(SCALE * n)
+clock = time.perf_counter if sys.platform == "win32" else time.process_time
 def timed(text):
     gc.collect()
     gc.disable()
-    start = time.perf_counter()
+    start = clock()
     step(text.split("\\n")) if step else measure.functions(name, text, [])
-    took = time.perf_counter() - start
+    took = clock() - start
     gc.enable()
     if took > LIMIT:  # Too slow already.
         print("%.3f %.3f" % (took, took))
