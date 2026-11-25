@@ -911,6 +911,7 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
         began_inside.append(state is not None or bool(templates) or raw is not None)
         code = []
         i = 0
+        close = None  # In a block comment, where the next */ on the line is (-1 for none), until it's passed.
         while i < len(line):
             plain = plain_text.match(line, i) if state is None and raw is None and not templates else None
             if plain:  # Characters that start nothing, copied at once.
@@ -938,7 +939,9 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
                     code.append("s")
                     i += 1
             elif state == "*/":
-                end = line.find("*/", i)
+                if close is None or 0 <= close < i:
+                    close = line.find("*/", i)
+                end = close
                 # A comment inside it, which closes first; one that starts before the */ is read, as a compiler
                 # reads from the left, so /*/ opens one.
                 inner = line.find("/*", i, end + 1 if end >= 0 else len(line)) if nests else -1
