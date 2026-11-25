@@ -105,6 +105,19 @@ class Samples(unittest.TestCase):
                 _, functions, language = measure.functions(name, text)
                 self.assertEqual((language, len(functions)), want)
 
+    def test_an_operator_is_the_whole_word(self):
+        # operator, then (), a symbol, or a space and a type's name; not a C function whose name starts with it.
+        measure = support.load("measure")
+        for text in ("operator bool(", "operator Color4()", "operator==(", "operator ()(", "operator new(",
+                     "operator new[](", 'operator""_km(', "operator const char*(", "operator std::string("):
+            with self.subTest(text=text):
+                self.assertTrue(measure.CPP_IN_CODE.search(text))
+        for text in ("operator_rank(", "operator_kind (", "operators(", "my_operator("):
+            with self.subTest(text=text):
+                self.assertFalse(measure.CPP_IN_CODE.search(text))
+        text = "int operator_rank(int op);\nstatic inline int operator_kind(int op)\n{\n    return op;\n}\n"
+        self.assertEqual(measure.functions("rank.h", text)[2], "C")
+
     def test_language_of_each_sample(self):
         measure = support.load("measure")
         names = {".vue": "Vue", ".svelte": "Vue", ".tsx": "TypeScript", ".mjs": "JavaScript", ".jsx": "JavaScript"}
