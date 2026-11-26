@@ -544,10 +544,12 @@ class Corners(unittest.TestCase):
             with self.subTest(case=name):
                 self.assertEqual(tests_in({"src/lib.rs": "mod mock;\n", "src/mock.rs": text}), ["src/mock.rs"])
         for name, text in [("raw path", "#[cfg(test)]\n#[path = r\"probe.rs\"]\nmod fixture;\n"),
+                           ("raw path with #s", "#[cfg(test)]\n#[path = r#\"probe.rs\"#]\nmod fixture;\n"),
                            ("space before ;", "#[cfg(test)]\nmod probe ;\n"), ("# [", "# [cfg(test)]\nmod probe;\n"),
                            ("any of alls", "#[cfg(any(all(test, unix), all(test, windows)))]\nmod probe;\n"),
                            ("a stray }", "}\n#[cfg(test)]\nmod probe;\n"),
-                           ("a byte's brace", "mod outer {\n    const B: u8 = b'}';\n}\n#[cfg(test)]\nmod probe;\n")]:
+                           ("a brace in a character", "mod outer {\n    const C: char = '}';\n    const B: u8 = b'}';\n"
+                                                       "}\n#[cfg(test)]\nmod probe;\n")]:
             with self.subTest(case=name):
                 self.assertIn("src/probe.rs", tests_in({"src/lib.rs": text, "src/probe.rs": ""}))
         found = tests_in({"src/lib.rs": "#[cfg(test)]\n#[cfg_attr(windows, path = \"win.rs\")]\nmod probe;\n",
@@ -556,7 +558,7 @@ class Corners(unittest.TestCase):
 
     def test_what_doesnt(self):
         for name, text in [("not Rust", "#[cfg(test)]\n#[path = \"gen.py\"]\nmod gen;\n"),
-                           ("raw bytes", "const B: &[u8] = br#\"x\" #[cfg(test)] mod probe; \"#;\nmod probe;\n"),
+                           ("raw bytes", "const B: &[u8] = br#\"x\" #[cfg(test)] mod probe; \"#;\n"),
                            ("a comment never closed", "/* open\n#[cfg(test)]\nmod probe;\n"),
                            ("an attribute before", "#[allow(x)]\n#![cfg(test)]\nmod probe;\n"),
                            ("a module never closed", "mod probe;\n#[cfg(test)]\nmod t {\n"),
@@ -572,6 +574,144 @@ class Corners(unittest.TestCase):
                 files = {"src/lib.rs": "#[cfg(test)]\nmod t1;\nmod util;\n", "src/t1.rs": declared,
                          "src/util.rs": "#[path = \"shared.rs\"]\nmod shared;\n", "src/shared.rs": ""}
                 self.assertEqual(tests_in(files), ["src/t1.rs"])
+
+
+MANIFEST = "[package]\nname = \"k\"\nversion = \"0.1.0\"\n"
+
+
+class EachShape(unittest.TestCase):
+    """One shape of each way of reading no other test pins, each answer the one rustc's dep-info (with and without
+    --test) or cargo metadata gives, or where neither compiles the file, the rule's own."""
+
+    def check(self, cases):
+        for name, files, expected in cases:
+            with self.subTest(case=name):
+                self.assertEqual(modules(files), expected)
+
+    def test_cfgs_and_attributes(self):
+        self.check([
+            ("a cfg key that isn't test", {"src/lib.rs": "#[cfg(testing)]\nmod t;\n", "src/t.rs": ""}, {}),
+            ("a test word in a string", {"src/lib.rs": "#[cfg(all(feature = \"x test\"))]\nmod a;\n",
+                                         "src/a.rs": ""}, {}),
+            ("a spaced cfg_attr", {"src/lib.rs": "#[ cfg_attr(test, path = \"fake.rs\") ]\nmod real;\n",
+                                   "src/real.rs": "", "src/fake.rs": ""}, {"src/fake.rs": ["src/lib.rs"]}),
+            ("a cfg_attr's file read as a mod.rs", {"src/lib.rs": "#[cfg_attr(test, path = \"fake.rs\")]\nmod real;\n",
+                                                    "src/real.rs": "", "src/fake.rs": "#[cfg(test)]\nmod helper;\n",
+                                                    "src/helper.rs": "", "src/fake/helper.rs": ""},
+             {"src/fake.rs": ["src/lib.rs"], "src/helper.rs": ["src/fake.rs"]}),
+            ("a cfg_attr's path before a #[path]",
+             {"src/lib.rs": "#[cfg(test)]\n#[cfg_attr(windows, path = \"w.rs\")]\n#[path = \"p.rs\"]\nmod m;\n",
+              "src/m.rs": "", "src/w.rs": "", "src/p.rs": ""},
+             {"src/p.rs": ["src/lib.rs"], "src/w.rs": ["src/lib.rs"]}),
+            ("two paths in one cfg_attr",
+             {"src/lib.rs": "#[cfg_attr(test, path = \"a.rs\", path = \"b.rs\")]\nmod m;\n", "src/m.rs": "",
+              "src/a.rs": "", "src/b.rs": ""}, {"src/a.rs": ["src/lib.rs"]}),
+            ("a cfg key named path", {"src/lib.rs": "#[cfg_attr(all(unix, path = \"q.rs\"), path = \"y.rs\")]\nmod m;\n"
+                                                    "#[cfg_attr(path = \"q.rs\", path = \"y.rs\")]\nmod n;\n"
+                                                    "#[cfg(test)]\n#[path = \"q.rs\"]\nmod q;\n",
+                                      "src/m.rs": "", "src/n.rs": "", "src/q.rs": "", "src/y.rs": ""},
+             {"src/q.rs": ["src/lib.rs"]}),
+        ])
+
+    def test_what_the_search_and_macros_find(self):
+        self.check([
+            ("a spaced include!, alone in its file",
+             {"src/lib.rs": "mod gen;\n#[cfg(test)]\nmod data;\n", "src/data.rs": "",
+              "src/gen.rs": "pub mod inner {\n    include ! (\"data.rs\");\n}\n"}, {}),
+            ("a spaced macro call", {"src/lib.rs": "macro_rules! with_feature { ($($i:item)*) => { $($i)* } }\n"
+                                                   "with_feature ! {\n    mod plainly;\n}\n#[cfg(test)]\n"
+                                                   "#[path = \"plainly.rs\"]\nmod again;\n", "src/plainly.rs": ""}, {}),
+            ("include! in test code",
+             {"src/lib.rs": "#[cfg(test)]\ninclude!(\"probe.rs\");\n#[cfg(test)]\nmod probe;\n", "src/probe.rs": ""},
+             {"src/probe.rs": ["src/lib.rs"]}),
+            ("include_str!",
+             {"src/lib.rs": "pub const SRC: &str = include_str!(\"probe.rs\");\n#[cfg(test)]\nmod probe;\n",
+              "src/probe.rs": ""}, {"src/probe.rs": ["src/lib.rs"]}),
+            ("a macro of another name", {"src/lib.rs": "macro_rules! my_include { ($p:literal) => {}; }\n"
+                                                       "my_include!(\"probe.rs\");\n#[cfg(test)]\nmod probe;\n",
+                                         "src/probe.rs": ""}, {"src/probe.rs": ["src/lib.rs"]}),
+            ("a manifest's comment", {"Cargo.toml": MANIFEST + "# The tests: see mod checks;\n", "src/lib.rs": "",
+                                      "checks.rs": "",
+                                      "src/main.rs": "#[cfg(test)]\n#[path = \"../checks.rs\"]\nmod checks;\n"},
+             {"checks.rs": ["src/main.rs"]}),
+        ])
+
+    def test_manifests(self):
+        self.check([
+            ("an indented [[test]]", {"Cargo.toml": "[package]\nname = \"k\"\n\n  [[test]]\n  name = \"it\"\n"
+                                                    "  path = \"checks/it.rs\"\n", "src/lib.rs": "",
+                                      "checks/it.rs": "mod part;\n", "checks/part.rs": ""},
+             {"checks/it.rs": "crate", "checks/part.rs": ["checks/it.rs"]}),
+            ("a spaced [ package ]", {"Cargo.toml": "[ package ]\nname = \"k\"\nbuild = \"gen.rs\"\n", "gen.rs": "",
+                                      "src/lib.rs": "#[cfg(test)]\n#[path = \"../gen.rs\"]\nmod g;\n"}, {}),
+            ("an inline test target", {"Cargo.toml": "test = [{ name = \"it\", path = \"src/it.rs\" }]\n[package]\n"
+                                                     "name = \"k\"\n", "src/lib.rs": "#[cfg(test)]\nmod it;\n",
+                                       "src/it.rs": ""}, {"src/it.rs": "crate"}),
+            ("a bench, by its path", {"Cargo.toml": MANIFEST + "[[bench]]\nname = \"b\"\npath = \"src/b.rs\"\n",
+                                      "src/lib.rs": "#[cfg(test)]\nmod b;\n", "src/b.rs": ""}, {}),
+            ("a key ending in path", {"Cargo.toml": MANIFEST + "[package.metadata.x]\nsrcpath = \"src/t.rs\"\n",
+                                      "src/lib.rs": "#[cfg(test)]\nmod t;\n", "src/t.rs": ""},
+             {"src/t.rs": ["src/lib.rs"]}),
+        ])
+
+    def test_default_places(self):
+        self.check([
+            ("src/lib.rs", {"Cargo.toml": MANIFEST, "src/main.rs": "#[cfg(test)]\n#[path = \"lib.rs\"]\nmod l;\n",
+                            "src/lib.rs": ""}, {}),
+            ("benches/", {"Cargo.toml": MANIFEST, "src/lib.rs": "#[cfg(test)]\n#[path = \"../benches/b.rs\"]\nmod b;\n",
+                          "benches/b.rs": ""}, {}),
+            ("src/bin/x/main.rs", {"Cargo.toml": MANIFEST, "src/bin/x/main.rs": "",
+                                   "src/lib.rs": "#[cfg(test)]\n#[path = \"bin/x/main.rs\"]\nmod x;\n"}, {}),
+            ("examples/y/main.rs", {"Cargo.toml": MANIFEST, "examples/y/main.rs": "",
+                                    "src/lib.rs": "#[cfg(test)]\n#[path = \"../examples/y/main.rs\"]\nmod y;\n"}, {}),
+            ("tests/it/main.rs", {"Cargo.toml": MANIFEST, "src/lib.rs": "", "tests/it/main.rs": "mod helper;\n",
+                                  "tests/it/helper.rs": ""},
+             {"tests/it/main.rs": "crate", "tests/it/helper.rs": ["tests/it/main.rs"]}),
+            ("a bin/ that isn't src/bin/", {"Cargo.toml": MANIFEST, "tools/bin/t.rs": "",
+                                            "src/lib.rs": "#[cfg(test)]\n#[path = \"../tools/bin/t.rs\"]\nmod t;\n"},
+             {"tools/bin/t.rs": ["src/lib.rs"]}),
+        ])
+
+    def test_paths(self):
+        self.check([
+            ("./", {"src/lib.rs": "#[cfg(test)]\n#[path = \"./t.rs\"]\nmod t;\n", "src/t.rs": ""},
+             {"src/t.rs": ["src/lib.rs"]}),
+            ("through folders holding no Rust", {"src/lib.rs": "#[cfg(test)]\n#[path = \"a/b/../../t.rs\"]\nmod t;\n",
+                                                 "src/t.rs": "", "src/a/b/keep.txt": ""}, {"src/t.rs": ["src/lib.rs"]}),
+            ("above the repo", {"src/lib.rs": "#[cfg(test)]\n#[path = \"../../t.rs\"]\nmod t;\n", "t.rs": ""}, {}),
+            ("through a folder git doesn't track", {"src/lib.rs": "#[cfg(test)]\n#[path = \"nope/sub/x.rs\"]\nmod x;\n",
+                                                    "src/sub/x.rs": ""}, {}),
+            ("an inline #[path] in a function", {"src/lib.rs": "mod a;\n", "src/p/x.rs": "",
+                                                 "src/a.rs": "pub fn f() {\n    #[path = \"p\"]\n    mod m {\n        "
+                                                             "#[cfg(test)]\n        mod x;\n    }\n}\n"},
+             {"src/p/x.rs": ["src/a.rs"]}),
+        ])
+
+    def test_readings(self):
+        self.check([
+            ("a test crate's file the library brings in",
+             {"Cargo.toml": MANIFEST, "tests/common.rs": "",
+              "src/lib.rs": "#[path = \"../tests/common.rs\"]\nmod common;\n"},
+             {}),
+            ("an unreached file marked #![cfg(test)]", {"src/lib.rs": "mod disk;\n", "src/disk.rs": "mod x;\n",
+                                                        "src/disk/x.rs": "", "src/x.rs": "#![cfg(test)]\nfn f() {}\n"},
+             {"src/x.rs": "marked"}),
+            ("an unreached file's module, beside it",
+             {"src/lib.rs": "mod disk;\n", "src/disk.rs": "mod x;\n", "src/disk/x.rs": "",
+              "src/x.rs": "#[cfg(test)]\nmod y;\n", "src/y.rs": ""},
+             {"src/y.rs": ["src/x.rs"]}),
+            ("a test crate marked #![cfg(test)]",
+             {"Cargo.toml": MANIFEST, "src/lib.rs": "", "tests/it.rs": "#![cfg(test)]\nfn t() {}\n"},
+             {"tests/it.rs": "marked"}),
+        ])
+
+    def test_the_lines_for_several(self):
+        scoping = support.load("scoping")
+        found = {"a.rs": ("marked", frozenset(), None), "b.rs": ("marked", frozenset(), None),
+                 "it.rs": ("crate", frozenset(), "Cargo.toml")}
+        self.assertEqual(scoping.rust_tests_said(sorted(found), found, "THERE"),
+                         "; 2 of them Rust compiled only for tests, each by the #![cfg(test)] at its top: a.rs and "
+                         "b.rs; 1 of them a Rust crate Cargo builds only as a test: it.rs. THERE")
 
 
 class ScriptsOnTheEdges(unittest.TestCase):
