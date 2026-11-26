@@ -552,14 +552,15 @@ class TwoReadings(unittest.TestCase):
         for args in ((), ("--list-tests",)):
             with self.subTest(args=args):
                 self.assertIn("Rust's test modules are read here from the working tree, which differs from HEAD in 1 "
-                              ".rs or Cargo.toml file; the heatmap reads HEAD, so the two may set aside different "
-                              "files.",
+                              ".rs, Cargo.toml or symlink file; the heatmap reads HEAD, so the two may set aside "
+                              "different files.",
                               support.run("measure.py", "-C", repo.path, *args).out)
         self.assertIn("Rust's test modules are read here at HEAD, and the working tree, which measure.py reads, "
-                      "differs from it in 1 .rs or Cargo.toml file, so the two may set aside different files.",
+                      "differs from it in 1 .rs, Cargo.toml or symlink file, so the two may set aside different files.",
                       support.run("heatmap.py", "-C", repo.path).out)
         repo.write("x/Cargo.toml", "[package]\nname = \"x\"\n")
-        self.assertIn("differs from HEAD in 2 .rs or Cargo.toml files;", support.run("measure.py", "-C", repo.path).out)
+        self.assertIn("differs from HEAD in 2 .rs, Cargo.toml or symlink files;",
+                      support.run("measure.py", "-C", repo.path).out)
         support.git(repo.path, "checkout", "--", "x/Cargo.toml")
         # A rename changes two paths, whatever git's diff.renames.
         support.git(repo.path, "checkout", "--", "src/lib.rs")

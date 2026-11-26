@@ -390,6 +390,21 @@ GROWING = {
           "macro_rules! m { () => { mod q; } }\n#[path = \"../../p1/src/x.rs\"]\nmod x;\n") for k in range(n)] +
         [("p%d/src/x.rs" % k, "#[path = \"../../p%d/src/x.rs\"]\nmod x;\n" % (k + 1)) for k in range(1, n - 1)] +
         [("p%d/src/t.rs" % k, "") for k in range(1, n)]), "modules"),
+    # Round 14's: macro words in comments nested thousands deep, each passed to the end of its own; in a line comment,
+    # each passed to the line's end; doc lines that name a macro, the rest of the text copied at each; links to a
+    # folder thousands deep, the prefixes of each one's way joined again; and a macro whose call gives its #[path],
+    # the strings of its file each ".", each taking all packages again.
+    "macro-nested-comments": (8000, lambda n: {"src/lib.rs": "mod a;\n/* " + "macro /* " * n + " */" * (n + 1) + "\n"},
+                              "modules"),
+    "macro-line-comment": (10000, lambda n: {"src/lib.rs": "mod a;\n// " + "macro // " * n + "\n"}, "modules"),
+    "macro-prose": (10000, lambda n: {"src/lib.rs": "mod a;\n" + "/// a macro that the docs name\n" * n}, "modules"),
+    "deep-links": (400, lambda n: ({"src/lib.rs": "mod a;\n", "src/a.rs": "", "src/" + "d/" * n + "f.rs": ""},
+                                   dict(("links/l%d" % k, "../src/" + "d/" * n) for k in range(1500))), "modules"),
+    "dot-paths": (1000, lambda n: dict([("p%d/Cargo.toml" % k, "[package]\n") for k in range(n)] +
+        [("p%d/src/lib.rs" % k, "#[cfg(test)]\nmod tests;\n") for k in range(n)] + [("p%d/src/tests.rs" % k, "")
+                                                                                   for k in range(n)] +
+        [("m.rs", "macro_rules! m { ($p:literal) => { #[path = $p] mod x; } }\nm!(\"x.rs\");\n"
+                  "const S: [&str; %d] = [%s];\n" % (n, ", ".join(['"."'] * n)))]), "modules"),
     # Thousands of macro_rules! opened, each inside the last: each looked for the scope it's in below all the others.
     "nested-macro-rules": (2000, lambda n: {"src/lib.rs": "mod zz;\n" + "macro_rules! m {" * n}, "modules"),
     # Files no reading reaches, each read in a round of its own, as s_k reaches r_k as a mod.rs, whose module reading
@@ -428,9 +443,12 @@ from test_robustness import GROWING, LIMIT, SCALE
 name = sys.argv[1]
 n, make = GROWING[name][:2]
 step = GROWING[name][2] if len(GROWING[name]) > 2 else None
-if step == "modules":  # Of {path: text}, as if git tracked them all.
+if step == "modules":  # Of {path: text}, as if git tracked them all, or that and links.
     import scoping
-    read = lambda files: scoping.rust_test_modules(sorted(files), lambda paths: dict((p, files[p]) for p in paths))
+    read = lambda made: scoping.rust_test_modules(
+        sorted(made[0] if isinstance(made, tuple) else made),
+        lambda paths: dict((p, (made[0] if isinstance(made, tuple) else made)[p]) for p in paths),
+        made[1] if isinstance(made, tuple) else None)
 elif step:
     read = (lambda found: lambda text: found(text.split("\\n")))(getattr(measure, step))
 else:

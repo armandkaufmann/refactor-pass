@@ -83,6 +83,15 @@ class ScriptsOnTheEdges(unittest.TestCase):
         repo.done()
         result = support.run("heatmap.py", "-C", repo.path)
         self.assertEqual(rows(result.out), {"src/lib.rs"})
+        # Both scripts read such a file: src/old\ncopy.rs declares src/t.rs plainly, so it's code in both.
+        repo = support.Repo("newline-declarer")
+        files = {"src/lib.rs": "#[cfg(test)]\nmod t;\n", "src/t.rs": "fn f() {\n}\n", "src/old\ncopy.rs": "mod t;\n"}
+        repo.commit("2026-01-05", "Start", files)
+        repo.commit("2026-01-06", "Change", {"src/t.rs": "fn f() {\n}\n\n", "src/lib.rs": files["src/lib.rs"] + "\n"})
+        repo.done()
+        for script in ("measure.py", "heatmap.py"):
+            with self.subTest(script=script):
+                self.assertIn("src/t.rs", rows(support.run(script, "-C", repo.path).out))
 
 
 
@@ -108,6 +117,37 @@ class WhatTheCheckoutHolds(unittest.TestCase):
                 self.assertEqual(rows(support.run(script, "-C", repo.path).out),
                                  {"src/lib.rs", "src/helper.rs", "src/shared/mod.rs"})
 
+    def test_a_linked_files_declarations(self):
+        # rustc reads src/current.rs, a link to v2/mod.rs, from where the link is: its mod helpers; is src/helpers.rs,
+        # which src/lib.rs declares only for tests, and code. Both scripts; and the same where a staged link is
+        # the only change, which the working tree's line counts.
+        files = {"src/lib.rs": "#[path = \"current.rs\"]\nmod current;\n#[cfg(test)]\nmod helpers;\n",
+                 "src/current.rs": support.Link("v2/mod.rs"), "src/v2/mod.rs": "mod helpers;\n",
+                 "src/v2/helpers.rs": "fn v() {\n}\n", "src/helpers.rs": "fn h() {\n}\n"}
+        repo = support.Repo("linked-declarer")
+        repo.commit("2026-01-05", "Start", files)
+        repo.commit("2026-01-06", "Change", {"src/helpers.rs": "fn h() {\n}\n\n",
+                                              "src/lib.rs": files["src/lib.rs"] + "\n"})
+        repo.done()
+        for script in ("measure.py", "heatmap.py"):
+            with self.subTest(script=script):
+                self.assertIn("src/helpers.rs", rows(support.run(script, "-C", repo.path).out))
+        # Read so as code, though only a test declares the link: a declaration it holds makes nothing a test.
+        files = {"src/lib.rs": "#[cfg(test)]\n" + files["src/lib.rs"], "src/v2/mod.rs": "mod helpers;\n",
+                 "src/helpers.rs": ""}
+        scoping = support.load("scoping")
+        self.assertEqual(scoping.rust_test_modules(sorted(files), lambda paths: dict((p, files[p]) for p in paths),
+                                                   {"src/current.rs": "v2/mod.rs"}), {})
+        repo = support.Repo("staged-link")
+        repo.commit("2026-01-05", "Start", {"a/Cargo.toml": "[package]\n", "a/src/lib.rs": "mod shared;\n",
+                                             "b/Cargo.toml": "[package]\n", "b/src/shared/mod.rs": "fn s() {\n}\n",
+                                             "b/src/lib.rs": "#[cfg(test)]\nmod shared;\n"})
+        repo.done()
+        os.symlink("../../b/src/shared", os.path.join(repo.path, "a/src/shared"))
+        support.git(repo.path, "add", "a/src/shared")
+        self.assertIn("from the working tree, which differs from HEAD in 1 ",
+                      support.run("measure.py", "-C", repo.path).out)
+
     def test_a_sparse_checkout_and_a_deleted_file(self):
         # shared/lib.rs, which brings src/fixtures.rs in plainly, is left out of the working tree as a sparse
         # checkout leaves it, and read from git's index; src/tests.rs, deleted, isn't there to be a test module.
@@ -124,6 +164,23 @@ class WhatTheCheckoutHolds(unittest.TestCase):
         self.assertIn("\nNot in the working tree, so not measured: 1 file a sparse checkout leaves out "
                       "(shared/lib.rs), and 1 deleted and not committed (src/tests.rs).\n", out)
         self.assertIn("src/fixtures.rs", rows(support.run("heatmap.py", "-C", repo.path).out))
+
+    def test_what_git_takes_as_unchanged(self):
+        # A file git takes as unchanged, by assume-unchanged or skip-worktree, that the working tree changes:
+        # measure.py reads the change, so the working tree's line counts it, in both scripts.
+        repo = support.Repo("hidden-change")
+        repo.commit("2026-01-05", "Start", {"Cargo.toml": "[package]\n", "src/lib.rs": "#[cfg(test)]\nmod helper;\n",
+                                             "src/helper.rs": "fn h() {\n}\n"})
+        repo.done()
+        for flag in ("--assume-unchanged", "--skip-worktree"):
+            with self.subTest(flag=flag):
+                support.git(repo.path, "update-index", flag, "src/lib.rs")
+                repo.write("src/lib.rs", "mod helper;\n")
+                for script, words in (("measure.py", "from the working tree, which differs from HEAD in 1 "),
+                                      ("heatmap.py", "which measure.py reads, differs from it in 1 ")):
+                    self.assertIn(words, support.run(script, "-C", repo.path).out)
+                support.git(repo.path, "update-index", flag.replace("--", "--no-"), "src/lib.rs")
+                support.git(repo.path, "checkout", "--", "src/lib.rs")
 
 
 class TiedTests(unittest.TestCase):
@@ -199,6 +256,36 @@ class WhatAnIncludeHolds(unittest.TestCase):
                         'include! /* c */ ["util.rs"];\n'):
             with self.subTest(include=include):
                 self.assertEqual(modules({"src/lib.rs": include + "#[cfg(test)]\nmod util;\n", "src/util.rs": ""}), {})
+
+    def test_an_included_files_declarations(self):
+        # rustc reads what code include!s from its own folder, as a mod.rs, though a test's #[path] names it too:
+        # src/lexer.rs and src/util.rs are code.
+        files = {"Cargo.toml": "[package]\nname = \"k\"\n", "src/lib.rs": "include!(\"parser.rs\");\n",
+                 "src/parser.rs": "mod lexer;\npub fn parse() { lexer::lex() }\n", "src/lexer.rs": "pub fn lex() {}\n",
+                 "tests/parse.rs": "#[path = \"../src/parser.rs\"]\nmod parser;\n#[test]\nfn t() { parser::parse() }\n"}
+        self.assertEqual(modules(files), {"tests/parse.rs": "crate"})
+        files = {"src/lib.rs": "include!(\"gen.rs\");\n#[cfg(test)]\n#[path = \"gen.rs\"]\nmod gen_tests;\n",
+                 "src/gen.rs": "mod util;\n", "src/util.rs": "pub fn u() {}\n"}
+        self.assertEqual(modules(files), {})
+
+    def test_an_include_alone_in_its_file(self):
+        # Past a comment between include and its !, in a file that holds nothing else; an inner cfg past a comment,
+        # a marked file; and a #[path] past one between its # and [, which rustc reads.
+        for include in ('include /* generated */ !("table.rs");\n', 'include // generated\n!("table.rs");\n'):
+            with self.subTest(include=include):
+                files = {"src/lib.rs": "mod a;\n#[cfg(test)]\n#[path = \"table.rs\"]\nmod table_tests;\n",
+                         "src/a.rs": include, "src/table.rs": "pub fn t() {}\n"}
+                self.assertEqual(modules(files), {})
+        for marked in ("#! /* c */ [cfg(test)]\n", "#![ /* c */ cfg(test)]\n"):
+            with self.subTest(marked=marked):
+                self.assertEqual(modules({"src/lib.rs": "pub mod m;\n", "src/m.rs": marked + "pub fn f() {}\n"}),
+                                 {"src/m.rs": "marked"})
+        files = {"src/lib.rs": "# /* c */ [path = \"x.rs\"]\nmod m;\n" + WhatMakesAMacroPackage.TESTS % "x.rs",
+                 "src/x.rs": ""}
+        self.assertEqual(modules(files), {})
+        # An outer one, though its comment holds a !.
+        files = {"src/lib.rs": "pub mod m;\n", "src/m.rs": "# /* hi! */ [cfg(test)]\nmod t;\n", "src/m/t.rs": ""}
+        self.assertEqual(modules(files), {"src/m/t.rs": ["src/m.rs"]})
 
     def test_a_built_includes_strings(self):
         # From the including file's folder, as one string or joined, and through a brace in its argument.
@@ -417,6 +504,11 @@ class WhatMakesAMacroPackage(unittest.TestCase):
             sorted(files), lambda paths: dict((p, files[p]) for p in paths if isinstance(files[p], str)),
             support.load("scoping").tracked_links(repo.path, "HEAD"))
         self.assertEqual(sorted(found), ["b/src/util.rs"])
+        # An inline module whose #[path] names b's folder, a call of a's macro in it (Z1).
+        files = {"a/Cargo.toml": self.MAN % "a", "a/src/lib.rs": local + "#[path = \"../../b/src\"]\nmod reach {\n    "
+                 "modules!(util);\n}\n", "b/Cargo.toml": self.MAN % "b", "b/src/lib.rs": "#[cfg(test)]\nmod util;\n",
+                 "b/src/util.rs": ""}
+        self.assertEqual(modules(files), {})
         # A workspace's root package, and a second hop from b to c.
         files = {"Cargo.toml": self.MAN % "root",
                  "src/lib.rs": local + "#[path = \"../m/src/shared.rs\"]\nmod shared;\n",
@@ -521,7 +613,8 @@ class WhatTheyPrint(unittest.TestCase):
                 self.assertNotIn(line, support.run("measure.py", "-C", repo.path).out)
                 support.git(repo.path, "checkout", "--", path)
         repo.write("Cargo.toml", "[package]\nname = \"x\"\n")
-        self.assertIn("differs from HEAD in 1 .rs or Cargo.toml file;", support.run("measure.py", "-C", repo.path).out)
+        self.assertIn("differs from HEAD in 1 .rs, Cargo.toml or symlink file;",
+                      support.run("measure.py", "-C", repo.path).out)
         # Where no Rust is read, as for a scope of app.py, neither says so.
         for script in ("measure.py", "heatmap.py"):
             with self.subTest(script=script):
