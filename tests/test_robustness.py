@@ -341,10 +341,14 @@ GROWING = {
                       "modules"),
     # Files thousands of folders deep, with no manifest, and a built include!: the path each file's name ends in,
     # from each of its folders, was taken to look the include up by.
-    "deep-built-include": (2000, lambda n: dict([("/".join("d%d" % k for k in range(n)) + "/x%d.rs" % j, "")
+    "deep-built-include": (4000, lambda n: dict([("/".join("d%d" % k for k in range(n)) + "/x%d.rs" % j, "")
                                                 for j in range(4)] +
                                                [("/".join("d%d" % k for k in range(n)) + "/lib.rs",
                                                  "include!(concat!(env!(\"X\"), \"/x0.rs\"));\n")]), "modules"),
+    # Thousands of built include!s in a file hundreds of folders deep, with no manifest: each looked for its file
+    # from every folder above it.
+    "deep-built-includes": (1000, lambda n: {"/".join(["d"] * (n // 10)) + "/lib.rs": "".join(
+        "include!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/src/f%d.rs\"));\n" % k for k in range(n))}, "modules"),
 }
 
 
