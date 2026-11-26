@@ -19,7 +19,7 @@ def modules(files, tracked=None):
     scoping = support.load("scoping")
     found = scoping.rust_test_modules(sorted(files if tracked is None else tracked),
                                       lambda paths: dict((p, files[p]) for p in paths if p in files))
-    return dict((path, sorted(declared) if how == "declared" else how) for path, (how, declared) in found.items())
+    return dict((path, sorted(found[path][1]) if found[path][0] == "declared" else found[path][0]) for path in found)
 
 
 def tests_in(files):
@@ -158,6 +158,28 @@ class WhereADeclarationPoints(unittest.TestCase):
         # A file whose one declaration has a comment before its ; is read too.
         self.assertEqual(modules({"src/lib.rs": "#[cfg(test)]\nmod a /* x */ ;\n", "src/a.rs": ""}),
                          {"src/a.rs": ["src/lib.rs"]})
+        self.assertEqual(modules({"src/lib.rs": "#[cfg(test)]\nmod /* x */ a;\n", "src/a.rs": ""}),
+                         {"src/a.rs": ["src/lib.rs"]})
+
+    def test_every_literal_prefix(self):
+        # A string is one whatever its prefix, b, c, r, br or cr, so a { in it opens nothing: p.rs is code.
+        files = {"src/lib.rs": "static C: &CStr = cr#\"x\"{\"#;\nconst D: &CStr = c\"a{\";\n"
+                               "const E: &[u8] = br#\"\"{\"#;\n"
+                               "const F: &[u8] = b\"{\";\nconst G: &str = r\"{\";\nconst H: u8 = b'{';\n"
+                               "#[path = \"p.rs\"]\nmod p;\n#[cfg(test)]\nmod t;\n", "src/p.rs": "", "src/t.rs": ""}
+        self.assertEqual(modules(files), {"src/t.rs": ["src/lib.rs"]})
+
+    def test_a_paths_backslash_and_its_order(self):
+        # A \ is the file's own name where one is so named, as rustc reads it on Unix, else a folder's end, as on
+        # Windows; and a #[path] before a cfg_attr's is the one that counts.
+        declared = ("#[cfg(test)]\n#[path = \"sub\\\\t.rs\"]\nmod t;\n"
+                    "#[path = \"b.rs\"]\n#[cfg_attr(test, path = \"a.rs\")]\nmod x;\n")
+        self.assertEqual(modules({"src/lib.rs": declared, "src/sub\\t.rs": "", "src/sub/t.rs": "", "src/a.rs": "",
+                                  "src/b.rs": ""}), {"src/sub\\t.rs": ["src/lib.rs"]})
+        self.assertEqual(modules({"src/lib.rs": declared, "src/sub/t.rs": ""}), {"src/sub/t.rs": ["src/lib.rs"]})
+        # A raw string's \ is no escape.
+        raw = "#[cfg(test)]\n#[path = r\"sub\\t.rs\"]\nmod t;\n"
+        self.assertEqual(modules({"src/lib.rs": raw, "src/sub\\t.rs": ""}), {"src/sub\\t.rs": ["src/lib.rs"]})
 
     def test_untracked_or_missing(self):
         # A declaration whose file isn't tracked, or isn't there, changes nothing; a file git doesn't track
@@ -235,6 +257,7 @@ class WhenItsATest(unittest.TestCase):
         # test, and so are its modules.
         files = {"Cargo.toml": "[package]\nname = \"k\"\n# path = \"src/fixture.rs\"\n\n[[bin]]\nname = \"k\"\n"
                                "path = \"src/entry.rs\"\n\n[[test]]\nname = \"it\"\npath = \"checks/it.rs\"\n\n"
+                               "[[test]]\nname = \"bare\"\npath = \"checks/bare.rs\"\n\n"
                                "[[example]]\nname = \"run\"\npath = 'demo/run.rs'\n\n"
                                "[package.metadata]\nbuild = \"src/fixture.rs\"\n\n"
                                "[dependencies]\nlocal = { path = \"../local\" }\n",
@@ -249,12 +272,17 @@ class WhenItsATest(unittest.TestCase):
                  "src/parts.rs": "", "src/entry/parts.rs": "", "build.rs": "mod gen;\n", "gen.rs": "",
                  "examples/demo.rs": "",
                  "src/fixture.rs": "", "tests/common.rs": "", "sub/src/main.rs": "", "checks/it.rs": "mod part;\n",
-                 "demo/run.rs": "", "src/bin/tool.rs": "",
+                 "demo/run.rs": "", "src/bin/tool.rs": "", "checks/bare.rs": "fn main() {}\n", "tests/smoke.rs": "",
                  "checks/part.rs": ""}
         self.assertEqual(modules(files), dict([(p, ["src/lib.rs"]) for p in ("src/fixture.rs", "sub/src/main.rs")] + [
             ("tests/common.rs", "crate"), ("checks/it.rs", "crate"), ("checks/part.rs", ["checks/it.rs"]),
+            ("checks/bare.rs", "crate"), ("tests/smoke.rs", "crate"),
             ("src/t.rs", ["src/entry.rs"]), ("src/entry/t.rs", ["src/entry.rs"]),
             ("src/entry/parts.rs", ["src/entry.rs"])]))
+        scoping = support.load("scoping")
+        found = scoping.rust_test_modules(sorted(files), lambda paths: dict((p, files[p]) for p in paths))
+        self.assertEqual(scoping.rust_test_reason("tests/smoke.rs", found),
+                         "a Rust crate Cargo builds only as a test, by Cargo.toml")
         # With no manifest it can't be known, and a file in one of those places is taken for a crate's.
         files = {"src/lib.rs": "#[cfg(test)]\n#[path = \"main.rs\"]\nmod main_for_tests;\n", "src/main.rs": ""}
         self.assertEqual(modules(files), {})
@@ -269,6 +297,36 @@ class WhenItsATest(unittest.TestCase):
                  "src/net.rs": "#[cfg(test)]\nmod shared;\npub mod p {\n    include!(\"shared.rs\");\n}\n",
                  "src/shared.rs": "", "src/net/shared.rs": "", "src/extra.rs": "", "src/probe.rs": ""}
         self.assertEqual(modules(files), {"src/probe.rs": ["src/lib.rs"], "src/net/shared.rs": ["src/net.rs"]})
+        # In brackets or braces too; and where its path is built, the file a string of it names in the package.
+        files = {"Cargo.toml": "[package]\nname = \"k\"\n", "src/lib.rs": "#[cfg(test)]\nmod b;\n#[cfg(test)]\nmod c;\n"
+                 "#[cfg(test)]\n#[path = \"gen.rs\"]\nmod gen;\ninclude![\"b.rs\"];\ninclude! {\"c.rs\"}\n"
+                 "pub fn f() {\n"
+                 "    include!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/src/gen.rs\"));\n}\n",
+                 "src/b.rs": "", "src/c.rs": "", "src/gen.rs": "", "other/Cargo.toml": "[package]\nname = \"o\"\n",
+                 "other/src/lib.rs": "#[cfg(test)]\nmod gen;\n", "other/src/gen.rs": ""}
+        self.assertEqual(modules(files), {"other/src/gen.rs": ["other/src/lib.rs"]})
+
+    def test_what_a_macro_declares(self):
+        # A macro_rules! that declares the modules it's given declares them where it's called, with brackets or
+        # braces: util.rs and disk/store.rs are the library's, though the binary brings util.rs in only for tests.
+        files = {"src/lib.rs": "macro_rules! modules { ($($m:ident),*) => { $(pub mod $m;)* } }\nmodules!(util, net);\n"
+                               "mod disk;\n#[cfg(test)]\n#[path = \"disk/store.rs\"]\nmod store;\n",
+                 "src/disk.rs": "modules! { store }\n",
+                 "src/main.rs": "#[cfg(test)]\nmod util;\n#[cfg(test)]\nmod probe;\n",
+                 "src/util.rs": "", "src/net.rs": "", "src/disk/store.rs": "", "src/probe.rs": ""}
+        self.assertEqual(modules(files), {"src/probe.rs": ["src/main.rs"]})
+        # Called in test code, it declares for tests; and a macro whose mod $name has a body declares no file.
+        files = {"src/lib.rs": "macro_rules! modules { ($($m:ident),*) => { $(pub mod $m;)* } }\n#[cfg(test)]\n"
+                               "modules!(probe);\n#[cfg(test)]\n#[path = \"probe.rs\"]\nmod again;\nmod disk;\n"
+                               "macro_rules! wrap { ($m:ident) => { mod $m {} } }\n#[cfg(test)]\n"
+                               "#[path = \"disk/inner.rs\"]\nmod inner;\n", "src/disk.rs": "wrap!(inner);\n",
+                 "src/probe.rs": "", "src/disk/inner.rs": ""}
+        self.assertEqual(modules(files), {"src/probe.rs": ["src/lib.rs"], "src/disk/inner.rs": ["src/lib.rs"]})
+        # Defined in a file that declares nothing else.
+        files = {"src/lib.rs": "#[macro_use]\nmod macros;\nmodules!(util);\n",
+                 "src/main.rs": "#[cfg(test)]\nmod util;\n", "src/util.rs": "",
+                 "src/macros.rs": "macro_rules! modules { ($($m:ident),*) => { $(pub mod $m;)* } }\n"}
+        self.assertEqual(modules(files), {})
 
     def test_in_no_doubt(self):
         # The heatmap doubts a name that's a test only by a word at its end (by --test here), or a folder of tests
@@ -301,8 +359,8 @@ CRATE = {"src/lib.rs": "pub mod disk;\npub mod commands;\n#[cfg(test)]\nmod fixt
          "src/cache_test.rs": "fn c() {\n}\n", "src/commands/mod.rs": "pub mod test;\n",
          "src/commands/test.rs": "pub fn run() {\n    go();\n}\n"}
 NAMED = ("; 4 of them Rust test modules in files of their own, known by their declarations, not their names: "
-         "src/disk/checks.rs, src/disk/checks/helper.rs, src/fixture.rs and src/mock/parts.rs (%s); 1 of them Rust "
-         "compiled only for tests by the #![cfg(test)] at its top: src/mock.rs.")
+         "src/disk/checks.rs, src/disk/checks/helper.rs, src/fixture.rs and src/mock/parts.rs; 1 of them Rust "
+         "compiled only for tests by the #![cfg(test)] at its top: src/mock.rs. %s.")
 
 
 def rows(out):
@@ -326,7 +384,7 @@ class BothScripts(unittest.TestCase):
         self.assertEqual(result.code, 0, result)
         self.assertEqual(rows(result.out), {"src/lib.rs", "src/disk.rs", "src/commands/mod.rs", "src/commands/test.rs"})
         self.assertIn("Test files: 7 set aside from the percentiles and the table" +
-                      NAMED % "--show FILE names what declares each", result.out)
+                      NAMED % "--list-tests lists every one, with why", result.out)
         self.assertNotIn("measured unless named as a test", result.out)
         self.assertNotIn("maybe not", result.out)
 
@@ -335,7 +393,7 @@ class BothScripts(unittest.TestCase):
         self.assertEqual(result.code, 0, result)
         self.assertEqual(rows(result.out), {"src/lib.rs", "src/disk.rs", "src/commands/mod.rs", "src/commands/test.rs"})
         self.assertIn("Test files: 7 changed in the window, set aside from the table and the pairs" +
-                      NAMED % "measure.py --show FILE names what declares each", result.out)
+                      NAMED % "measure.py --list-tests lists every one in the scope, with why", result.out)
         self.assertNotIn("maybe not", result.out)
 
     def test_a_scope_that_leaves_the_declaration_out(self):
@@ -347,7 +405,7 @@ class BothScripts(unittest.TestCase):
                 self.assertEqual(rows(result.out), set())
                 result = support.run(script, "-C", self.repo, "src/fixture.rs")
                 self.assertIn("; 1 of them a Rust test module in a file of its own, known by its declaration, not "
-                              "its name: src/fixture.rs (", result.out)
+                              "its name: src/fixture.rs. ", result.out)
 
     def test_the_users_word_wins(self):
         # A file the user says isn't a test is measured; its own modules are still tests by their declarations.
@@ -369,23 +427,72 @@ class BothScripts(unittest.TestCase):
         self.assertIn("src/fixture.rs: Rust, 30 code lines, band -, 10 functions", result.out)
         for path, why in [("src/fixture.rs", "one of Rust's test modules, declared only for tests, in src/lib.rs"),
                           ("src/mock.rs", "Rust compiled only for tests, by the #![cfg(test)] at its top"),
-                          ("src/mock/parts.rs", "one of Rust's test modules, declared only for tests, in src/mock.rs"),
-                          ("src/disk/checks/helper.rs", "one of Rust's test modules, declared only for tests, in "
-                                                        "src/disk/checks.rs")]:
+                          ("src/mock/parts.rs", "one of Rust's test modules, declared in src/mock.rs, in code "
+                                                "compiled only for tests"),
+                          ("src/disk/checks/helper.rs", "one of Rust's test modules, declared in src/disk/checks.rs, "
+                                                        "in code compiled only for tests")]:
             self.assertRegex(result.out, r"(?m)^%s: Rust,.*\nA test file: %s; measured whole here\.$" % (
                 re.escape(path), re.escape(why)))
 
-    def test_every_one_named_with_why(self):
+    def test_a_few_named_and_where_every_one_is(self):
+        # Five of each kind at most, as the doubts are, and where to see every one, with why.
         scoping = support.load("scoping")
-        found = dict([("src/m%d.rs" % k, ("declared", frozenset(["src/lib.rs"]))) for k in range(6)] + [
-            ("src/mock.rs", ("marked", frozenset())), ("it.rs", ("crate", frozenset())),
-            ("a.rs", ("crate", frozenset()))])
-        self.assertEqual(scoping.rust_tests_said(sorted(found), found, " (THERE)"), "; 6 of them Rust test modules in "
+        found = dict([("src/m%d.rs" % k, ("declared", frozenset(["src/lib.rs"]), frozenset())) for k in range(6)] + [
+            ("src/mock.rs", ("marked", frozenset(), None)), ("it.rs", ("crate", frozenset(), "Cargo.toml")),
+            ("a.rs", ("crate", frozenset(), "Cargo.toml"))])
+        self.assertEqual(scoping.rust_tests_said(sorted(found), found, "THERE"), "; 6 of them Rust test modules in "
                          "files of their own, known by their declarations, not their names: src/m0.rs, src/m1.rs, "
-                         "src/m2.rs, src/m3.rs, src/m4.rs and src/m5.rs (THERE); 1 of them Rust compiled only for "
-                         "tests by the #![cfg(test)] at its top: src/mock.rs; 2 of them Rust crates Cargo builds only "
-                         "as tests: a.rs and it.rs")
-        self.assertEqual(scoping.rust_test_reason("it.rs", found), "a Rust crate Cargo builds only as a test")
+                         "src/m2.rs, src/m3.rs, src/m4.rs and 1 more; 1 of them Rust compiled only for tests by the "
+                         "#![cfg(test)] at its top: src/mock.rs; 2 of them Rust crates Cargo builds only as tests: "
+                         "a.rs and it.rs. THERE")
+        self.assertEqual(scoping.rust_test_reason("it.rs", found),
+                         "a Rust crate Cargo builds only as a test, by Cargo.toml")
+
+    def test_list_tests(self):
+        result = support.run("measure.py", "-C", self.repo, "--list-tests")
+        self.assertEqual(result.code, 0, result)
+        self.assertIn("Test files set aside: 7, each with why:\n"
+                      "  src/cache_test.rs: named like a test (*_test.*)\n"
+                      "  src/disk/checks.rs: one of Rust's test modules, declared only for tests, in src/disk.rs\n"
+                      "  src/disk/checks/helper.rs: one of Rust's test modules, declared in src/disk/checks.rs, in "
+                      "code compiled only for tests\n", result.out)
+        self.assertIn("  src/tests/mod.rs: in a folder named tests\n", result.out)
+        self.assertNotIn("lines  band", result.out)
+
+
+class TwoReadings(unittest.TestCase):
+    """measure.py reads the working tree and the heatmap HEAD, so each says when they differ in what decides Rust's
+    test modules; and measure.py's reader of Rust's literals and comments agrees with the one that finds modules."""
+
+    def test_the_working_tree_against_head(self):
+        repo = support.Repo("two-readings")
+        repo.commit("2026-01-05", "Start", {"src/lib.rs": "#[cfg(test)]\nmod probe;\n",
+                                             "src/probe.rs": "fn p() {\n}\n"})
+        repo.done()
+        for script in ("measure.py", "heatmap.py"):
+            with self.subTest(script=script):
+                self.assertNotIn("may set aside different files", support.run(script, "-C", repo.path).out)
+        repo.write("src/lib.rs", "mod probe;\n")
+        self.assertIn("Rust's test modules are read here from the working tree, which differs from HEAD in 1 .rs or "
+                      "Cargo.toml file; the heatmap reads HEAD, so the two may set aside different files.",
+                      support.run("measure.py", "-C", repo.path).out)
+        self.assertIn("Rust's test modules are read here at HEAD, and the working tree, which measure.py reads, "
+                      "differs from it in 1 .rs or Cargo.toml file, so the two may set aside different files.",
+                      support.run("heatmap.py", "-C", repo.path).out)
+
+    def test_the_two_readers_agree(self):
+        # The brackets each sees outside literals and comments, on every literal Rust has.
+        measure, scoping = support.load("measure"), support.load("scoping")
+        for text in ['static C: &CStr = cr#"x"{"#; fn g() {}', 'let c = c"a\\"{"; {}', 'let s = b"x\\"{";',
+                     'x = br##"a"#{"##;', 'let r = r"{"; {}', "let x = '{'; let y = b'}'; fn h<'a>(x: &'a u8) {}",
+                     "let q = '\\''; {}", "'\\u{7d}';", '/* { /* } */ */ {}', '// {\n{}', 'm!(r#match); fn r#fn() {}',
+                     '#[cfg(test)] mod a;', '"\\\\"; {}']:
+            with self.subTest(text=text):
+                lines, _ = measure.skeleton(text.split("\n"), "// /*", "char", False, "Rust")
+                seen = "".join(c for line in lines for c in line if c in "{}[];")
+                found = "".join(t if k == "bracket" else "[" for k, t in scoping.rust_tokens(text)
+                                if k in ("bracket", "attribute"))
+                self.assertEqual(found, seen)
 
 
 class TiedTests(unittest.TestCase):
@@ -409,6 +516,22 @@ class TiedTests(unittest.TestCase):
                       result.out)
         self.assertIn("  crates/x/src/lib.rs: 5 files,", result.out)
         self.assertRegex(result.out, r"crates/y/src/importer\.rs: 5 files,.* src/importer\.rs \(5\)")
+
+    def test_a_test_by_name_keeps_its_own_by_name(self):
+        # A test by its name, or Cargo's test crate, keeps its own file by name too: each changes with one more
+        # production file only, and isn't listed.
+        repo = support.Repo("tied-named")
+        for n in range(1, 6):
+            repo.commit("2026-01-%02d" % n, "Change %d" % n, {
+                "Cargo.toml": "[package]\nname = \"x\"\n\n[[test]]\nname = \"p\"\npath = \"checks/parser.rs\"\n",
+                "src/lib.rs": "mod parser;\nmod lexer;\n#[cfg(test)]\nmod parser_test;\n",
+                "src/parser.rs": support.lines(n), "src/lexer.rs": support.lines(n),
+                "checks/parser.rs": support.lines(n),
+                "src/parser_test.rs": support.lines(n), "tests/parser.rs": "mod common;\n" + support.lines(n),
+                "tests/common/mod.rs": ""})
+        repo.done()
+        tied = support.run("heatmap.py", "-C", repo.path).out.split("Tests changed together")[1]
+        self.assertNotIn("parser", tied)
 
 
 class Corners(unittest.TestCase):

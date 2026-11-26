@@ -323,10 +323,16 @@ GROWING = {
     # Comments after a word ending in mod, a line of slashes and a run of /**/, which a reading of a file's comments
     # that could split them many ways split in every one (exponential, on a doc comment's URL); and a manifest's [
     # before thousands of spaces.
-    "comment-runs": (2000, lambda n: {"src/lib.rs": ("// dynamodb\n" + "/" * 48 + "\nmodb " + "/**/" * 32 + "\n") * n,
+    "comment-runs": (20000, lambda n: {"src/lib.rs": ("// dynamodb\n" + "/" * 48 + "\nmodb " + "/**/" * 32 + "\n") * n,
                                       "src/a.rs": ""}, "modules"),
     "manifest-header": (2000000, lambda n: {"Cargo.toml": "[" + " " * n + "\n", "src/lib.rs": "mod a;\n",
                                             "src/a.rs": ""}, "modules"),
+    # Where a file may declare a module: lines of globs, each a word holding mod, then /*; mod over and over, in no
+    # word; mod, a name and /*, again and again; and lines of // mod x /*. Each was read from every mod to the end.
+    "glob-lines": (150000, lambda n: {"src/lib.rs": '    "node_modules/*",\n' * n}, "modules"),
+    "mod-words": (300000, lambda n: {"src/lib.rs": "mod" * n}, "modules"),
+    "mod-comments": (40000, lambda n: {"src/lib.rs": "mod x /*" * n}, "modules"),
+    "mod-line-comments": (10000, lambda n: {"src/lib.rs": "// mod x /*\n" * n}, "modules"),
 }
 
 
