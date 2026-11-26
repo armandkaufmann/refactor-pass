@@ -512,7 +512,7 @@ class BothScripts(unittest.TestCase):
     def test_list_tests(self):
         result = support.run("measure.py", "-C", self.repo, "--list-tests")
         self.assertEqual(result.code, 0, result)
-        self.assertIn("Test files set aside: 7, each with why:\n"
+        self.assertIn("modules, scope: (everything)\nTest files set aside: 7, each with why:\n"
                       "  src/cache_test.rs: named like a test (*_test.*)\n"
                       "  src/disk/checks.rs: one of Rust's test modules, declared only for tests, in src/disk.rs\n"
                       "  src/disk/checks/helper.rs: one of Rust's test modules, declared in src/disk/checks.rs, in "

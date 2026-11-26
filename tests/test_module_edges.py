@@ -132,6 +132,16 @@ class TiedTests(unittest.TestCase):
                 "src/tests/mod.rs": "mod parser;\n", "src/tests/parser.rs": support.lines(n)})
         repo.done()
         self.assertNotIn("parser", support.run("heatmap.py", "-C", repo.path).out.split("Tests changed together")[1])
+        # And one --test names, declared only for tests too.
+        repo = support.Repo("tied-given")
+        for n in range(1, 6):
+            repo.commit("2026-01-%02d" % n, "Change %d" % n, {
+                "src/lib.rs": "pub mod checks;\npub mod parser;\npub mod lexer;\n", "src/parser.rs": support.lines(n),
+                "src/lexer.rs": support.lines(n), "src/checks.rs": "#[cfg(test)]\nmod parser;\n",
+                "src/checks/parser.rs": support.lines(n)})
+        repo.done()
+        out = support.run("heatmap.py", "-C", repo.path, "--test", "src/checks/*").out
+        self.assertNotIn("parser", out.split("Tests changed together")[1])
 
 
 class WhatACallOrAnIncludeHolds(unittest.TestCase):
@@ -152,6 +162,11 @@ class WhatACallOrAnIncludeHolds(unittest.TestCase):
                 files = {"src/lib.rs": self.MACRO + call + self.TESTS, "src/util.rs": "", "src/net.rs": ""}
                 self.assertEqual(modules(files), {})
 
+    def test_an_escape_in_a_path(self):
+        # A \n in a #[path]'s string is a newline, as in a file so named.
+        files = {"src/lib.rs": "#[cfg(test)]\n#[path = \"a\\nb.rs\"]\nmod t;\n", "src/a\nb.rs": "", "src/anb.rs": ""}
+        self.assertEqual(modules(files), {"src/a\nb.rs": ["src/lib.rs"]})
+
     def test_where_a_template_declares(self):
         # m!(util) declares outer::util, src/outer/util.rs, code; src/util.rs only the test's #[path] names.
         files = {"src/lib.rs": "macro_rules! m { ($x:ident) => { pub mod outer { pub mod $x; } }; }\nm!(util);\n" +
@@ -169,6 +184,37 @@ class WhatACallOrAnIncludeHolds(unittest.TestCase):
                 files = {"Cargo.toml": "[package]\nname = \"k\"\n", "src/" + at: "",
                          "src/lib.rs": include + "#[cfg(test)]\n#[path = \"%s\"]\nmod t1;\n" % at}
                 self.assertEqual(modules(files), {})
+
+
+class WhatAMacroDeclares(unittest.TestCase):
+    """Which macro_rules! declare modules, and where their calls declare them, each answer rustc's: a test's
+    #[path] names util.rs too, so only a call that declares it keeps it code."""
+
+    TESTS = "#[cfg(test)]\n#[path = \"%s\"]\nmod t;\n"
+
+    def check(self, lib, at, expected):
+        files = {"src/lib.rs": lib + self.TESTS % at, "src/" + at: "", "src/fixed.rs": ""}
+        self.assertEqual(modules(files), {"src/" + at: ["src/lib.rs"]} if expected == "test" else {})
+
+    def test_what_isnt_a_module_macro(self):
+        # A fixed mod name, an inline module's mod $m {}, past the arm's ;, and a $name that isn't after mod.
+        for lib in ("macro_rules! decl { ($x:ident) => { pub mod fixed; pub fn $x() {} }; }\ndecl!(util);\n",
+                    "macro_rules! wrap { ($m:ident) => { pub mod $m {} }; }\nwrap!(util);\n",
+                    "macro_rules! touch { ($e:ident) => { pub fn touched() { let $e = 1; $e; } }; }\ntouch!(util);\n",
+                    "macro_rules! noop { ($e:ident) => {}; }\nnoop!(util);\n"):
+            with self.subTest(lib=lib):
+                self.check(lib, "util.rs", "test")
+
+    def test_what_is(self):
+        # A raw name, and a call in a module of the file, which declares there.
+        self.check("macro_rules! r#modules { ($($m:ident),*) => { $(pub mod $m;)* } }\nmodules!(util);\n", "util.rs",
+                   "code")
+        macro = "macro_rules! modules { ($($m:ident),*) => { $(pub mod $m;)* } }\n"
+        for call in ("modules!(util);", "modules! { util }"):
+            with self.subTest(call=call):
+                self.check(macro + "pub mod net {\n    %s\n}\n" % call, "net/util.rs", "code")
+        # A brace call in test code declares for tests.
+        self.check(macro + "#[cfg(test)]\nmodules! { util }\n", "util.rs", "test")
 
 
 class WhichMacroACallIsTo(unittest.TestCase):
@@ -222,6 +268,56 @@ class WhichMacroACallIsTo(unittest.TestCase):
         self.check("#[macro_use]\nmod macros;\nmodules!(util);\n", {}, {"src/macros.rs": self.TEST_ONLY})
 
 
+class WhatTheyPrint(unittest.TestCase):
+    """The reasons, the Test files line and when the working tree's line is printed, by the rule."""
+
+    def test_the_words(self):
+        scoping = support.load("scoping")
+        found = {"x.rs": ("declared", frozenset(["a.rs", "b.rs"]), frozenset(["b.rs"]))}
+        self.assertEqual(scoping.rust_test_reason("x.rs", found), "one of Rust's test modules, declared only for "
+                         "tests, in a.rs, and declared in b.rs, in code compiled only for tests")
+        found = dict([("m%d.rs" % k, ("marked", frozenset(), None)) for k in range(6)] +
+                     [("c%d.rs" % k, ("crate", frozenset(), "Cargo.toml")) for k in range(6)])
+        said = scoping.rust_tests_said(sorted(found), found, "THERE")
+        self.assertIn("m3.rs, m4.rs and 1 more; ", said)
+        self.assertIn("c3.rs, c4.rs and 1 more. THERE", said)
+        self.assertEqual(scoping.test_reason("Tests/cap.rs"), "in a folder named Tests")
+
+    def test_list_tests_with_none(self):
+        repo = support.Repo("none-listed")
+        repo.commit("2026-01-05", "Start", {"src/lib.rs": "pub fn f() {\n}\n"})
+        repo.done()
+        self.assertEqual(support.run("measure.py", "-C", repo.path, "--list-tests").out,
+                         "none-listed, scope: (everything)\nTest files set aside: none in the scope.\n")
+
+    def test_when_the_working_tree_line_is_printed(self):
+        repo = support.Repo("tree-lines")
+        repo.commit("2026-01-05", "Start", {"src/lib.rs": "#[cfg(test)]\nmod probe;\n", "src/probe.rs": "fn p() {\n}\n",
+                                             "Cargo.toml": "[package]\n", "Cargo.lock": "", "rustfmt.toml": "",
+                                             "app.py": "x = 1\n"})
+        repo.done()
+        line = "Rust's test modules are read here"
+        for path in ("Cargo.lock", "rustfmt.toml"):  # Neither decides which files are tests.
+            with self.subTest(path=path):
+                repo.write(path, "changed\n")
+                self.assertNotIn(line, support.run("measure.py", "-C", repo.path).out)
+                support.git(repo.path, "checkout", "--", path)
+        repo.write("Cargo.toml", "[package]\nname = \"x\"\n")
+        self.assertIn("differs from HEAD in 1 .rs or Cargo.toml file;", support.run("measure.py", "-C", repo.path).out)
+        # Where no Rust is read, as for a scope of app.py, neither says so.
+        for script in ("measure.py", "heatmap.py"):
+            with self.subTest(script=script):
+                self.assertNotIn(line, support.run(script, "-C", repo.path, "app.py").out)
+        # Nor where there's no HEAD to differ from.
+        bare = support.new_folder("no-head")
+        support.git(bare, "init", "-q")
+        for path, text in (("src/lib.rs", "#[cfg(test)]\nmod probe;\n"), ("src/probe.rs", "fn p() {\n}\n")):
+            os.makedirs(os.path.dirname(os.path.join(bare, path)), exist_ok=True)
+            open(os.path.join(bare, path), "w").write(text)
+        support.git(bare, "add", "-A")
+        self.assertNotIn(line, support.run("measure.py", "-C", bare).out)
+
+
 class WithNoManifest(unittest.TestCase):
     """Where no manifest says which package a file is in, a built include! names its file from the including
     file's folder or one above it."""
@@ -236,6 +332,18 @@ class WithNoManifest(unittest.TestCase):
                 self.assertEqual(modules(files), {})
         files["a/src/lib.rs"] = "pub fn f() {}\n"
         self.assertEqual(modules(files), {"a/shared/x.rs": ["b/src/lib.rs"]})
+        # Each folder above that holds it, the repo's top too.
+        files = {"a/src/lib.rs": "include!(concat!(env!(\"SRC\"), \"/x.rs\"));\n", "a/src/x.rs": "", "a/x.rs": "",
+                 "x.rs": "", "b/lib.rs": "".join("#[cfg(test)]\n#[path = \"%s\"]\nmod t%d;\n" % (p, k) for k, p in
+                                               enumerate(("../a/src/x.rs", "../a/x.rs", "../x.rs")))}
+        self.assertEqual(modules(files), {})
+
+    def test_a_leading_backslash(self):
+        # In the package, as Windows reads it: src/util.rs.
+        files = {"Cargo.toml": "[package]\nname = \"k\"\n", "src/util.rs": "",
+                 "src/lib.rs": "include!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"\\\\src\\\\util.rs\"));\n"
+                               "#[cfg(test)]\n#[path = \"util.rs\"]\nmod t;\n"}
+        self.assertEqual(modules(files), {})
 
 
 if __name__ == "__main__":
