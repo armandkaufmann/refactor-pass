@@ -634,7 +634,11 @@ class EachShape(unittest.TestCase):
                                       "checks.rs": "",
                                       "src/main.rs": "#[cfg(test)]\n#[path = \"../checks.rs\"]\nmod checks;\n"},
              {"checks.rs": ["src/main.rs"]}),
-        ])
+        ] + [("a spaced call to one of %d macros, in a file read for nothing else" % count,
+              {"src/lib.rs": "#[macro_use]\nmod defs;\nmod user;\n#[cfg(test)]\n#[path = \"user/plainly.rs\"]\n"
+                             "mod again;\n",
+               "src/defs.rs": "".join("macro_rules! m%d { ($x:ident) => { mod $x; } }\n" % k for k in range(count)),
+               "src/user.rs": "m%d ! (plainly);\n" % (count - 1), "src/user/plainly.rs": ""}, {}) for count in (2, 20)])
 
     def test_manifests(self):
         self.check([
