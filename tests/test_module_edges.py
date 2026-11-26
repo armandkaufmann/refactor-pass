@@ -267,6 +267,21 @@ class WhatAnIncludeHolds(unittest.TestCase):
         files = {"src/lib.rs": "include!(\"gen.rs\");\n#[cfg(test)]\n#[path = \"gen.rs\"]\nmod gen_tests;\n",
                  "src/gen.rs": "mod util;\n", "src/util.rs": "pub fn u() {}\n"}
         self.assertEqual(modules(files), {})
+        # And though Cargo builds the file, or the one that includes it, as a test's root too: build.rs brings
+        # tests/it.rs in, which includes tests/inc.rs, whose src/m32.rs is code; the lib brings tests/it.rs in,
+        # whose tests/inc.rs brings tests/q.rs in, code where Cargo builds it as a test too (AA).
+        man, it = "[package]\nname = \"k\"\n", "include!(\"inc.rs\");\n"
+        for files in ({"Cargo.toml": man, "build.rs": "#[path = \"tests/it.rs\"]\nmod m30;\nfn main() {}\n",
+                       "tests/it.rs": it, "tests/inc.rs": "#[path = \"../src/m32.rs\"]\nmod m57;\n",
+                       "src/lib.rs": "#[cfg(test)]\nmod m32;\n", "src/m32.rs": "pub fn f() {}\n"},
+                      {"Cargo.toml": man, "src/lib.rs": "#[path = \"../tests/it.rs\"]\nmod m;\n", "tests/it.rs": it,
+                       "tests/inc.rs": "#[path = \"q.rs\"]\nmod q;\n", "tests/q.rs": "pub fn q() {}\n"}):
+            with self.subTest(files=files):
+                self.assertEqual(modules(files), {})
+        # Only so: gen.rs's mod util; is src/util.rs, not src/gen/util.rs, which only a test declares.
+        files = {"src/lib.rs": "include!(\"gen.rs\");\n#[cfg(test)]\n#[path = \"gen/util.rs\"]\nmod gu;\n",
+                 "src/gen.rs": "mod util;\n", "src/util.rs": "", "src/gen/util.rs": ""}
+        self.assertEqual(modules(files), {"src/gen/util.rs": ["src/lib.rs"]})
 
     def test_an_include_alone_in_its_file(self):
         # Past a comment between include and its !, in a file that holds nothing else; an inner cfg past a comment,
