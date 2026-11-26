@@ -44,7 +44,7 @@ leads to it or a macro in its package may declare modules; one marked
 #![cfg(test)], whatever it is; or a crate Cargo builds only as a test.
 --test adds a pattern, --not-test counts a file set aside that isn't one,
 and --keep-tests counts them all. The output names any set aside in doubt: a
-name such as ABTest.php in no folder of tests, or a spec folder in which no
+name such as ABTest.php in no folder of tests, or a spec folder where no
 file is named like a test or is a Rust test.
 
 Then the files that keep changing in the same commits, with two measures:
@@ -60,14 +60,14 @@ though no commit need have changed all of its files. Commits that
 changed more than --max-files files are left out of these, and the count
 says how many; in a repo that squash-merges, that can be most of them.
 
-Last, the tests that change together with several production files besides
-their own: the file of the same name less the test's marker or, when there
-is none, the controller, handler or command of that name, as a feature test
-names it (ShowDashboardTest.php and ShowDashboardController.php); for a Rust
-test module, only the files that declare it. Each is a lead, not a verdict:
-a test that reaches into those files' private members or internal paths is
+Last, the tests that change with several production files besides their own:
+the file of the same name less the test's marker or, when there is none, the
+controller, handler or command of that name, as a feature test names it
+(ShowDashboardTest.php and ShowDashboardController.php); for a Rust test
+module, only the files that declare it. Each is a lead, not a verdict: a
+test that reaches into those files' private members or internal paths is
 tied to their internals, while a broad test that follows features through
-them, or follows files that already change together, isn't.
+them, or files that already change together, isn't.
 
 And the fixes: the commits whose messages say they fixed a defect in the
 project's own code (wrong behaviour, a crash, a security hole, a regression,
