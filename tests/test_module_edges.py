@@ -345,6 +345,10 @@ class WhatTheyPrint(unittest.TestCase):
         self.assertIn("m3.rs, m4.rs and 1 more; ", said)
         self.assertIn("c3.rs, c4.rs and 1 more. THERE", said)
         self.assertEqual(scoping.test_reason("Tests/cap.rs"), "in a folder named Tests")
+        # Five doubts named, then how many more.
+        doubts = [("d%d.php" % k, "why") for k in range(6)]
+        self.assertNotIn("more", support.load("measure").doubts_said(doubts[:5]))
+        self.assertIn("d4.php (why); and 1 more.", support.load("measure").doubts_said(doubts))
 
     def test_list_tests_with_none(self):
         repo = support.Repo("none-listed")
@@ -381,6 +385,69 @@ class WhatTheyPrint(unittest.TestCase):
         self.assertNotIn(line, support.run("measure.py", "-C", bare).out)
 
 
+class WhatTheMutantsChanged(unittest.TestCase):
+    """Answers the tests review's mutants of round 10's code changed and no test noticed, each rustc's, or the rule's
+    where rustc compiles none of the files."""
+
+    T, MAN = "#[cfg(test)]\n#[path = \"%s\"]\nmod t;\n", "[package]\nname = \"k\"\n"
+
+    def check(self, cases):
+        for files, expected in cases:
+            with self.subTest(files=files):
+                self.assertEqual(modules(files), expected)
+
+    def test_includes(self):
+        t, man, built = self.T, self.MAN, 'include!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/%s"));\n'
+        self.check([
+            # Each include!'s strings its own; a ) that closes its argument, the string after it the code's; OUT_DIR
+            # only in one; a join before one on OUT_DIR kept.
+            ({"src/lib.rs": 'include!(concat!("x", ".rs"));\ninclude!(concat!("ut", "il.rs"));\n' + t % "util.rs",
+              "src/x.rs": "", "src/util.rs": ""}, {}),
+            ({"Cargo.toml": man, "src/n.rs": "", "src/util.rs": "", "src/lib.rs": "pub fn f() -> usize {\n    " +
+              built.strip()[:-1] % "n.rs" + ' + "util.rs".len()\n}\n' + t % "util.rs"},
+             {"src/util.rs": ["src/lib.rs"]}),
+            ({"Cargo.toml": man, "src/gen.rs": "", "src/lib.rs": built % "gen.rs" + "pub fn out() -> Option<&'static "
+              "str> {\n    option_env!(\"OUT_DIR\")\n}\n" + t % "gen.rs"}, {}),
+            ({"Cargo.toml": man, "src/util.rs": "", "src/lib.rs": 'include!(concat!("ut", "il.rs"));\npub mod gen '
+              '{\n    include!(concat!(env!("OUT_DIR"), "/gen.rs"));\n}\n' + t % "util.rs"}, {}),
+            # include![...]: its ] closes it, and its [ ] count in its depth.
+            ({"src/n.rs": "", "src/util.rs": "", "src/lib.rs": "pub fn f() -> &'static str {\n    match "
+              "include![\"n.rs\"] {\n        1 => \"util.rs\",\n        _ => \"\",\n    }\n}\n" + t % "util.rs"},
+             {"src/util.rs": ["src/lib.rs"]}),
+            ({"Cargo.toml": man, "src/x.rs": "", "src/lib.rs": "include![" + built.strip()[9:-2] % "x.rs" + "];\n" +
+              t % "x.rs"}, {}),
+            # A built path from its own package's folder; with none, past ./, and up a ..
+            ({"Cargo.toml": man, "src/lib.rs": "#[cfg(test)]\nmod x;\n", "src/x.rs": "", "crates/a/Cargo.toml": man,
+              "crates/a/src/x.rs": "", "crates/a/src/lib.rs": built % "x.rs"}, {"src/x.rs": ["src/lib.rs"]}),
+            ({"a/src/lib.rs": 'include!(concat!(env!("SRC"), "/./x.rs"));\n', "a/src/x.rs": "",
+              "b/lib.rs": t % "../a/src/x.rs"}, {}),
+            ({"a/src/lib.rs": 'include!(concat!(env!("SRC"), "/../x.rs"));\n', "a/x.rs": "", "a/src/x.rs": "",
+              "b/lib.rs": t % "../a/src/x.rs"}, {"a/src/x.rs": ["b/lib.rs"]})])
+
+    def test_cfg_attrs_and_rounds(self):
+        # The default's file, by its cfg, declared only for tests; test where neither of two cfg_attrs' holds.
+        scoping = support.load("scoping")
+        files = {"src/lib.rs": "#[cfg_attr(not(test), path = \"live.rs\")]\nmod mock;\n", "src/mock.rs": "",
+                 "src/live.rs": ""}
+        found = scoping.rust_test_modules(sorted(files), lambda paths: dict((p, files[p]) for p in paths))
+        self.assertEqual(scoping.rust_test_reason("src/mock.rs", found),
+                         "one of Rust's test modules, declared only for tests, in src/lib.rs")
+        pair = ("#[cfg_attr(not(test), path = \"a.rs\")]\n", "#[cfg_attr(feature = \"x\", path = \"b.rs\")]\n")
+        self.check([({"src/lib.rs": first + second + "mod m;\n", "src/a.rs": "", "src/b.rs": "", "src/m.rs": ""},
+                     {"src/m.rs": ["src/lib.rs"]}) for first, second in (pair, pair[::-1])] + [
+            # Files no reading reaches: a cycle, each read; one ready only once no other could bring it in; and a
+            # file's declaration of itself no other's.
+            ({"src/lib.rs": "", "src/x.rs": "#[cfg(test)]\n#[path = \"y.rs\"]\nmod y;\n",
+              "src/y.rs": "#[path = \"x.rs\"]\nmod x;\n"}, {}),
+            ({"src/lib.rs": "", "src/b.rs": "pub mod s;\n", "src/b/s.rs": "#[path = \"r.rs\"]\nmod r;\n",
+              "src/b/r.rs": "mod l;\nmod t;\n", "src/b/r/l.rs": "#[cfg(test)]\n#[path = \"t.rs\"]\nmod tt;\n",
+              "src/b/r/t.rs": "mod zz;\n"}, {"src/b/r/t.rs": ["src/b/r/l.rs"]}),
+            ({"src/lib.rs": "", "src/x.rs": "#[path = \"x.rs\"]\nmod me;\n#[cfg(test)]\n#[path = \"z1.rs\"]\nmod z1;\n",
+              "src/z1.rs": "#[cfg(test)]\n#[path = \"z2.rs\"]\nmod z2;\n",
+              "src/z2.rs": "#[cfg(test)]\n#[path = \"z1.rs\"]\nmod z1;\n"},
+             {"src/z1.rs": ["src/x.rs", "src/z2.rs"], "src/z2.rs": ["src/z1.rs"]})])
+
+
 class WithNoManifest(unittest.TestCase):
     """Where no manifest says which package a file is in, a built include! names its file from the including
     file's folder or one above it."""
@@ -399,6 +466,11 @@ class WithNoManifest(unittest.TestCase):
         files = {"a/src/lib.rs": "include!(concat!(env!(\"SRC\"), \"/x.rs\"));\n", "a/src/x.rs": "", "a/x.rs": "",
                  "x.rs": "", "b/lib.rs": "".join("#[cfg(test)]\n#[path = \"%s\"]\nmod t%d;\n" % (p, k) for k, p in
                                                enumerate(("../a/src/x.rs", "../a/x.rs", "../x.rs")))}
+        self.assertEqual(modules(files), {})
+        # Where more folders hold its first part than lie above it.
+        files = {"a/src/lib.rs": "include!(concat!(env!(\"SRC\"), \"/shared/x.rs\"));\n", "a/shared/x.rs": "",
+                 "e/lib.rs": "#[cfg(test)]\n#[path = \"../a/shared/x.rs\"]\nmod x;\n"}
+        files.update(("%s/shared/y.rs" % k, "") for k in "bcd")
         self.assertEqual(modules(files), {})
 
     def test_a_leading_backslash(self):
