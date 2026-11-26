@@ -101,15 +101,16 @@ tracks. In a glob, * matches across folders too, so 'app/*.py' takes
 app/sub/deep.py; and **/ matches any number of folders, none included, so
 'app/**/*.py' takes app/main.py too. Use the same scope as the heatmap.
 Test files are set aside as the heatmap sets them aside, by name or folder,
-and Rust compiled only for tests: a file every mod declaration bringing it
-in needs test (#[cfg(test)] mod tests;, or one in such a file), one marked
-#![cfg(test)], or a crate Cargo builds only as a test, but no other crate
-Cargo builds and nothing code include!s. So they stay out of the
-percentiles; the output names a few, --list-tests every one with why, and
-any set aside in doubt; --test and --not-test correct it. So are the tests inside a file, Rust's items
-compiled only for tests (#[cfg(test)] on a mod tests {...}, a fn, an
-impl...), which the heatmap counts in the file: the output says how many
-lines and in which files, and --show which lines. --keep-tests measures
+and Rust compiled only for tests: a file brought in only by mod declarations
+that need test (#[cfg(test)] mod tests;, or one in such a file), unless
+Cargo builds it as another crate or code include!s it; one marked
+#![cfg(test)], whatever it is; or a crate Cargo builds only as a test. So
+they stay out of the percentiles; the output names five of each kind of the
+Rust ones at most, --list-tests every test file with why, and any set aside
+in doubt; --test and --not-test correct it. So are the tests inside a file,
+Rust's items compiled only for tests (#[cfg(test)] on a mod tests {...}, a
+fn, an impl...), which the heatmap counts in the file: the output says how
+many lines and in which files, and --show which lines. --keep-tests measures
 them all.
 Any copy of this skill a project keeps in the repo is left out, unless a
 scope names its folder. Reads the working tree's tracked files only.
@@ -1873,6 +1874,12 @@ def a_few(paths):
     return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
 
 
+def doubts_said(doubts):
+    """The line naming the files set aside as tests that may not be (scoping.doubtful_tests), five at most."""
+    return "Set aside as tests, but maybe not: %s%s. If one isn't a test, --not-test GLOB measures it." % (
+        "; ".join("%s (%s)" % d for d in doubts[:5]), "; and %d more" % (len(doubts) - 5) if len(doubts) > 5 else "")
+
+
 def main():
     scoping.safe_output()
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0],
@@ -1899,6 +1906,9 @@ def main():
     parser.add_argument("--list-tests", action="store_true",
                         help="list the files in the scope set aside as tests, each with why, instead of the table")
     args = parser.parse_args()
+    if args.list_tests and args.show:
+        parser.error("--list-tests lists the test files instead of the table, and --show lists a file's functions: "
+                     "give one or the other")
 
     repo = scoping.toplevel(args.repo)
     tracked = scoping.tracked_files(repo)
@@ -1924,9 +1934,12 @@ def main():
     paths = [p for p in paths if p not in tests]
     if args.list_tests:
         print("%s, scope: %s" % (os.path.basename(repo), " ".join(args.scope) or "(everything)"))
-        print("Test files set aside: %s" % ("%d, each with why:" % len(tests) if tests else "none in the scope."))
+        print("Test files set aside: %s" % ("none, as --keep-tests measures them all." if args.keep_tests else
+                                            "%d, each with why:" % len(tests) if tests else "none in the scope."))
         for path in sorted(tests):
             print("  %s: %s" % (path, scoping.test_reason(path, args.test, args.not_test, modules)))
+        if doubts:
+            print(doubts_said(doubts))
         return
 
     measured, failed, unreadable, missing = {}, [], [], []
@@ -2014,9 +2027,7 @@ def main():
                   "%s (%d)" % inside[0][::-1] if len(inside) == 1 else "%d files: %s" % (
                       len(inside), a_few(["%s (%d)" % (path, n) for n, path in inside]))))
     if doubts:
-        print("Set aside as tests, but maybe not: %s%s. If one isn't a test, --not-test GLOB measures it." % (
-            "; ".join("%s (%s)" % d for d in doubts[:5]), "; and %d more" % (len(doubts) - 5)
-            if len(doubts) > 5 else ""))
+        print(doubts_said(doubts))
     if own:
         print("This skill's own files, in %s, are left out; a scope naming that folder measures them."
               % " and ".join(f + "/" for f in own))

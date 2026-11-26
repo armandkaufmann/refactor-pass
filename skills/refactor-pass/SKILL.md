@@ -61,11 +61,11 @@ what it said, and go on without it, from `git log` and the code.
   or `app`, not docs or assets. Read the project's README, a directory
   listing and any agent instructions (`AGENTS.md`, `CLAUDE.md`) to decide.
   Test files, known by name (`Board.spec.ts`, `test_x.py`, `XTest.php`...)
-  or folder, and Rust compiled only for tests (a file every mod
-  declaration bringing it in needs test, as `#[cfg(test)] mod x;` or one
-  in a test module does; one marked `#![cfg(test)]`; a crate Cargo builds
-  only as a test, but no other crate Cargo builds, nor what code
-  `include!`s), stay out of the table and pairs, and are listed apart when
+  or folder, and Rust compiled only for tests (a file brought in only by mod
+  declarations that need test, as `#[cfg(test)] mod x;` or one in a test
+  module does, unless Cargo builds it as another crate or code `include!`s
+  it; one marked `#![cfg(test)]`, whatever it is; a crate Cargo builds only
+  as a test), stay out of the table and pairs, and are listed apart when
   they change with several files; `measure.py --list-tests` says which and
   why. Add `--test GLOB` for other test names, `--not-test GLOB` for a file
   set aside that isn't a test (the heatmap names any it doubts), and

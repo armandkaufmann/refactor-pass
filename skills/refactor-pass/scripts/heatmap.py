@@ -36,15 +36,15 @@ author dates, which a rebase or a cherry-pick keeps. This shows these:
 
 Test files are set aside, so a spec beside its source doesn't top the list:
 those named as the common frameworks name them (Board.spec.ts, test_x.py,
-x_test.go, XTest.php...), anything in a folder named test, tests,
-__tests__, spec or the like, and Rust compiled only for tests: a file every
-mod declaration bringing it in needs test (#[cfg(test)] mod x;, or one in
-such a file), one marked #![cfg(test)], or a crate Cargo builds only as a
-test, but no other crate Cargo builds and nothing code include!s. --test
-adds a pattern, --not-test counts a file set aside that isn't a test, and
---keep-tests counts them all like the rest. The output names any set aside
-in doubt: a name such as ABTest.php in no folder of tests, or a spec folder
-in which no file is named like a test or is a Rust test.
+XTest.php...), anything in a folder named test, tests, __tests__, spec or
+the like, and Rust compiled only for tests: a file brought in only by mod
+declarations that need test (#[cfg(test)] mod x;, or one in such a file),
+unless Cargo builds it as another crate or code include!s it; one marked
+#![cfg(test)]; or a crate Cargo builds only as a test. --test adds a
+pattern, --not-test counts a file set aside that isn't a test, and
+--keep-tests counts them all. The output names any set aside in doubt: a
+name such as ABTest.php in no folder of tests, or a spec folder in which no
+file is named like a test or is a Rust test.
 
 Then the files that keep changing in the same commits, with two measures:
 of the quieter file's commits, the share that changed both (how likely the
