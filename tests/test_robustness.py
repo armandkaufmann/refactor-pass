@@ -333,6 +333,12 @@ GROWING = {
     "mod-words": (300000, lambda n: {"src/lib.rs": "mod" * n}, "modules"),
     "mod-comments": (40000, lambda n: {"src/lib.rs": "mod x /*" * n}, "modules"),
     "mod-line-comments": (10000, lambda n: {"src/lib.rs": "// mod x /*\n" * n}, "modules"),
+    # Thousands of macros that declare modules, each called once, and as many files that call other macros: each file
+    # was searched for every one's name.
+    "module-macros": (1000, lambda n: dict([("src/lib.rs", "".join("macro_rules! m%d { ($x:ident) => { mod $x; } }\n"
+                                                                   "m%d!(q%d);\n" % (k, k, k) for k in range(n)))] +
+                                           [("src/z%d.rs" % k, "fn f() { println!(\"{}\", 1); }\n") for k in range(n)]),
+                      "modules"),
 }
 
 
