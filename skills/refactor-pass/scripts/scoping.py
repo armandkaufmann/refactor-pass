@@ -348,13 +348,17 @@ def flat(name):
     return re.sub(r"[^a-z0-9]", "", name)
 
 
-def owns(test, path, stems, modules=None):
+def owns(test, path, stems, modules=None, named=False):
     """Whether path is the test's own file: the same name less the test's marker; or, when no file in
     stems (the production files' flat stems) has that name, the same name and an entry point's suffix,
-    as ShowDashboardTest.php and ShowDashboardController.php. One of Rust's test modules owns only the files
-    whose declarations bring it in (modules, as rust_test_modules gives them), whatever their names."""
+    as ShowDashboardTest.php and ShowDashboardController.php. One of Rust's test modules (modules, as
+    rust_test_modules gives them) owns the files whose declarations bring it in too; and only those, whatever their
+    names, when it's a test by its declarations alone: not named or in a folder like a test's, nor Cargo's test."""
     if modules and test in modules:
-        return path in modules[test][1]
+        if path in modules[test][1]:
+            return True
+        if not named and modules[test][0] != "crate":
+            return False
     mine, theirs = flat(stem(test, True)), flat(stem(path, False))
     return theirs == mine or (mine not in stems and any(theirs == mine + part for part in ENTRY_POINTS))
 
@@ -397,22 +401,28 @@ def cfg_needs_test(attribute):
 
 
 # What a Rust file's text is read in, past its comments and strings: a comment's or a string's opening, an
-# attribute's (#[ or #![), the word mod, a brace, a bracket or a ;; and anything else at once, in runs. A string
-# never closed runs to the end. A file in which no mod declaration, inner cfg or include! may be isn't read so.
-RUST_TOKEN = re.compile(r"""(//[^\n]*|/\*)|(b?r\#*")|(b?"(?:\\.|[^"\\])*(?:"|\\?\Z)|"""
+# attribute's (#[ or #![), the word mod, a brace, a bracket or a ;; and anything else at once, in runs. A string is
+# one of Rust's literals, whatever its prefix (b, c, r and br, cr; r#name is a name), and one never closed runs to
+# the end. A file that holds none of RUST_READ isn't read so.
+RUST_TOKEN = re.compile(r"""(//[^\n]*|/\*)|([bc]?r\#*")|([bc]?"(?:\\.|[^"\\])*(?:"|\\?\Z)|"""
                         r"""b?'(?:\\(?:x[0-9a-fA-F]{2}|u\{[0-9a-fA-F]{1,6}\}|.)|[^'\\\n])')|(\#!?\s*\[)|"""
                         r"""(\bmod\b)|([{}\[\];])|"""
-                        r"""(?:[^/"'\#{}\[\];\w]+|(?!\bmod\b)(?!b?r\#*")(?!b?["'])\w+|/(?![/*])|"""
+                        r"""(?:[^/"'\#{}\[\];\w]+|(?!\bmod\b)(?![bc]?r\#*")(?![bc]?")(?!b?')\w+|/(?![/*])|"""
                         r"""'(?![^'\\\n]'|\\)|\#(?!!?\s*\[))+|\w+|.""", re.S)
-RUST_GAP = r"(?:\s|/\*(?:[^*]|\*(?!/))*\*/|//[^\n]*(?:\n|\Z))*"  # Each comment one way only, or a search can take ages.
-# What a file must hold to be read so, each found on its own, which is quicker: a declaration, an inner cfg, include!.
-RUST_READ = (re.compile(r"mod" + RUST_GAP + r"(?:r#)?\w+" + RUST_GAP + r";", re.S), re.compile(r"#\s*!\s*\[\s*cfg"),
+# What a file must hold to be read so, each searched for on its own, the word first, so that every search takes time
+# in step with the text: mod, not in a word, then a name and a ; or a comment, or a comment, or a macro's $name; an
+# inner cfg; include!. A file that only calls a macro that declares modules is read too, once one is found.
+RUST_READ = (re.compile(r"mod(?<![\w$]mod)(?:\s+(?:r#)?\w+\s*[;/]|\s*/|\s+\$)"), re.compile(r"#\s*!\s*\[\s*cfg"),
              re.compile(r"include\s*!"))
 BLOCK_COMMENT = re.compile(r"/\*|\*/")
 KINDS = (None, "comment", "raw", "string", "attribute", "mod", "bracket")
 RUST_NAME = re.compile(r"\s*((?:r#)?[A-Za-z_]\w*)\s*$")
 MACRO_BEFORE_BRACE = re.compile(r"(?:\w\s*!|macro_rules\s*!\s*(?:r#)?\w+)\s*$")  # pick! {, macro_rules! m {
-INCLUDE_BEFORE = re.compile(r"\binclude\s*!\s*[(\[{]\s*$")
+MACRO_DEFINED = re.compile(r"\bmacro_rules\s*!\s*(?:r#)?(\w+)\s*$")
+INCLUDE_AT = re.compile(r"\binclude\s*!\s*(\(\s*)?(\S?)")  # include!, its bracket, and what follows in its run.
+# A macro called with words for arguments, as a macro that declares modules is (modules!(util, net)); the words.
+MACRO_CALL = re.compile(r"(?<![\w$])([A-Za-z_]\w*)\s*!\s*\(([\w\s,]*)\)")
+CALLED_AT = re.compile(r"(?<![\w$])([A-Za-z_]\w*)\s*!\s*$")
 
 
 def rust_tokens(text):
@@ -444,9 +454,14 @@ def rust_tokens(text):
 
 
 def string_text(token):
-    """A string token's text, without its quotes or prefix, each \\ read as / (an escaped \\\\ is two /, which a
-    path reads as one)."""
-    return token.lstrip("br").strip("#")[1:-1].replace("\\", "/")
+    """A string token's text, without its quotes or prefix, its escapes read but in a raw string."""
+    text = token.lstrip("bcr").strip("#")[1:-1]
+    if token.lstrip("bc").startswith("r"):
+        return text
+    return re.sub(r"\\(.)", lambda escape: ESCAPES.get(escape.group(1), escape.group(1)), text)
+
+
+ESCAPES = {"n": "\n", "t": "\t", "r": "\r", "0": "\0"}
 
 
 def rust_attribute(tokens, opening):
@@ -473,27 +488,35 @@ def rust_attribute(tokens, opening):
 
 
 def rust_modules(text):
-    """A Rust file's modules as rustc reads them: (marked, scopes, declared, included). marked: whether the whole
-    file needs test, by #![cfg(test)] before anything else in it (past a shebang line). scopes: per block it opens
-    where a mod declaration's file is found otherwise, its parent's index and what it is: ("module", name) for an
-    inline module, ("path", folder) for one with a #[path], ("block", None) for a function's body or any other
+    """A Rust file's modules as rustc reads them: (marked, scopes, declared, included, macros). marked: whether the
+    whole file needs test, by #![cfg(test)] before anything else in it (past a shebang line). scopes: per block it
+    opens where a mod declaration's file is found otherwise, its parent's index and what it is: ("module", name) for
+    an inline module, ("path", folder) for one with a #[path], ("block", None) for a function's body or any other
     block that isn't a macro's or a module's, in which a declaration needs a #[path]; scope 0 is the file's own. A
     macro's brackets (pick! { if #[cfg(test)] { mod t; } }) open none: a declaration in them is read as if they
     weren't there, the cfg before their brace counted. declared: per mod declaration, (name, path, scope, test,
-    choices): its #[path] or None, the scope it's in, whether its cfg or the code it's in needs test, and the
-    files its cfg_attrs may name instead, each with its cfg's terms (cfg_terms). included: the files a plain
-    include!("x.rs") outside test code names."""
+    choices, own): its #[path] or None (the first, which a cfg_attr's path before it may stand in for), the scope
+    it's in, whether its cfg or the code it's in needs test, the files its cfg_attrs may name instead, each with its
+    cfg's terms (cfg_terms), and whether its own cfg needs test. included: outside test code, (path, whole) per
+    string an include! holds, whole when the string is all its argument (include!("x.rs")), not when it's a part
+    (include!(concat!(..., "/x.rs"))).
+    macros: (defined, called): the macro_rules! it defines that declare a module of a name they're given (mod $m;),
+    and, outside test code, per macro it calls with words (modules!(util, net)), (macro, words, scope)."""
     if text.startswith("\ufeff"):
         text = text[1:]
     if text.startswith("#!") and not re.match(r"#!\s*\[", text):  # A shebang line, which rustc passes over.
         text = text[text.find("\n") + 1:] if "\n" in text else ""
     scopes = [(None, None, None)]
     # Per bracket open: its scope, whether its code needs test, whether nothing but inner attributes has come in it
-    # yet, and whether it's a macro's.
-    frames = [[0, False, True, False]]
+    # yet, whether it's a macro's, and the macro_rules! it's in, or None.
+    frames = [[0, False, True, False, None]]
     declared, included, pending, name, before, tokens = [], [], [], None, "", rust_tokens(text)
+    defined, called = set(), []
     pending_test = False  # Whether an attribute pending, before the item it's on, is a cfg that needs test.
+    include = None  # After include!: "open" to its argument, "inside" it past something other than a string.
+    templated = None  # After mod in a macro_rules!, a $name: that macro's name, till the ; that makes it a declaration.
     for kind, token in tokens:
+        test_code = frames[-1][1] or pending_test
         if kind == "attribute":
             attribute, path, choice = rust_attribute(tokens, token)
             if "!" in token:
@@ -508,8 +531,16 @@ def rust_modules(text):
         if kind is None:
             if not token.strip():
                 continue
+            templated = frames[-1][4] if name == "" and frames[-1][4] and re.match(r"\s*\$\w+\s*$", token) else None
             found = RUST_NAME.match(token) if name == "" else None  # After mod, the module's name.
             name = (found.group(1)[2:] if found.group(1).startswith("r#") else found.group(1)) if found else None
+            if not test_code and "!" in token:
+                called.extend((m.group(1), re.findall(r"\w+", m.group(2)), frames[-1][0])
+                              for m in MACRO_CALL.finditer(token))
+            if len(frames[-1]) > 5 and not test_code and re.match(r"[\w\s,]*$", token):
+                frames[-1][5].extend(re.findall(r"\w+", token))
+            at = INCLUDE_AT.search(token) if "include" in token else None
+            include = ("inside" if at.group(2) else "open") if at else "inside" if include else None
             before = token
             frames[-1][2] = False
             continue
@@ -518,30 +549,44 @@ def rust_modules(text):
             name, before = "", ""
             continue
         if kind == "string":
-            if INCLUDE_BEFORE.search(before) and not (frames[-1][1] or pending_test):
-                included.append(string_text(token))
+            if include and not test_code:
+                included.append((string_text(token), include == "open"))
+            include = "inside" if include else None
         elif token in ";{}":
-            test = frames[-1][1] or pending_test
+            test = test_code
+            if token == ";" and templated:
+                defined.add(templated)  # mod $name; in a macro_rules!: it declares the modules it's given.
             if token == ";":
                 if name:
-                    path = next((p for _, p, _ in pending if p is not None), None)
-                    choices = [(c, cfg_terms(a, RUST_CFG_ATTR.match(a))) for a, _, c in pending if c is not None]
-                    declared.append((name, path, frames[-1][0], test, choices))
+                    # The first #[path] counts; a cfg_attr's path before it stands in for it where its cfg holds.
+                    first = next((k for k, (_, p, _) in enumerate(pending) if p is not None), len(pending))
+                    path = pending[first][1] if first < len(pending) else None
+                    choices = [(c, cfg_terms(a, RUST_CFG_ATTR.match(a))) for a, _, c in pending[:first]
+                               if c is not None]
+                    declared.append((name, path, frames[-1][0], test, choices, pending_test))
             elif token == "{":
                 if name:
                     path = next((p for _, p, _ in pending if p is not None), None)
                     scopes.append((frames[-1][0], "module", name) if path is None else (frames[-1][0], "path", path))
-                    frames.append([len(scopes) - 1, test, True, False])
+                    frames.append([len(scopes) - 1, test, True, False, frames[-1][4]])
                 elif frames[-1][3] or MACRO_BEFORE_BRACE.search(before):
-                    frames.append([frames[-1][0], test, True, True])
+                    macro = MACRO_DEFINED.search(before)
+                    frames.append([frames[-1][0], test, True, True, macro.group(1) if macro else frames[-1][4]])
+                    call = CALLED_AT.search(before)
+                    if call and not test and not macro and call.group(1) != "include":  # modules! { util, net }
+                        called.append((call.group(1), [], frames[-1][0]))
+                        frames[-1].append(called[-1][1])
                 else:
                     scopes.append((frames[-1][0], "block", None))
-                    frames.append([len(scopes) - 1, test, True, False])
+                    frames.append([len(scopes) - 1, test, True, False, frames[-1][4]])
             elif len(frames) > 1:
                 frames.pop()
             pending, pending_test = [], False
-        name, before = None, ""
-    return frames[0][1], scopes, declared, included
+            include = include if token == "{" and include == "open" else None
+        else:  # [ or ]: include![...] opens its argument.
+            include = include if token == "[" and include == "open" else None
+        name, before, templated = None, "", None
+    return frames[0][1], scopes, declared, included, (defined, called)
 
 
 def cargo_roots(manifests, folder_of, find):
@@ -549,8 +594,8 @@ def cargo_roots(manifests, folder_of, find):
     build = "..."), of the .rs files git tracks: (roots, code), code being those it builds other than as tests: a
     library, a binary, an example, a bench or a build script. A path in any other table that names a .rs file, as
     an inline [[bin]]'s, is taken for one too. folder_of(path) gives a manifest's folder; find(folder, path) the
-    tracked .rs file a path names from it, or None."""
-    roots, code = set(), set()
+    tracked .rs file a path names from it, or None. roots maps each to its manifest."""
+    roots, code = {}, set()
     for manifest, text in sorted(manifests.items()):
         table = ""
         for line in text.splitlines():
@@ -565,7 +610,7 @@ def cargo_roots(manifests, folder_of, find):
                     continue
                 target = find(folder_of(manifest), literal or re.sub(r"\\(.)", r"\1", value))
                 if target:
-                    roots.add(target)
+                    roots.setdefault(target, manifest)
                     if table != "test" and not re.match(r"\s*test\s*=", line):
                         code.add(target)
     return roots, code
@@ -590,6 +635,11 @@ def rust_test_modules(tracked, read):
     manifests = [p for p in tracked if posixpath.basename(p) == "Cargo.toml"]
     texts = read(sorted(known) + manifests) if known else {}
     parsed = dict((p, rust_modules(t)) for p, t in texts.items() if p in known and any(r.search(t) for r in RUST_READ))
+    module_macros = set(m for p in parsed for m in parsed[p][4][0])
+    if module_macros:  # A file that calls one is read too, for its calls.
+        calls = re.compile(r"(?<![\w$])(?:%s)\s*!" % "|".join(sorted(module_macros)))
+        parsed.update((p, rust_modules(t)) for p, t in texts.items() if p in known and p not in parsed and
+                      any(macro in t for macro in module_macros) and calls.search(t))
     # The folders the tracked files are in, numbered, each with its parent and its files and folders by name. A folder
     # elsewhere is one of these and a count of the folders under it that hold none: (number, count).
     parent, child, files, own = [None], {}, {}, {}
@@ -630,11 +680,17 @@ def rust_test_modules(tracked, read):
         return files.get((where[0], name)) if where is not None and not where[1] else None
 
     def find(where, path):
-        """The tracked .rs file a path names from where."""
-        head, _, name = path.rpartition("/")
-        return file_in(walk(where, head), name) if name not in ("", ".", "..") else None
+        """The tracked .rs file a path names from where: as it is, as rustc reads it on Unix, else with each \\ a /,
+        as on Windows."""
+        for each in (path, path.replace("\\", "/")) if "\\" in path else (path,):
+            head, _, name = each.rpartition("/")
+            found = file_in(walk(where, head), name) if name not in ("", ".", "..") else None
+            if found:
+                return found
+        return None
 
-    roots, code = cargo_roots(dict((p, texts.get(p, "")) for p in manifests), lambda p: (own[p], 0), find)
+    manifest_of, code = cargo_roots(dict((p, texts.get(p, "")) for p in manifests), lambda p: (own[p], 0), find)
+    manifest_at = dict((own[p], p) for p in manifests)
     has_manifest = set(own[p] for p in manifests)
     covered = [False] * len(parent)  # Per folder, whether a manifest is in it or above it.
     for folder in range(len(parent)):
@@ -664,9 +720,10 @@ def rust_test_modules(tracked, read):
         for _ in range(up):
             top = parent[top]
         if top in has_manifest or not (covered[top] or tests):
-            roots.add(path)
+            manifest_of.setdefault(path, manifest_at.get(top))
             if not tests:
                 code.add(path)
+    roots = set(manifest_of)
 
     def states(path, kind):
         """Per scope of a file read as a mod.rs or a module file, its folder, the name its own folder adds, and
@@ -685,7 +742,7 @@ def rust_test_modules(tracked, read):
     def targets(state, declaration):
         """The files a declaration brings in, read in a state, each with how rustc reads it and whether it's
         brought in only for tests."""
-        name, path, scope, test, choices = declaration
+        name, path, scope, test, choices = declaration[:5]
         where, relative, owned = state[scope]
         found = [(find(where, choice), "mod-rs", test or terms[0]) for choice, terms in choices]
         test = test or any(terms[1] for _, terms in choices)  # The default where no cfg_attr's path applies.
@@ -697,21 +754,48 @@ def rust_test_modules(tracked, read):
             found.append((module, "module", test) if module else (file_in(down(base, name), "mod.rs"), "mod-rs", test))
         return [f for f in found if f[0]]
 
+    # Per file, its mod declarations, and as plain ones the words it gives a macro that declares modules.
+    every = dict((path, parsed[path][2] + [(word, None, scope, False, [], False) for macro, words, scope
+                                           in parsed[path][4][1] if macro in module_macros for word in words])
+                 for path in parsed)
+    declarations = every.__getitem__
+
     # A crate root no manifest names: a file no declaration could bring in, read either way.
     maybe = set()
     for path in parsed:
         for kind in ("mod-rs", "module"):
             state = states(path, kind)
-            for declaration in parsed[path][2]:
+            for declaration in declarations(path):
                 maybe.update(t for t, _, _ in targets(state, declaration))
     tested = roots - code  # The crates Cargo builds only as tests, whose code is a test's.
     roots |= set(p for p in parsed if p not in maybe)
-    for path in parsed:  # What code outside tests include!s is code.
-        code.update(t for t in (find((own[path], 0), p) for p in parsed[path][3]) if t)
+    # What code outside tests include!s is code: the file a whole argument names, from the file's folder; and, where
+    # the argument is built (concat!(env!("CARGO_MANIFEST_DIR"), "/src/x.rs")), the file one of its strings names
+    # from the package's folder, or with no manifest above it, any file whose path ends so.
+    ends = None
+    for path in parsed:
+        for included, whole in parsed[path][3]:
+            if whole:
+                code.update(t for t in [find((own[path], 0), included)] if t)
+            elif included.endswith(".rs"):
+                package = own[path]
+                while package is not None and package not in has_manifest:
+                    package = parent[package]
+                if package is not None:
+                    code.update(t for t in [find((package, 0), included.lstrip("/\\"))] if t)
+                    continue
+                if ends is None:
+                    ends = {}
+                    for each in known:
+                        at = 0
+                        while at >= 0:
+                            ends.setdefault(each[at:].lstrip("/"), []).append(each)
+                            at = each.find("/", at + 1)
+                code.update(ends.get(included.replace("\\", "/").lstrip("/"), ()))
     # Each file is read once per way it's brought in (a reading: the file, and "root", "mod-rs", "module", or None
     # for a file no reading reaches, read as either), each declaration in it pointing to a reading of its file.
     queue = sorted(((p, "root") for p in roots if p in parsed), reverse=True)
-    done, unknown, k = set(queue), sorted(parsed), 0
+    done, unknown, k = set(queue) | set((p, "root") for p in roots), sorted(parsed), 0
     edges = {}  # Per reading brought in, per declaration (the reading it's in, its number), whether it needs test.
     while queue or k < len(unknown):
         if not queue:
@@ -724,7 +808,7 @@ def rust_test_modules(tracked, read):
         path, kind = reading
         found_in = [states(path, "module"), states(path, "mod-rs")] if kind is None and \
             posixpath.basename(path) != "mod.rs" else [states(path, "module" if kind == "module" else "mod-rs")]
-        for number, declaration in enumerate(parsed[path][2]):
+        for number, declaration in enumerate(declarations(path)):
             for target, read_as, test in next((f for f in (targets(s, declaration) for s in found_in) if f), []):
                 declared = edges.setdefault((target, read_as), {})
                 declared[(reading, number)] = declared.get((reading, number), True) and test
@@ -757,8 +841,14 @@ def rust_test_modules(tracked, read):
     found = {}
     for path in sorted(readings):
         if path in marked or (path not in code and all(r in seen for r in readings[path])):
+            # Per declaration bringing it in, whether its own cfg needs test, not only the code it's in.
+            sources = [(source, test and declarations(source[0])[number][5])
+                       for r in readings[path] for (source, number), test in edges.get(r, {}).items()]
             found[path] = ("marked" if path in marked else "crate" if path in tested else "declared",
-                           frozenset(source[0] for r in readings[path] for source, _ in edges.get(r, ())))
+                           frozenset(source[0] for source, _ in sources),
+                           frozenset(source[0] for source, test in sources if not test))
+            if found[path][0] == "crate":
+                found[path] = found[path][:2] + (manifest_of.get(path),)
     return found
 
 
@@ -768,28 +858,60 @@ def and_list(names):
 
 
 def rust_test_reason(path, modules):
-    """Why one of Rust's test modules (rust_test_modules) is one, said of that file."""
-    how, declared = modules[path]
-    return "Rust compiled only for tests, by the #![cfg(test)] at its top" if how == "marked" else \
-        "a Rust crate Cargo builds only as a test" if how == "crate" else \
-        "one of Rust's test modules, declared only for tests, in " + and_list(sorted(declared))
+    """Why one of Rust's test modules (rust_test_modules) is one, said of that file: by its own #![cfg(test)], as a
+    crate its manifest builds only as a test, or by the declarations that bring it in, each needing test by its
+    cfg or by the code it's in, which is then compiled only for tests itself."""
+    how, declared, detail = modules[path]
+    if how == "marked":
+        return "Rust compiled only for tests, by the #![cfg(test)] at its top"
+    if how == "crate":
+        return "a Rust crate Cargo builds only as a test" + (", by %s" % detail if detail else "")
+    by_cfg, in_tests = sorted(declared - detail), sorted(detail)
+    return "one of Rust's test modules, " + ", and ".join(
+        (["declared only for tests, in " + and_list(by_cfg)] if by_cfg else []) +
+        (["declared in %s, in code compiled only for tests" % and_list(in_tests)] if in_tests else []))
 
 
-def rust_tests_said(found, modules, show):
-    """For the Test files line, the files found that are tests by Rust's declarations and not by their names, every
-    one, and why: by their declarations, by their own #![cfg(test)], or as Cargo's test crates; show follows the
-    first."""
+def a_few(paths):
+    """The first five paths, and how many more."""
+    return and_list(paths[:5] + (["%d more" % (len(paths) - 5)] if len(paths) > 5 else []))
+
+
+def rust_tests_said(found, modules, listed):
+    """For the Test files line, the files found that are tests by Rust's declarations and not by their names, a few
+    of each kind, and why: by their declarations, by their own #![cfg(test)], or as Cargo's test crates; and listed,
+    where to see every one."""
     declared, marked, crates = (sorted(p for p in found if modules[p][0] == how)
                                 for how in ("declared", "marked", "crate"))
     parts = [("1 of them a Rust test module in a file of its own, known by its declaration, not its name: "
               if len(declared) == 1 else "%d of them Rust test modules in files of their own, known by their "
-              "declarations, not their names: " % len(declared)) + and_list(declared) + show] if declared else []
+              "declarations, not their names: " % len(declared)) + a_few(declared)] if declared else []
     parts += [("1 of them Rust compiled only for tests by the #![cfg(test)] at its top: " if len(marked) == 1 else
                "%d of them Rust compiled only for tests, each by the #![cfg(test)] at its top: " % len(marked)) +
-              and_list(marked)] if marked else []
+              a_few(marked)] if marked else []
     parts += [("1 of them a Rust crate Cargo builds only as a test: " if len(crates) == 1 else "%d of them Rust "
-               "crates Cargo builds only as tests: " % len(crates)) + and_list(crates)] if crates else []
-    return "".join("; " + part for part in parts)
+               "crates Cargo builds only as tests: " % len(crates)) + a_few(crates)] if crates else []
+    return "".join("; " + part for part in parts) + (". " + listed if parts else "")
+
+
+def test_reason(path, more=(), not_tests=(), modules=()):
+    """Why a file is set aside as a test (is_test), or None if it isn't."""
+    if named(path, not_tests):
+        return None
+    folder = next((part for part in path.split("/")[:-1] if part.lower() in TEST_FOLDERS), None)
+    if folder:
+        return "in a folder named %s" % folder
+    pattern = next((p for p in TEST_NAMES + list(more) if named(path, [p])), None)
+    if pattern:
+        return "named like a test (%s)" % pattern
+    return rust_test_reason(path, modules) if path in modules else None
+
+
+def rust_read_differs(repo):
+    """How many of the tracked .rs files and Cargo.toml manifests the working tree changes against HEAD."""
+    found = git(repo, "diff", "--name-only", "HEAD", "--", "*.rs", "Cargo.toml", "*/Cargo.toml")
+    return len([line for line in found.stdout.decode("utf-8", "replace").splitlines() if line]) \
+        if found.returncode == 0 else 0
 
 
 def tracked_files(repo, rev=None):

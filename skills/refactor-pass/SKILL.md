@@ -61,12 +61,14 @@ what it said, and go on without it, from `git log` and the code.
   or `app`, not docs or assets. Read the project's README, a directory
   listing and any agent instructions (`AGENTS.md`, `CLAUDE.md`) to decide.
   Test files, known by name (`Board.spec.ts`, `test_x.py`, `XTest.php`...)
-  or folder, and Rust files compiled only for tests (by the
-  `#[cfg(test)] mod` that brings one in, the test module it's in, or its
-  own `#![cfg(test)]`; the output names them), stay out of the table and
-  pairs, and are listed apart when they change with several files. Add
-  `--test GLOB` for other test names, `--not-test GLOB` for a file set
-  aside that isn't a test (the heatmap names any it doubts), and
+  or folder, and Rust compiled only for tests (a file every mod
+  declaration bringing it in needs test, as `#[cfg(test)] mod x;` or one
+  in a test module does; one marked `#![cfg(test)]`; a crate Cargo builds
+  only as a test, but no other crate Cargo builds, nor what code
+  `include!`s), stay out of the table and pairs, and are listed apart when
+  they change with several files; `measure.py --list-tests` says which and
+  why. Add `--test GLOB` for other test names, `--not-test GLOB` for a file
+  set aside that isn't a test (the heatmap names any it doubts), and
   `--ignore GLOB` for generated files.
 - **Window**: by default the last 200 commits. `--since` sets it instead
   when the user names a starting point ("since v2.0", "since we added

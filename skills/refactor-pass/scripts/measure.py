@@ -101,11 +101,12 @@ tracks. In a glob, * matches across folders too, so 'app/*.py' takes
 app/sub/deep.py; and **/ matches any number of folders, none included, so
 'app/**/*.py' takes app/main.py too. Use the same scope as the heatmap.
 Test files are set aside as the heatmap sets them aside, by name or folder,
-and Rust files compiled only for tests by every mod declaration that brings
-one in (#[cfg(test)] mod tests;, or any in such a file) or by their own
-#![cfg(test)], unless Cargo builds one as a crate of its own, so they stay
-out of the percentiles; the output names those, and any set aside in doubt;
---test and --not-test correct it. So are the tests inside a file, Rust's items
+and Rust compiled only for tests: a file every mod declaration bringing it
+in needs test (#[cfg(test)] mod tests;, or one in such a file), one marked
+#![cfg(test)], or a crate Cargo builds only as a test, but no other crate
+Cargo builds and nothing code include!s. So they stay out of the
+percentiles; the output names a few, --list-tests every one with why, and
+any set aside in doubt; --test and --not-test correct it. So are the tests inside a file, Rust's items
 compiled only for tests (#[cfg(test)] on a mod tests {...}, a fn, an
 impl...), which the heatmap counts in the file: the output says how many
 lines and in which files, and --show which lines. --keep-tests measures
@@ -1895,6 +1896,8 @@ def main():
     parser.add_argument("--show", action="append", default=[], metavar="FILE",
                         help="list this file's functions, with the first and last line of each for git log -L, "
                              "instead of the table of files")
+    parser.add_argument("--list-tests", action="store_true",
+                        help="list the files in the scope set aside as tests, each with why, instead of the table")
     args = parser.parse_args()
 
     repo = scoping.toplevel(args.repo)
@@ -1911,14 +1914,20 @@ def main():
     paths, own = scoping.leave_own_out(in_scope, tracked, args.scope)
     # Rust's test modules in files of their own, by the declarations that bring them in, which may be outside the
     # scope: read in every tracked .rs file of the working tree, where the scope or --show has one.
-    modules = scoping.rust_test_modules(tracked, lambda wanted: working_texts(repo, wanted)) \
-        if not args.keep_tests and any(p.endswith(".rs") for p in paths + shows) else {}
+    rust = not args.keep_tests and any(p.endswith(".rs") for p in paths + shows)
+    modules = scoping.rust_test_modules(tracked, lambda wanted: working_texts(repo, wanted)) if rust else {}
     tests = set() if args.keep_tests else set(
         p for p in paths if scoping.is_test(p, args.test, args.not_test, modules))
     # Those set aside by their declarations alone, so the output can say which.
     declared = sorted(p for p in tests if p in modules and not scoping.is_test(p, args.test, args.not_test))
     doubts = scoping.doubtful_tests(tests, paths, args.test, modules)
     paths = [p for p in paths if p not in tests]
+    if args.list_tests:
+        print("%s, scope: %s" % (os.path.basename(repo), " ".join(args.scope) or "(everything)"))
+        print("Test files set aside: %s" % ("%d, each with why:" % len(tests) if tests else "none in the scope."))
+        for path in sorted(tests):
+            print("  %s: %s" % (path, scoping.test_reason(path, args.test, args.not_test, modules)))
+        return
 
     measured, failed, unreadable, missing = {}, [], [], []
     within = {}  # Per file, the tests inside it that are set aside (functions' set_aside), where it has any.
@@ -1988,7 +1997,12 @@ def main():
         print("Test files: %s%s." % ("%d set aside from the percentiles and the table" % len(tests)
                                      if tests else "none in the scope",
                                      scoping.rust_tests_said(declared, modules,
-                                                             " (--show FILE names what declares each)")))
+                                                             "--list-tests lists every one, with why")))
+        differs = scoping.rust_read_differs(repo) if rust else 0
+        if differs:
+            print("Rust's test modules are read here from the working tree, which differs from HEAD in %d .rs or "
+                  "Cargo.toml file%s; the heatmap reads HEAD, so the two may set aside different files."
+                  % (differs, "" if differs == 1 else "s"))
     # The files in the scope with tests inside them, those with the most lines of them first.
     inside = sorted(((sum(part[2] for part in parts), path) for path, parts in within.items() if path in in_paths),
                     key=lambda kv: (-kv[0], kv[1]))
