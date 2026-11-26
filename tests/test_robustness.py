@@ -333,23 +333,27 @@ GROWING = {
     "mod-words": (300000, lambda n: {"src/lib.rs": "mod" * n}, "modules"),
     "mod-comments": (40000, lambda n: {"src/lib.rs": "mod x /*" * n}, "modules"),
     "mod-comment-names": (40000, lambda n: {"src/lib.rs": "mod /*" * n}, "modules"),
-    # An include! of thousands of strings: they were joined again at each.
-    # Hundreds of macro_rules! of one name, each declaring in its own inline module, each called: each call took every
-    # one's modules; and a template's modules nested thousands deep, read one more each.
-    "same-name-templates": (300, lambda n: {"src/lib.rs": "".join(
-        "macro_rules! m { ($x:ident) => { pub mod o%d { pub mod $x; } }; }\nm!(u%d);\n" % (k, k) for k in range(n))},
-        "modules"),
-    "template-deep": (8000, lambda n: {"src/lib.rs": "macro_rules! m { ($x:ident) => { " + "pub mod o { " * n +
-                                       "pub mod $x; " + "} " * n + "}; }\nm!(util);\n"}, "modules"),
+    # Thousands of exported macros in files of their own, each mentioning the one before, the first declaring modules:
+    # a chain of forwarders; thousands of definitions nested, each mentioning it: each walked those it's in; and
+    # thousands of exported macros that declare modules, past what's looked for one by one, and as many packages
+    # that name none: each file was searched for every one's name.
+    "forwarder-chain": (1000, lambda n: dict(
+        [("src/lib.rs", EXPORTED % ("m0", "pub mod $x;") + "".join("m%d!(u%d);\n" % (k, k) for k in range(n)))] +
+        [("src/f%d.rs" % k, EXPORTED % ("m%d" % k, "m%d!($x);" % (k - 1))) for k in range(1, n)]), "modules"),
+    "nested-forwarders": (1500, lambda n: {"src/lib.rs": EXPORTED % ("m0", "mod $x;") + "#[macro_export]\n" +
+                                           "macro_rules! m { () => { m0!(a); " * n}, "modules"),
+    "module-macros": (1000, lambda n: dict(
+        [("src/lib.rs", "".join(EXPORTED % ("m%d" % k, "mod $x;") + "m%d!(q%d);\n" % (k, k) for k in range(n)))] +
+        [("z%d/Cargo.toml" % k, "[package]\n") for k in range(n)] +
+        [("z%d/src/lib.rs" % k, "fn f() { println!(\"{}\", 1); }\n") for k in range(n)]), "modules"),
+    # An include! of thousands of strings: they were joined again at each; and thousands of include!s, each of two
+    # strings joined, then one built on OUT_DIR: those to join were copied at each.
     "include-strings": (3000, lambda n: {"src/lib.rs": "mod zz;\ninclude!(concat!(" + "\"s\", " * n + "));\n"},
                         "modules"),
+    "out-dir-includes": (2000, lambda n: {"src/lib.rs": "mod zz;\n" + "".join(
+        "include!(concat!(\"gen\", \"%d.rs\"));\ninclude!(concat!(env!(\"OUT_DIR\"), \"/x%d.rs\"));\n" % (k, k)
+        for k in range(n))}, "modules"),
     "mod-line-comments": (10000, lambda n: {"src/lib.rs": "// mod x /*\n" * n}, "modules"),
-    # Thousands of macros that declare modules, each called once, and as many files that call other macros: each file
-    # was searched for every one's name.
-    "module-macros": (1000, lambda n: dict([("src/lib.rs", "".join("macro_rules! m%d { ($x:ident) => { mod $x; } }\n"
-                                                                   "m%d!(q%d);\n" % (k, k, k) for k in range(n)))] +
-                                           [("src/z%d.rs" % k, "fn f() { println!(\"{}\", 1); }\n") for k in range(n)]),
-                      "modules"),
     # Files thousands of folders deep, with no manifest, and a built include!: the path each file's name ends in,
     # from each of its folders, was taken to look the include up by.
     "deep-built-include": (4000, lambda n: dict([("/".join("d%d" % k for k in range(n)) + "/x%d.rs" % j, "")
@@ -357,12 +361,25 @@ GROWING = {
                                                [("/".join("d%d" % k for k in range(n)) + "/lib.rs",
                                                  "include!(concat!(env!(\"X\"), \"/x0.rs\"));\n")]), "modules"),
     # Thousands of built include!s in a file hundreds of folders deep, with no manifest: each looked for its file
-    # from every folder above it.
-    "deep-built-includes": (1000, lambda n: {"/".join(["d"] * (n // 10)) + "/lib.rs": "".join(
+    # from every folder above it, and each folder's package was found again; and as many, each from a first folder
+    # of its own: each such folder was looked for in every folder above.
+    "deep-built-includes": (2000, lambda n: {"/".join(["d"] * (n // 10)) + "/lib.rs": "".join(
         "include!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/src/f%d.rs\"));\n" % k for k in range(n))}, "modules"),
+    "deep-distinct-firsts": (1000, lambda n: {"/".join(["d"] * (n // 10)) + "/lib.rs": "".join(
+        "include!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/f%d/x.rs\"));\n" % k for k in range(n))}, "modules"),
     # Thousands of macro_rules! opened, each inside the last: each looked for the scope it's in below all the others.
     "nested-macro-rules": (2000, lambda n: {"src/lib.rs": "mod zz;\n" + "macro_rules! m {" * n}, "modules"),
+    # Files no reading reaches, each read in a round of its own, as s_k reaches r_k as a mod.rs, whose module reading
+    # alone could bring in s_k+1: those ready were found again from every file left, each round.
+    "unreached-rounds": (1000, lambda n: dict([("src/lib.rs", "pub fn f() {}\n"), ("src/b0.rs", "pub mod s;\n"),
+                                               ("src/b0/s.rs", "#[path = \"r0.rs\"]\nmod x;\n")] +
+                                              [("src/b0/r%d.rs" % k, "mod s;\n") for k in range(n)] +
+                                              [("src/b0/r%d/s.rs" % k, "#[path = \"../r%d.rs\"]\nmod x;\n" % (k + 1))
+                                               for k in range(n)]), "modules"),
 }
+
+
+EXPORTED = "#[macro_export]\nmacro_rules! %s { ($x:ident) => { %s } }\n"
 
 
 def rust_files(declaring, n):

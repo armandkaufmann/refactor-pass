@@ -153,12 +153,11 @@ class WhereADeclarationPoints(unittest.TestCase):
 
     def test_raw_names_and_what_isnt_a_declaration(self):
         # mod r#match; is match.rs, and mod name; name.rs, a comment or two before its ; or not. Comments, nested
-        # ones too, strings, raw ones holding a quote, a macro's pattern and an inline module declare nothing; a
-        # character's brace closes no module.
+        # ones too, strings, raw ones holding a quote and an inline module declare nothing; a character's brace
+        # closes no module.
         files = {"src/lib.rs": "#[cfg(test)]\nmod r#match;\n// #[cfg(test)] mod note;\n/* #[cfg(test)] mod old; */\n"
                                "/* /* */ #[cfg(test)] mod older; */\nconst S: &str = \"#[cfg(test)] mod text;\";\n"
                                "const R: &str = r#\"a\" #[cfg(test)] mod quoted; \"#;\n"
-                               "macro_rules! m { ($text:ident) => { #[cfg(test)] mod $text; } }\n"
                                "#[cfg(test)]\nmod inline {\n}\n#[cfg(test)]\nmod name /* x */ ;\n"
                                "#[cfg(test)] mod late // y\n;\n"
                                "mod outer {\n    const C: char = '}';\n    #[cfg(test)]\n    mod inner;\n}\n",
@@ -178,7 +177,8 @@ class WhereADeclarationPoints(unittest.TestCase):
     def test_every_literal_prefix(self):
         # A string is one whatever its prefix, b, c, r, br or cr, so a { in it opens nothing: mod p; is read at the
         # top, where it needs no #[path], so p.rs, which a test's #[path] names too, is code.
-        files = {"src/lib.rs": "#[cfg(test)]\n#[path = \"p.rs\"]\nmod p2;\nstatic C: &CStr = cr#\"x\"{\"#;\n"
+        files = {"src/lib.rs": "use std::ffi::CStr;\n#[cfg(test)]\n#[path = \"p.rs\"]\nmod p2;\n"
+                               "static C: &CStr = cr#\"x\"{\"#;\n"
                                "const D: &CStr = c\"a{\";\n"
                                "const E: &[u8] = br#\"\"{\"#;\n"
                                "const F: &[u8] = b\"{\";\nconst G: &str = r\"{\";\nconst H: u8 = b'{';\n"
@@ -336,42 +336,46 @@ class WhenItsATest(unittest.TestCase):
                  "a/src/x.rs": "", "b/src/lib.rs": "#[cfg(test)]\nmod x;\n", "b/src/x.rs": ""}
         self.assertEqual(modules(files), {"b/src/x.rs": ["b/src/lib.rs"]})
 
-    def test_what_a_macro_declares(self):
-        # A macro_rules! that declares the modules it's given declares them where it's called, with brackets or
-        # braces: util.rs and disk/store.rs are the library's, though the binary brings util.rs in only for tests.
-        files = {"src/lib.rs": "macro_rules! modules { ($($m:ident),*) => { $(pub mod $m;)* } }\nmodules!(util, net);\n"
-                               "mod disk;\n#[cfg(test)]\n#[path = \"disk/store.rs\"]\nmod store;\n",
-                 "src/disk.rs": "modules! { store }\n",
-                 "src/main.rs": "#[cfg(test)]\nmod util;\n#[cfg(test)]\nmod probe;\n",
-                 "src/util.rs": "", "src/net.rs": "", "src/disk/store.rs": "", "src/probe.rs": ""}
-        self.assertEqual(modules(files), {"src/probe.rs": ["src/main.rs"]})
-        # Called in test code, it isn't read, so probe.rs is a test by its #[path] alone; and a macro whose mod $name
-        # has a body declares no file.
-        files = {"src/lib.rs": "macro_rules! modules { ($($m:ident),*) => { $(pub mod $m;)* } }\n#[cfg(test)]\n"
-                               "modules!(probe);\n#[cfg(test)]\n#[path = \"probe.rs\"]\nmod again;\n"
-                               "macro_rules! wrap { ($m:ident) => { mod $m {} } }\nmod disk;\n#[cfg(test)]\n"
-                               "#[path = \"disk/inner.rs\"]\nmod inner;\n", "src/disk.rs": "wrap!(inner);\n",
-                 "src/probe.rs": "", "src/disk/inner.rs": ""}
-        self.assertEqual(modules(files), {"src/probe.rs": ["src/lib.rs"], "src/disk/inner.rs": ["src/lib.rs"]})
-        # The limit: no macro makes a file a test. rustc compiles fixtures.rs, mocks.rs, gen.rs and t/more.rs for tests
-        # alone, by a test-only mod $m; or a call in test code; here they stay measured, as code.
-        files = {"src/lib.rs": "macro_rules! test_mods { ($($m:ident),*) => { $(#[cfg(test)] mod $m;)* } }\n"
-                               "test_mods!(fixtures, mocks);\n#[cfg(test)]\n#[path = \"fixtures.rs\"]\nmod fx;\n"
-                               "macro_rules! m { ($n:ident) => { mod $n; } }\n#[cfg(test)]\nm!(gen);\n"
-                               "#[cfg(test)]\nmod t {\n    m! { more }\n}\n",
-                 "src/fixtures.rs": "", "src/mocks.rs": "", "src/gen.rs": "", "src/t/more.rs": ""}
-        self.assertEqual(modules(files), {})
-        # And a macro only in test code makes none either: util.rs is code.
-        man = "[package]\nname = \"%s\"\n"
-        forward = ("macro_rules! inner { ($m:ident) => { pub mod $m; } }\n"
-                   "macro_rules! modules { ($($t:tt)*) => { inner!($($t)*); } }\n")
-        gated = "#[cfg(test)]\nmacro_rules! modules { ($($m:ident),*) => { $(mod $m;)* } }\n"
-        files = {"Cargo.toml": man % "c", "src/lib.rs": forward + gated + "modules!(util);\n", "src/util.rs": ""}
-        self.assertEqual(modules(files), {})
-        # Defined in a file that declares nothing else.
-        files = {"src/lib.rs": "#[macro_use]\nmod macros;\nmodules!(util);\n",
-                 "src/main.rs": "#[cfg(test)]\nmod util;\n", "src/util.rs": "",
-                 "src/macros.rs": "macro_rules! modules { ($($m:ident),*) => { $(pub mod $m;)* } }\n"}
+    def test_where_a_macro_may_declare(self):
+        # In a package where a macro_rules! may declare modules, a file is no test by its declarations: rustc
+        # compiles d's and e's util.rs as code, by c's exported inner!, through d's call of its forwarder decls!
+        # and e's of the name it's renamed, p's by q's decl!, whose file p's crate brings in, and s's by q's
+        # inc!, whose file s includes. The limit: c's tests.rs, which rustc compiles for tests alone, stays
+        # measured, and makes b's fixture.rs, which only it declares, no test, though its marked file and its
+        # test crate's root are tests. b, which mentions none of them, keeps its test module, whose helper.rs,
+        # in c's package, isn't one; so does g, though h's comment says to use inner as well, and r, which names
+        # q's local!, exported nowhere, as the fn before it is; and with no manifest above them, x/ and y/ are
+        # one package, so y/t.rs stays measured, as y's own.
+        man, test_util = "[package]\nname = \"%s\"\n", "#[cfg(test)]\n#[path = \"util.rs\"]\nmod t;\n"
+        files = {"c/Cargo.toml": man % "c", "b/src/fixture.rs": "", "c/src/mock.rs": "#![cfg(test)]\n",
+                 "c/src/tests.rs": "#[path = \"../../b/src/fixture.rs\"]\nmod fixture;\n",
+                 "c/src/lib.rs": "#[macro_export]\nmacro_rules! inner { ($m:ident) => { pub mod $m; } }\n"
+                                 "#[macro_export]\nmacro_rules! decls { ($m:ident) => { $crate::inner!($m); } }\n"
+                                 "pub use crate::inner as renamed;\n#[cfg(test)]\nmod tests;\nmod mock;\n",
+                 "c/tests/it.rs": "", "d/Cargo.toml": man % "d", "d/src/lib.rs": "c::decls!(util);\n" + test_util,
+                 "d/src/util.rs": "", "e/Cargo.toml": man % "e", "e/src/lib.rs": "c::renamed!(util);\n" + test_util,
+                 "e/src/util.rs": "", "b/Cargo.toml": man % "b", "b/src/lib.rs": "#[cfg(test)]\nmod tests;\n",
+                 "b/src/tests.rs": "#[path = \"../../c/src/helper.rs\"]\nmod helper;\n", "c/src/helper.rs": "",
+                 "h/Cargo.toml": man % "h",
+                 "h/src/lib.rs": "// use inner as well\npub const H: u8 = 1;\n",
+                 "g/Cargo.toml": man % "g", "g/src/lib.rs": "macro_rules! well { ($m:ident) => {} }\nwell!(util);\n" +
+                 test_util, "g/src/util.rs": "", "x/lib.rs": "macro_rules! declare { ($x:ident) => { mod $x; } }\n",
+                 "y/lib.rs": "#[cfg(test)]\nmod t;\n", "y/t.rs": "", "q/Cargo.toml": man % "q",
+                 "q/src/lib.rs": "#[macro_export]\nfn f() {}\nmacro_rules! local { ($m:ident) => { mod $m; } }\n"
+                                 "#[macro_use]\nmod macros;\n",
+                 "q/src/inc.rs": "macro_rules! inc { ($m:ident) => { pub mod $m; } }\n",
+                 "s/Cargo.toml": man % "s", "s/src/util.rs": "",
+                 "s/src/lib.rs": "include!(\"../../q/src/inc.rs\");\ninc!(util);\n" + test_util,
+                 "q/src/macros.rs": "macro_rules! decl { ($m:ident) => { pub mod $m; } }\n", "p/Cargo.toml": man % "p",
+                 "p/src/lib.rs": "#[macro_use]\n#[path = \"../../q/src/macros.rs\"]\nmod macros;\ndecl!(util);\n" +
+                 test_util, "p/src/util.rs": "", "r/Cargo.toml": man % "r", "r/src/tests.rs": "",
+                 "r/src/lib.rs": "pub fn local() {}\n#[cfg(test)]\nmod tests;\n"}
+        self.assertEqual(modules(files), {"b/src/tests.rs": ["b/src/lib.rs"], "g/src/util.rs": ["g/src/lib.rs"],
+                                          "r/src/tests.rs": ["r/src/lib.rs"], "c/src/mock.rs": "marked",
+                                          "c/tests/it.rs": "crate"})
+        # A file whose macro_rules! name can't be read, but whose body declares, is in such a package too.
+        files = {"src/lib.rs": "wrap! { macro_rules! $name { () => { mod q; } } }\n#[cfg(test)]\nmod t;\n",
+                 "src/t.rs": ""}
         self.assertEqual(modules(files), {})
 
     def test_in_no_doubt(self):
@@ -406,7 +410,7 @@ CRATE = {"src/lib.rs": "pub mod disk;\npub mod commands;\n#[cfg(test)]\nmod fixt
          "src/commands/test.rs": "pub fn run() {\n    go();\n}\n"}
 NAMED = ("; 4 of them Rust test modules in files of their own, known by their declarations, not their names: "
          "src/disk/checks.rs, src/disk/checks/helper.rs, src/fixture.rs and src/mock/parts.rs; 1 of them Rust "
-         "compiled only for tests by the #![cfg(test)] at its top: src/mock.rs. %s.")
+         "compiled only for tests by the inner cfg at its top that needs test: src/mock.rs. %s.")
 
 
 def rows(out):
@@ -472,7 +476,7 @@ class BothScripts(unittest.TestCase):
         self.assertEqual(result.code, 0, result)
         self.assertIn("src/fixture.rs: Rust, 30 code lines, band -, 10 functions", result.out)
         for path, why in [("src/fixture.rs", "one of Rust's test modules, declared only for tests, in src/lib.rs"),
-                          ("src/mock.rs", "Rust compiled only for tests, by the #![cfg(test)] at its top"),
+                          ("src/mock.rs", "Rust compiled only for tests, by the inner cfg at its top that needs test"),
                           ("src/mock/parts.rs", "one of Rust's test modules, declared in src/mock.rs, in code "
                                                 "compiled only for tests"),
                           ("src/disk/checks/helper.rs", "one of Rust's test modules, declared in src/disk/checks.rs, "
@@ -497,8 +501,8 @@ class BothScripts(unittest.TestCase):
         self.assertEqual(scoping.rust_tests_said(sorted(found), found, "THERE"), "; 6 of them Rust test modules in "
                          "files of their own, known by their declarations, not their names: src/m0.rs, src/m1.rs, "
                          "src/m2.rs, src/m3.rs, src/m4.rs and 1 more; 1 of them Rust compiled only for tests by the "
-                         "#![cfg(test)] at its top: src/mock.rs; 2 of them Rust crates Cargo builds only as tests: "
-                         "a.rs and it.rs. THERE")
+                         "inner cfg at its top that needs test: src/mock.rs; 2 of them Rust crates Cargo builds only "
+                         "as tests: a.rs and it.rs. THERE")
         self.assertEqual(scoping.rust_test_reason("it.rs", found),
                          "a Rust crate Cargo builds only as a test, by Cargo.toml")
         self.assertEqual(scoping.a_few(["m%d" % k for k in range(5)]), "m0, m1, m2, m3 and m4")
@@ -546,9 +550,12 @@ class TwoReadings(unittest.TestCase):
             with self.subTest(script=script):
                 self.assertNotIn("may set aside different files", support.run(script, "-C", repo.path).out)
         repo.write("src/lib.rs", "mod probe;\n")
-        self.assertIn("Rust's test modules are read here from the working tree, which differs from HEAD in 1 .rs or "
-                      "Cargo.toml file; the heatmap reads HEAD, so the two may set aside different files.",
-                      support.run("measure.py", "-C", repo.path).out)
+        for args in ((), ("--list-tests",)):
+            with self.subTest(args=args):
+                self.assertIn("Rust's test modules are read here from the working tree, which differs from HEAD in 1 "
+                              ".rs or Cargo.toml file; the heatmap reads HEAD, so the two may set aside different "
+                              "files.",
+                              support.run("measure.py", "-C", repo.path, *args).out)
         self.assertIn("Rust's test modules are read here at HEAD, and the working tree, which measure.py reads, "
                       "differs from it in 1 .rs or Cargo.toml file, so the two may set aside different files.",
                       support.run("heatmap.py", "-C", repo.path).out)
@@ -663,7 +670,7 @@ class EachShape(unittest.TestCase):
             ("a spaced include!, alone in its file",
              {"src/lib.rs": "mod gen;\n#[cfg(test)]\nmod data;\n", "src/data.rs": "",
               "src/gen.rs": "pub mod inner {\n    include ! (\"data.rs\");\n}\n"}, {}),
-            ("a spaced macro call", {"src/lib.rs": "macro_rules! with_feature { ($($i:item)*) => { $($i)* } }\n"
+            ("a spaced call's braces", {"src/lib.rs": "macro_rules! with_feature { ($($i:item)*) => { $($i)* } }\n"
                                                    "with_feature ! {\n    mod plainly;\n}\n#[cfg(test)]\n"
                                                    "#[path = \"plainly.rs\"]\nmod again;\n", "src/plainly.rs": ""}, {}),
             ("include! in test code",
@@ -679,11 +686,7 @@ class EachShape(unittest.TestCase):
                                       "checks.rs": "",
                                       "src/main.rs": "#[cfg(test)]\n#[path = \"../checks.rs\"]\nmod checks;\n"},
              {"checks.rs": ["src/main.rs"]}),
-        ] + [("a spaced call to one of %d macros, in a file read for nothing else" % count,
-              {"src/lib.rs": "#[macro_use]\nmod defs;\nmod user;\n#[cfg(test)]\n#[path = \"user/plainly.rs\"]\n"
-                             "mod again;\n",
-               "src/defs.rs": "".join("macro_rules! m%d { ($x:ident) => { mod $x; } }\n" % k for k in range(count)),
-               "src/user.rs": "m%d ! (plainly);\n" % (count - 1), "src/user/plainly.rs": ""}, {}) for count in (2, 20)])
+        ])
 
     def test_manifests(self):
         self.check([
@@ -759,8 +762,8 @@ class EachShape(unittest.TestCase):
         found = {"a.rs": ("marked", frozenset(), None), "b.rs": ("marked", frozenset(), None),
                  "it.rs": ("crate", frozenset(), "Cargo.toml")}
         self.assertEqual(scoping.rust_tests_said(sorted(found), found, "THERE"),
-                         "; 2 of them Rust compiled only for tests, each by the #![cfg(test)] at its top: a.rs and "
-                         "b.rs; 1 of them a Rust crate Cargo builds only as a test: it.rs. THERE")
+                         "; 2 of them Rust compiled only for tests, each by the inner cfg at its top that needs test: "
+                         "a.rs and b.rs; 1 of them a Rust crate Cargo builds only as a test: it.rs. THERE")
 
 
 if __name__ == "__main__":
