@@ -1896,8 +1896,8 @@ def differs_said(repo, rust):
     """Where Rust was read here, the line saying the working tree differs from HEAD, the heatmap's, in it, if so."""
     differs = scoping.rust_read_differs(repo) if rust else 0
     if differs:
-        print("Rust's test modules are read here from the working tree, which differs from HEAD in %d .rs or "
-              "Cargo.toml file%s; the heatmap reads HEAD, so the two may set aside different files."
+        print("Rust's test modules are read here from the working tree, which differs from HEAD in %d .rs, "
+              "Cargo.toml or symlink file%s; the heatmap reads HEAD, so the two may set aside different files."
               % (differs, "" if differs == 1 else "s"))
 
 

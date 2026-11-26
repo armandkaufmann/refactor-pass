@@ -1937,7 +1937,7 @@ def main():
         differs = scoping.rust_read_differs(repo) if "modules" in rust_read else 0
         if differs:
             print("Rust's test modules are read here at HEAD, and the working tree, which measure.py reads, differs "
-                  "from it in %d .rs or Cargo.toml file%s, so the two may set aside different files."
+                  "from it in %d .rs, Cargo.toml or symlink file%s, so the two may set aside different files."
                   % (differs, "" if differs == 1 else "s"))
     if doubts:
         print("Set aside as tests, but maybe not: %s%s. If one isn't a test, --not-test GLOB counts it." % (

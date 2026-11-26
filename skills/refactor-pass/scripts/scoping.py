@@ -402,19 +402,23 @@ def cfg_needs_test(attribute):
 
 
 # What a Rust file's text is read in, past its comments and strings: a comment's or a string's opening, an
-# attribute's (#[ or #![), the word mod, a brace, a bracket or a ;; and anything else at once, in runs. A string is
-# one of Rust's literals, whatever its prefix (b, c, r and br, cr; r#name is a name), and one never closed runs to
-# the end. A file that holds none of RUST_READ isn't read so.
+# attribute's (#[ or #![, past spaces and comments between), the word mod, a brace, a bracket or a ;; and anything
+# else at once, in runs. A string is one of Rust's literals, whatever its prefix (b, c, r and br, cr; r#name is a
+# name), and one never closed runs to the end. A file that holds none of RUST_READ isn't read so.
+GAP = r"""(?:\s|/\*(?:[^*]|\*(?!/))*\*/|//[^\n]*\n)*"""  # Spaces and comments, a block comment unnested.
 RUST_TOKEN = re.compile(r"""(//[^\n]*|/\*)|([bc]?r\#*")|([bc]?"(?:\\.|[^"\\])*(?:"|\\?\Z)|"""
-                        r"""b?'(?:\\(?:x[0-9a-fA-F]{2}|u\{[0-9a-fA-F]{1,6}\}|.)|[^'\\\n])')|(\#!?\s*\[)|"""
+                        r"""b?'(?:\\(?:x[0-9a-fA-F]{2}|u\{[0-9a-fA-F]{1,6}\}|.)|[^'\\\n])')|(\#%s!?%s\[)|"""
                         r"""(\bmod\b)|([{}\[\];])|"""
                         r"""(?:[^/"'\#{}\[\];\w]+|(?!\bmod\b)(?![bc]?r\#*")(?![bc]?")(?!b?')\w+|/(?![/*])|"""
-                        r"""'(?![^'\\\n]'|\\)|\#(?!!?\s*\[))+|\w+|.""", re.S)
+                        r"""'(?![^'\\\n]'|\\)|\#(?!%s!?%s\[))+|\w+|.""" % (GAP, GAP, GAP, GAP), re.S)
+COMMENTS = re.compile(r"/\*(?:[^*]|\*(?!/))*\*/|//[^\n]*")
 # What a file must hold to be read so, each searched for on its own, the word first, so that every search takes time
 # in step with the text: mod, not in a word, then a name and a ; or a comment, or a comment, or a $name (mod$m;
-# too); an inner cfg; include!.
-RUST_READ = (re.compile(r"mod(?<![\w$]mod)(?:\s+(?:r#)?\w+\s*[;/]|\s*/|\s*\$)"), re.compile(r"#\s*!\s*\[\s*cfg"),
-             re.compile(r"include\s*!"))
+# too); an inner cfg, and include!, past comments in their heads (but nested ones).
+HEAD_GAP = r"(?:\s|/\*.*?\*/|//[^\n]*\n)*"
+RUST_READ = (re.compile(r"mod(?<![\w$]mod)(?:\s+(?:r#)?\w+\s*[;/]|\s*/|\s*\$)"),
+             re.compile(r"#%s!%s\[%scfg" % (HEAD_GAP, HEAD_GAP, HEAD_GAP), re.S),
+             re.compile(r"include%s!" % HEAD_GAP, re.S))
 BLOCK_COMMENT = re.compile(r"/\*|\*/")
 KINDS = (None, "comment", "raw", "string", "attribute", "mod", "bracket")
 RUST_NAME = re.compile(r"\s*((?:r#)?[A-Za-z_]\w*)\s*$")
@@ -450,6 +454,9 @@ def rust_tokens(text):
                         break
                 else:
                     i = len(text)
+            continue
+        if kind == "attribute":  # As #[ or #![, its comments passed.
+            yield kind, "#![" if "!" in COMMENTS.sub("", text[found.start():i]) else "#["
             continue
         if kind == "raw":  # To the quote and as many #s as it opened with.
             hashes = found.group(2).count("#")
@@ -526,7 +533,7 @@ def rust_modules(text):
     be apart, as by comments."""
     if text.startswith("\ufeff"):
         text = text[1:]
-    if text.startswith("#!") and not re.match(r"#!\s*\[", text):  # A shebang line, which rustc passes over.
+    if text.startswith("#!") and not re.match(r"#!" + GAP + r"\[", text):  # A shebang line, which rustc passes over.
         text = text[text.find("\n") + 1:] if "\n" in text else ""
     scopes = [(None, None, None)]
     # Per brace open: its scope, whether its code needs test, whether nothing but inner attributes has come in it
@@ -827,7 +834,8 @@ def spread(names, files, texts, pairs):
 
 def past_comments(text, at, ends=None):
     """Where the text after at goes on past spaces and comments, block comments nested as Rust's are; ends, if
-    given, keeps where each comment met leads, so that no comment is passed twice."""
+    given, keeps where each comment met leads, and where each block comment met ends, those nested in it too, so
+    that no comment is passed twice."""
     met = []
     while True:
         at = SPACE.match(text, at).end()
@@ -835,17 +843,32 @@ def past_comments(text, at, ends=None):
             at = ends[at]
             break
         met.append(at)
-        if text.startswith("//", at):
-            end = text.find("\n", at)
-            at = len(text) if end < 0 else end
+        if text.startswith("//", at):  # To its line's end, the last one found kept.
+            line = ends.get("line") if ends is not None else None
+            if not line or not line[0] <= at <= line[1]:
+                end = text.find("\n", at)
+                line = at, len(text) if end < 0 else end
+            at = line[1]
+            if ends is not None:
+                ends["line"] = line
+        elif text.startswith("/*", at) and ends is not None and ("/*", at) in ends:
+            at = ends[("/*", at)]
         elif text.startswith("/*", at):
-            depth, at = 1, at + 2
-            for mark in BLOCK_COMMENT.finditer(text, at):
-                depth, at = depth + (1 if mark.group() == "/*" else -1), mark.end()
-                if not depth:
+            opened = [at]  # Those open, nested.
+            for mark in BLOCK_COMMENT.finditer(text, at + 2):
+                if mark.group() == "/*":
+                    opened.append(mark.start())
+                    continue
+                start = opened.pop()
+                if ends is not None:
+                    ends[("/*", start)] = mark.end()
+                if not opened:
+                    at = mark.end()
                     break
             else:
                 at = len(text)
+                for start in opened if ends is not None else ():
+                    ends[("/*", start)] = at
         else:
             break
     for each in met if ends is not None else ():
@@ -860,7 +883,8 @@ def macro_head(text):
         if not (at and (text[at - 1].isalnum() or text[at - 1] in "_$#")) and not WORD.match(text, at + 5):
             start = past_comments(text, at + 5, ends)
             name = NAME_AT.match(text, start) if start > at + 5 else None
-            if name and text[past_comments(text, name.end(), ends):][:1] in ("(", "{"):
+            after = past_comments(text, name.end(), ends) if name else 0
+            if name and text[after:after + 1] in ("(", "{"):
                 return True
         at = text.find("macro", at + 5)
     return False
@@ -971,6 +995,40 @@ def rust_test_modules(tracked, read, links=None):
     manifests = [p for p in tracked if posixpath.basename(p) == "Cargo.toml"]
     texts = read(sorted(known) + manifests) if known else {}
     known, manifests = set(p for p in known if p in texts), [p for p in manifests if p in texts]
+    links, tree = links or {}, {}  # The links, by their paths' parts, None at each's end.
+    for link in links:
+        node = tree
+        for part in link.split("/"):
+            node = node.setdefault(part, {})
+        node[None] = link
+
+    def resolve(path):
+        """The path a path names past the links on its way, each time the first, or None: out of the repo, rooted,
+        or past 40 of them."""
+        for _ in range(40):
+            node, parts = tree, path.split("/")
+            for k, part in enumerate(parts):
+                node = node.get(part)
+                if node is None or None in node:
+                    break
+            if node is None or None not in node:
+                return path
+            target = links[node[None]]
+            path = None if re.match(r"/|[A-Za-z]:", target) else posixpath.normpath(
+                posixpath.join(posixpath.dirname(node[None]), target, *parts[k + 1:]))
+            if path is None or path == ".." or path.startswith("../"):
+                return None
+        return None
+
+    # A link to a tracked .rs file is that file at the link's own path, as rustc reads it, its declarations read
+    # from there too, as code.
+    linked = set()
+    for link in sorted(links):
+        target = resolve(link) if link.endswith(".rs") and link not in known else None
+        if target in known:
+            linked.add(link)
+            texts[link] = texts[target]
+    known |= linked
     parsed = dict((p, rust_modules(t)) for p, t in texts.items() if p in known and any(r.search(t) for r in RUST_READ))
     # The folders the tracked files are in, numbered, each with its parent and its files and folders by name. A folder
     # elsewhere is one of these and a count of the folders under it that hold none: (number, count). Numbered in
@@ -1074,7 +1132,8 @@ def rust_test_modules(tracked, read, links=None):
             manifest_of.setdefault(path, manifest_at.get(top))
             if not tests:
                 code.add(path)
-    roots = set(manifest_of)
+    roots = set(manifest_of) | linked
+    code |= linked
 
     def states(path, kind):
         """Per scope of a file read as a mod.rs or a module file, its folder, the name its own folder adds, and
@@ -1128,6 +1187,9 @@ def rust_test_modules(tracked, read, links=None):
                 for target in targets(state, declaration):
                     maybe.add(target[0])
                     cross(path, target[0], target[2])
+            for k, scope in enumerate(parsed[path][1]):  # An inline module whose #[path] names another's folder.
+                if scope[1] == "path" and state[k][0] is not None and package(state[k][0][0]) != package(own[path]):
+                    joins.setdefault(package(own[path]), set()).add(package(state[k][0][0]))
     tested = roots - code  # The crates Cargo builds only as tests, whose code is a test's.
     roots |= set(p for p in parsed if p not in maybe)
     # Per folder and first part, the folders that hold it, up from there; per folder, those above it; per name, the
@@ -1163,7 +1225,8 @@ def rust_test_modules(tracked, read, links=None):
 
     # What code outside tests include!s is code: the file a whole argument names, from the file's folder; and, where
     # the argument is built (concat!(env!("CARGO_MANIFEST_DIR"), "/src/x.rs")), the file one of its strings names
-    # from the package's folder, or with no manifest above it, from the file's folder or any folder above it.
+    # from the package's folder, or with no manifest above it, from the file's folder or any folder above it. Its
+    # declarations are read as code too, from its own folder, as a mod.rs's, as rustc reads them.
     for path in parsed:
         for included, whole in parsed[path][3]:
             found = []
@@ -1176,23 +1239,15 @@ def rust_test_modules(tracked, read, links=None):
                 found += [find((top, 0), included.lstrip("/\\"))] if top is not None else \
                     nearby(own[path], included.lstrip("/\\"))
             code.update(t for t in found if t)
+            roots.update(t for t in found if t)
             for target in found:  # Code: rustc finds what they declare from their own folder.
                 cross(path, target, False) if target else None
     # What a tracked link names, a file or a folder's files, through any link on its way, not out of the repo, may be
     # brought in through it, so it's code.
-    ordered, followed = sorted(known), set()
-    for link in sorted(links or ()):
-        path, hops = link, 0
-        while path is not None and hops < 40:  # The first link on its way, each time.
-            parts = path.split("/")
-            at = next((k for k in range(1, len(parts) + 1) if "/".join(parts[:k]) in links), None)
-            if at is None:
-                break
-            target, hops = links["/".join(parts[:at])], hops + 1
-            path = None if re.match(r"/|[A-Za-z]:", target) else posixpath.normpath(
-                posixpath.join(posixpath.dirname("/".join(parts[:at])), target, *parts[at:]))
-            path = None if path is None or path == ".." or path.startswith("../") else path
-        if path is None or hops >= 40 or path in followed:
+    ordered, followed = sorted(known - linked), set()
+    for link in sorted(links):
+        path = resolve(link)
+        if path is None or path in followed:
             continue
         followed.add(path)
         code.update([path] if path in known else [])
@@ -1218,7 +1273,7 @@ def rust_test_modules(tracked, read, links=None):
             joins.setdefault(package(own[source]), set()).add(package(own[target]))
     for folder in range(len(parent) - 1, 0, -1):
         last[parent[folder]] = max(last[parent[folder]], last[folder])
-    named, tops, trie = {}, sorted(has_manifest), {}
+    named, tops, trie, taken = {}, sorted(has_manifest), {}, {}
     for path in sorted(known):  # Per name, the files and folders so named, each with the folder above.
         named.setdefault(posixpath.basename(path), []).append((path, own[path]))
     for (above, name), folder in child.items():
@@ -1239,8 +1294,10 @@ def rust_test_modules(tracked, read, links=None):
             skips[end], at = end + 1, end + 1
 
     def under(folder):
-        """The packages of the files in a folder and below it: its own, and those of the manifests below it."""
-        return set([package(folder)] + tops[bisect.bisect_left(tops, folder):bisect.bisect_right(tops, last[folder])])
+        """The packages of the files in a folder and below it: its own, and those of the manifests below it not
+        given before."""
+        low, high = bisect.bisect_left(tops, folder), bisect.bisect_right(tops, last[folder])
+        return set([package(folder)] + [tops[k] for k in take(taken, low, high)])
 
     def ending(parts):
         """The files and folders whose paths end in parts, by a tree of names from the end, each node opened once:
@@ -1455,11 +1512,29 @@ def test_reason(path, more=(), not_tests=(), modules=()):
 
 
 def rust_read_differs(repo):
-    """How many of the tracked .rs files and Cargo.toml manifests the working tree changes against HEAD, a rename's
-    two paths each counted, whatever git's diff.renames."""
-    found = git(repo, "diff", "--name-only", "--no-renames", "HEAD", "--", "*.rs", "Cargo.toml", "*/Cargo.toml")
-    return len([line for line in found.stdout.decode("utf-8", "replace").splitlines() if line]) \
-        if found.returncode == 0 else 0
+    """How many of the tracked .rs files, Cargo.toml manifests and symbolic links the working tree changes against
+    HEAD, as measure.py reads them: a rename's two paths each counted, whatever git's diff.renames; a file git takes
+    as unchanged (assume-unchanged, or skip-worktree where it's there) that the working tree changes; and a link the
+    index changes."""
+    found = git(repo, "diff", "--name-only", "-z", "--no-renames", "HEAD", "--", "*.rs", "Cargo.toml", "*/Cargo.toml")
+    if found.returncode:
+        return 0
+    names = set(name for name in found.stdout.decode("utf-8", "replace").split("\0") if name)
+    hidden = [entry[2:] for entry in (run(repo, "ls-files", "-v", "-z") or "").split("\0")
+              if (entry[:1].islower() or entry[:2] == "S ") and
+              (entry.endswith(".rs") or posixpath.basename(entry[2:]) == "Cargo.toml")]
+    head = texts_at(repo, "HEAD", hidden) if hidden else {}
+    for path in hidden:
+        try:
+            with open(os.path.join(repo, path), "rb") as f:
+                data = f.read()
+        except OSError:  # Not there: a sparse checkout's, read from the index, as git's diff does.
+            continue
+        if head.get(path) != (data.decode("utf-8", errors="replace") if b"\0" not in data[:8000] else None):
+            names.add(path)
+    now, then = tracked_links(repo), tracked_links(repo, "HEAD")
+    names.update(p for p in set(now) | set(then) if now.get(p) != then.get(p))
+    return len(names)
 
 
 OBJECT = re.compile(r"[0-9a-f]{7,64}")
@@ -1489,9 +1564,19 @@ def blobs(repo, names):
 
 def texts_at(repo, rev, paths):
     """The texts of the files at rev, or in the index for "", of those asked for, read in one batch; one missing
-    there, or binary, is left out."""
-    wanted = [p for p in paths if "\n" not in p]
-    return dict((p, t) for p, t in zip(wanted, blobs(repo, ["%s:%s" % (rev, p) for p in wanted])) if t is not None)
+    there, or binary, is left out. One whose name holds a newline, which the batch can't take, by its object."""
+    wanted, odd = [p for p in paths if "\n" not in p], set(p for p in paths if "\n" in p)
+    found = list(zip(wanted, blobs(repo, ["%s:%s" % (rev, p) for p in wanted])))
+    if odd:
+        objects = {}
+        listing = run(repo, *(["ls-tree", "-r", "-z", rev] if rev else ["ls-files", "-s", "-z"])) or ""
+        for entry in listing.split("\0"):
+            info, _, path = entry.partition("\t")
+            fields = info.split(" ")
+            if path in odd and len(fields) == 3:
+                objects[path] = fields[2] if rev else fields[1]
+        found += list(zip(objects, blobs(repo, list(objects.values()))))
+    return dict((p, t) for p, t in found if t is not None)
 
 
 def tracked_links(repo, rev=None):
