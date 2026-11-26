@@ -1226,7 +1226,8 @@ def rust_test_modules(tracked, read, links=None):
     # What code outside tests include!s is code: the file a whole argument names, from the file's folder; and, where
     # the argument is built (concat!(env!("CARGO_MANIFEST_DIR"), "/src/x.rs")), the file one of its strings names
     # from the package's folder, or with no manifest above it, from the file's folder or any folder above it. Its
-    # declarations are read as code too, from its own folder, as a mod.rs's, as rustc reads them.
+    # declarations are read as code too, from its own folder, as a mod.rs's, as rustc reads them (inclusions).
+    inclusions = set()
     for path in parsed:
         for included, whole in parsed[path][3]:
             found = []
@@ -1239,7 +1240,7 @@ def rust_test_modules(tracked, read, links=None):
                 found += [find((top, 0), included.lstrip("/\\"))] if top is not None else \
                     nearby(own[path], included.lstrip("/\\"))
             code.update(t for t in found if t)
-            roots.update(t for t in found if t)
+            inclusions.update(t for t in found if t)
             for target in found:  # Code: rustc finds what they declare from their own folder.
                 cross(path, target, False) if target else None
     # What a tracked link names, a file or a folder's files, through any link on its way, not out of the repo, may be
@@ -1362,9 +1363,11 @@ def rust_test_modules(tracked, read, links=None):
         for other in sorted(joins.get(stack.pop(), set()) - macro, key=str):
             macro.add(other)
             stack.append(other)
-    # Each file is read once per way it's brought in (a reading: the file, and "root", "mod-rs", "module", or None
-    # for a file no reading reaches, read as either), each declaration in it pointing to a reading of its file.
-    queue = sorted(((p, "root") for p in roots if p in parsed), reverse=True)
+    # Each file is read once per way it's brought in (a reading: the file, and "root", "included", for a file code
+    # include!s, read as a mod.rs as code whatever Cargo builds it as, "mod-rs", "module", or None for a file no
+    # reading reaches, read as either), each declaration in it pointing to a reading of its file.
+    queue = sorted([(p, "root") for p in roots if p in parsed] + [(p, "included") for p in inclusions if p in parsed],
+                   reverse=True)
     done = set(queue) | set((p, "root") for p in roots)
     # Per reading brought in, per declaration (the reading it's in, its number), whether it needs test, and whether
     # by its own attributes.
