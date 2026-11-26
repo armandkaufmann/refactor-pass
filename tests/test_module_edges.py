@@ -1,7 +1,6 @@
 """Rust's test modules on the scripts' edges: --show of one, --keep-tests and --not-test, a binary file, a file
 the scripts can't read, a path holding a newline, and the fixes trace and the pairs, which leave them out; and on
-the rule's: which macro a call is to, and with no manifest, how far a macro's test-only-ness and a built include!
-reach."""
+the rule's: which macro a call is to, and with no manifest, how far a built include! reaches."""
 
 import os
 import unittest
@@ -87,47 +86,59 @@ class ScriptsOnTheEdges(unittest.TestCase):
 
 
 class WhichMacroACallIsTo(unittest.TestCase):
-    """A call takes a macro's test-only-ness only where every macro_rules! of its name it may be to declares only
-    for tests: the last one before it in its own file, else each in its package, or with no manifest, in its folder
-    or one above it. Any other of that name, one that declares no module it can read, makes the call plain."""
+    """A call outside test code takes a macro's test-only-ness only from the macro_rules! rustc's textual scope gives
+    it in its own file: the last of its name before it in a scope still open there, past any only in test code.
+    Another of that name there, one that declares no module this can read, or none at all, makes the call plain.
+    Each answer is rustc's, but where the macro is in another file, which leaves a test measured."""
 
     TEST_ONLY = "macro_rules! modules { ($($m:ident),*) => { $(#[cfg(test)] mod $m;)* } }\n"
     FORWARD = ("macro_rules! inner { ($m:ident) => { pub mod $m; } }\n"
                "macro_rules! modules { ($($t:tt)*) => { inner!($($t)*); } }\n")
 
-    def test_its_own_files(self):
-        # As rustc reads them: y's call is to y's forwarder, so util.rs is code; x's is to x's test-only macro.
-        for manifest in ({"Cargo.toml": "[package]\nname = \"s\"\n"}, {}):
-            with self.subTest(manifest=bool(manifest)):
-                files = dict(manifest, **{"src/lib.rs": "mod x;\nmod y;\n", "src/x/fixtures.rs": "",
-                                          "src/x.rs": self.TEST_ONLY + "modules!(fixtures);\n",
-                                          "src/y.rs": self.FORWARD + "modules!(util);\n", "src/y/util.rs": ""})
-                self.assertEqual(modules(files), {"src/x/fixtures.rs": ["src/x.rs"]})
+    def check(self, lib, expected, more=()):
+        files = dict({"Cargo.toml": "[package]\nname = \"s\"\n", "src/lib.rs": lib, "src/util.rs": "",
+                      "src/fixtures.rs": "", "src/a/fixtures.rs": "", "src/macros.rs": self.FORWARD}, **dict(more))
+        self.assertEqual(modules(files), expected)
 
-    def test_one_in_a_file_that_holds_nothing_else(self):
-        # macros.rs forwards to a dependency's macro, so y's call, which can be to it, is plain: read for its macro
-        # alone, as a test-only module macro shares its name.
-        for manifest in ({"Cargo.toml": "[package]\nname = \"s\"\n"}, {}):
-            with self.subTest(manifest=bool(manifest)):
-                forward = "macro_rules! modules { ($($t:tt)*) => { dep::declare!($($t)*); } }\n"
-                files = dict(manifest, **{"src/lib.rs": "#[macro_use]\nmod macros;\nmod x;\nmod y;\n",
-                                          "src/macros.rs": forward,
-                                          "src/x.rs": self.TEST_ONLY + "modules!(fixtures);\n", "src/x/fixtures.rs": "",
-                                          "src/y.rs": "modules!(util);\n", "src/y/util.rs": ""})
-                self.assertEqual(modules(files), {"src/x/fixtures.rs": ["src/x.rs"]})
+    def test_its_own_files(self):
+        # y's call is to y's forwarder, so util.rs is code; x's is to x's test-only macro.
+        self.check("mod x;\nmod y;\n", {"src/x/fixtures.rs": ["src/x.rs"]},
+                   {"src/x.rs": self.TEST_ONLY + "modules!(fixtures);\n", "src/x/fixtures.rs": "",
+                    "src/y.rs": self.FORWARD + "modules!(util);\n", "src/y/util.rs": ""})
+
+    def test_a_scope_that_has_closed(self):
+        # The test-only macro in mod a, or in a function's body, is out of scope after its }: util.rs is code.
+        self.check("#[macro_use]\nmod macros;\nmod a {\n    %s    modules!(fixtures);\n}\nmodules!(util);\n"
+                   % self.TEST_ONLY, {"src/a/fixtures.rs": ["src/lib.rs"]})
+        self.check("#[macro_use]\nmod macros;\nfn f() {\n    %s}\nmodules!(util);\n" % self.TEST_ONLY, {})
+
+    def test_the_last_one_before_the_call(self):
+        for lib in (self.FORWARD + "modules!(util);\n" + self.TEST_ONLY + "modules!(fixtures);\n",
+                    self.TEST_ONLY + "modules!(fixtures);\n" + self.FORWARD + "modules!(util);\n"):
+            with self.subTest(lib=lib):
+                self.check(lib, {"src/fixtures.rs": ["src/lib.rs"]})
+
+    def test_in_a_macros_brackets_or_body(self):
+        # One a macro's brackets hold is in the scope around them; one another macro_rules! holds is made only where
+        # that one is called, never here, so the call is to the forwarder #[macro_use] mod macros; brings in.
+        wrap = "macro_rules! wrap { ($($i:item)*) => { $($i)* } }\n"
+        self.check(wrap + "wrap! {\n%s}\nmodules!(fixtures);\n" % self.TEST_ONLY, {"src/fixtures.rs": ["src/lib.rs"]})
+        self.check("#[macro_use]\nmod macros;\nmacro_rules! outer { () => { %s } }\nmodules!(util);\n"
+                   % self.TEST_ONLY.strip(), {})
+
+    def test_macro_use(self):
+        # #[macro_use] mod macros; brings in macros this doesn't read, after the test-only one, and an inline module's
+        # keep its own past its }: either way the call is to the forwarder.
+        self.check(self.TEST_ONLY + "#[macro_use]\nmod macros;\nmodules!(util);\n", {})
+        self.check(self.TEST_ONLY + "#[macro_use]\nmod a {\n%s}\nmodules!(util);\n" % self.FORWARD, {})
+        # The limit: a test-only macro in another file, which rustc compiles util.rs for tests alone by, is never
+        # taken for the one called, so util.rs stays measured.
+        self.check("#[macro_use]\nmod macros;\nmodules!(util);\n", {}, {"src/macros.rs": self.TEST_ONLY})
 
 
 class WithNoManifest(unittest.TestCase):
-    """Where no manifest says which package a file is in: a macro's test-only-ness reaches the calls in its folder
-    and under it, and a built include! names its file from the including file's folder or one above it."""
-
-    def test_a_macros_reach(self):
-        template = "macro_rules! modules { ($($m:ident),*) => { $(#[cfg(test)] mod $m;)* } }\n"
-        files = {"src/lib.rs": template + "mod a;\n", "src/a/mod.rs": "modules!(x);\n", "src/a/x.rs": ""}
-        self.assertEqual(modules(files), {"src/a/x.rs": ["src/a/mod.rs"]})
-        # A plain one of that name nearer the call shadows it, as rustc reads them: x.rs is code.
-        files["src/a/mod.rs"] = "macro_rules! modules { ($($m:ident),*) => { $(pub mod $m;)* } }\nmodules!(x);\n"
-        self.assertEqual(modules(files), {})
+    """Where no manifest says which package a file is in, a built include! names its file from the including
+    file's folder or one above it."""
 
     def test_a_built_includes_reach(self):
         # Past a leading .., and with a \ read as Windows reads it where no file is so named.

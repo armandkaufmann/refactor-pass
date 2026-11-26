@@ -349,6 +349,8 @@ GROWING = {
     # from every folder above it.
     "deep-built-includes": (1000, lambda n: {"/".join(["d"] * (n // 10)) + "/lib.rs": "".join(
         "include!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/src/f%d.rs\"));\n" % k for k in range(n))}, "modules"),
+    # Thousands of macro_rules! opened, each inside the last: each looked for the scope it's in below all the others.
+    "nested-macro-rules": (2000, lambda n: {"src/lib.rs": "mod zz;\n" + "macro_rules! m {" * n}, "modules"),
 }
 
 

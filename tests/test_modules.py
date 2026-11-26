@@ -365,28 +365,14 @@ class WhenItsATest(unittest.TestCase):
         self.assertEqual([scoping.rust_test_reason(p, found) for p in ("src/mocks.rs", "src/gen.rs", "src/t/more.rs")],
                          ["one of Rust's test modules, declared only for tests, in src/lib.rs"] * 2 +
                          ["one of Rust's test modules, declared in src/lib.rs, in code compiled only for tests"])
-        # A macro's test-only-ness reaches only the calls that can be to it: in its package, or with no manifest, in
-        # its folder or under it; and outside test code only where it's defined outside test code. b's modules!
-        # forwards to a macro the rule can't read, and so does c's outside tests, so their calls are plain, as is
-        # b's to its own plain modules!.
+        # Outside test code, a macro only in test code is never the one called: the call is to the forwarder before
+        # it, to a macro the rule can't read, so util.rs is code.
         man = "[package]\nname = \"%s\"\n"
         forward = ("macro_rules! inner { ($m:ident) => { pub mod $m; } }\n"
                    "macro_rules! modules { ($($t:tt)*) => { inner!($($t)*); } }\n")
         gated = "#[cfg(test)]\nmacro_rules! modules { ($($m:ident),*) => { $(mod $m;)* } }\n"
-        template = "macro_rules! modules { ($($m:ident),*) => { $(#[cfg(test)] mod $m;)* } }\n"
-        for a in (gated + "#[cfg(test)]\n", template):
-            for b in (forward, "macro_rules! modules { ($($m:ident),*) => { $(pub mod $m;)* } }\n"):
-                for manifests in ({"a/Cargo.toml": man % "a", "b/Cargo.toml": man % "b"}, {}):
-                    with self.subTest(a=a, b=b, manifests=bool(manifests)):
-                        files = dict(manifests, **{"a/src/lib.rs": a + "modules!(fixtures);\n", "a/src/fixtures.rs": "",
-                                                   "b/src/lib.rs": b + "modules!(util);\n", "b/src/util.rs": ""})
-                        self.assertEqual(modules(files), {"a/src/fixtures.rs": ["a/src/lib.rs"]})
         files = {"Cargo.toml": man % "c", "src/lib.rs": forward + gated + "modules!(util);\n", "src/util.rs": ""}
         self.assertEqual(modules(files), {})
-        # With no manifest above, one in the calling file's folder or one above it is taken for the one called.
-        files = {"src/lib.rs": "#[macro_use]\nmod macros;\nmodules!(util);\n", "src/util.rs": "",
-                 "src/macros.rs": template}
-        self.assertEqual(modules(files), {"src/util.rs": ["src/lib.rs"]})
         # Defined in a file that declares nothing else.
         files = {"src/lib.rs": "#[macro_use]\nmod macros;\nmodules!(util);\n",
                  "src/main.rs": "#[cfg(test)]\nmod util;\n", "src/util.rs": "",
