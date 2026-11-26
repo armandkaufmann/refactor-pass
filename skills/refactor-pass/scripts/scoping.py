@@ -502,22 +502,23 @@ def rust_modules(text):
     per string an include! holds, whole when the string is all its argument (include!("x.rs")), not when it's a
     part (include!(concat!(..., "/x.rs"))); none of one built on OUT_DIR, the build's output, not the package.
     macros: (defined, called): per macro_rules! it defines that declares a module of a name it's given (mod $m;),
-    whether every such declaration in it needs test; and per macro it calls with words (modules!(util, net)),
-    (macro, words, scope, whether the code it's in needs test, whether its own cfg does)."""
+    whether every such declaration in it needs test, and whether the macro_rules! is itself in test code; and per
+    macro it calls with words (modules!(util, net)), (macro, words, scope, whether the code it's in needs test,
+    whether its own cfg does)."""
     if text.startswith("\ufeff"):
         text = text[1:]
     if text.startswith("#!") and not re.match(r"#!\s*\[", text):  # A shebang line, which rustc passes over.
         text = text[text.find("\n") + 1:] if "\n" in text else ""
     scopes = [(None, None, None)]
     # Per bracket open: its scope, whether its code needs test, whether nothing but inner attributes has come in it
-    # yet, whether it's a macro's, and the macro_rules! it's in, or None.
+    # yet, whether it's a macro's, and the macro_rules! it's in, with whether that's in test code, or None.
     frames = [[0, False, True, False, None]]
     declared, included, pending, name, before, tokens = [], [], [], None, "", rust_tokens(text)
     defined, called = {}, []
     pending_test = False  # Whether an attribute pending, before the item it's on, is a cfg that needs test.
     include = None  # After include!: "open" to its argument, "inside" it past something other than a string, "out"
     start = 0  # in one built on OUT_DIR; and where its strings start in included.
-    templated = None  # After mod in a macro_rules!, a $name: that macro's name, till the ; that makes it a declaration.
+    templated = None  # After mod in a macro_rules!, a $name: that macro, till the ; that makes it a declaration.
     for kind, token in tokens:
         test_code = frames[-1][1] or pending_test
         if kind == "attribute":
@@ -563,7 +564,8 @@ def rust_modules(text):
         elif token in ";{}":
             test = test_code
             if token == ";" and templated:  # mod $name; in a macro_rules!: it declares the modules it's given.
-                defined[templated] = defined.get(templated, True) and test
+                was = defined.get(templated[0], (True, True))
+                defined[templated[0]] = (was[0] and test, was[1] and templated[1])
             if token == ";":
                 if name:
                     # The first #[path] counts; a cfg_attr's path before it stands in for it where its cfg holds.
@@ -579,7 +581,7 @@ def rust_modules(text):
                     frames.append([len(scopes) - 1, test, True, False, frames[-1][4]])
                 elif frames[-1][3] or MACRO_BEFORE_BRACE.search(before):
                     macro = MACRO_DEFINED.search(before)
-                    frames.append([frames[-1][0], test, True, True, macro.group(1) if macro else frames[-1][4]])
+                    frames.append([frames[-1][0], test, True, True, (macro.group(1), test) if macro else frames[-1][4]])
                     call = CALLED_AT.search(before)
                     if call and not macro and call.group(1) != "include":  # modules! { util, net }
                         called.append((call.group(1), [], frames[-1][0], test, pending_test))
@@ -643,10 +645,7 @@ def rust_test_modules(tracked, read):
     manifests = [p for p in tracked if posixpath.basename(p) == "Cargo.toml"]
     texts = read(sorted(known) + manifests) if known else {}
     parsed = dict((p, rust_modules(t)) for p, t in texts.items() if p in known and any(r.search(t) for r in RUST_READ))
-    module_macros = {}  # Per macro that declares modules, whether every module it declares needs test.
-    for path in parsed:
-        for macro, test in parsed[path][4][0].items():
-            module_macros[macro] = module_macros.get(macro, True) and test
+    module_macros = set(m for p in parsed for m in parsed[p][4][0])  # The macros that declare modules, by name.
     if module_macros:  # A file that calls one is read too, for its calls. A few are each searched for by name; past
         # that, each macro a file calls is looked up once, so the time doesn't grow with the number of macros.
         few = sorted(module_macros) if len(module_macros) <= 16 else None
@@ -710,6 +709,22 @@ def rust_test_modules(tracked, read):
     covered = [False] * len(parent)  # Per folder, whether a manifest is in it or above it.
     for folder in range(len(parent)):
         covered[folder] = folder in has_manifest or (parent[folder] is not None and covered[parent[folder]])
+    package_at = {}
+
+    def package(folder):
+        """The folder of the manifest at or above a folder, or None."""
+        seen = []
+        while folder is not None and folder not in package_at:
+            if folder in has_manifest:
+                package_at[folder] = folder
+                break
+            seen.append(folder)
+            folder = parent[folder]
+        top = package_at[folder] if folder is not None else None
+        for each in seen:
+            package_at[each] = top
+        return top
+
     # Where Cargo looks for a crate's roots by default, beside its manifest: src/lib.rs, src/main.rs, src/bin/x.rs,
     # src/bin/x/main.rs, build.rs, and x.rs or x/main.rs in the folders examples, benches and tests (tests' roots).
     # A file in one of those places but a test's with no manifest beside or above it, where it can't be known, is
@@ -771,12 +786,39 @@ def rust_test_modules(tracked, read):
                          (file_in(down(base, name), "mod.rs"), "mod-rs", test, own))
         return [f for f in found if f[0]]
 
+    # The macros that declare modules where a call may be to them, as far as can be told: in their package, or, with
+    # no manifest above, in their file's folder and those under it; per (package, or ("folder", folder)), macro, and
+    # whether only those outside test code count, whether every module they declare needs test. A call outside test
+    # code can't be to a macro_rules! that's only in test code.
+    defined = {}
+    for path in parsed:
+        top = package(own[path])
+        for macro, (test, gated) in parsed[path][4][0].items():
+            for outside in (False,) if gated else (False, True):
+                key = (top if top is not None else ("folder", own[path]), macro, outside)
+                defined[key] = defined.get(key, True) and test
+    reach = {}
+
+    def for_tests(path, macro, outside):
+        """Whether every macro of that name a call in path may be to declares only for tests; not where none may."""
+        top = package(own[path])
+        if top is not None:
+            return defined.get((top, macro, outside), False)
+        key = (own[path], macro, outside)
+        if key not in reach:
+            found, folder = [], own[path]
+            while folder is not None:
+                found += [defined[k] for k in [(("folder", folder), macro, outside)] if k in defined]
+                folder = parent[folder]
+            reach[key] = bool(found) and all(found)
+        return reach[key]
+
     # Per file, its mod declarations, and the words it gives a macro that declares modules, each one of them, for
-    # tests where the call is in test code or every module the macro declares needs test.
-    every = dict((path, parsed[path][2] + [(word, None, scope, test or module_macros[macro], [],
-                                            own or module_macros[macro])
+    # tests where the call is in test code or every macro it may be to declares only for tests.
+    every = dict((path, parsed[path][2] + [(word, None, scope, test or template, [], own or template)
                                            for macro, words, scope, test, own in parsed[path][4][1]
-                                           if macro in module_macros for word in words])
+                                           if macro in module_macros
+                                           for template in [for_tests(path, macro, not test)] for word in words])
                  for path in parsed)
     declarations = every.__getitem__
 
@@ -789,6 +831,27 @@ def rust_test_modules(tracked, read):
                 maybe.update(t[0] for t in targets(state, declaration))
     tested = roots - code  # The crates Cargo builds only as tests, whose code is a test's.
     roots |= set(p for p in parsed if p not in maybe)
+    holding = {}
+
+    def nearby(folder, path):
+        """The tracked files a path names from a folder or any folder above it: looked for only from those that
+        hold its first part, found once per folder and first part, as rustc reads it on Unix, else on Windows."""
+        found = []
+        for each in sorted(set([path, path.replace("\\", "/")])):
+            parts, start = each.split("/"), folder
+            while parts and parts[0] in (".", ".."):  # From each folder above, ../x is x from the one above that.
+                start = parent[start] if parts.pop(0) == ".." and start is not None else start
+            if start is None or not parts:
+                continue
+            key = (start, parts[0])
+            if key not in holding:
+                holding[key], up = [], start
+                while up is not None:
+                    holding[key] += [up] if (up, parts[0]) in child or (up, parts[0]) in files else []
+                    up = parent[up]
+            found += [t for t in (find((up, 0), "/".join(parts)) for up in holding[key]) if t]
+        return found
+
     # What code outside tests include!s is code: the file a whole argument names, from the file's folder; and, where
     # the argument is built (concat!(env!("CARGO_MANIFEST_DIR"), "/src/x.rs")), the file one of its strings names
     # from the package's folder, or with no manifest above it, from the file's folder or any folder above it.
@@ -797,13 +860,11 @@ def rust_test_modules(tracked, read):
             if whole:
                 code.update(t for t in [find((own[path], 0), included)] if t)
             elif included.endswith(".rs"):
-                package = own[path]
-                while package is not None and package not in has_manifest:
-                    package = parent[package]
-                folder = own[path] if package is None else package
-                while folder is not None:
-                    code.update(t for t in [find((folder, 0), included.lstrip("/\\"))] if t)
-                    folder = parent[folder] if package is None else None
+                top = package(own[path])
+                if top is not None:
+                    code.update(t for t in [find((top, 0), included.lstrip("/\\"))] if t)
+                else:
+                    code.update(nearby(own[path], included.lstrip("/\\")))
     # Each file is read once per way it's brought in (a reading: the file, and "root", "mod-rs", "module", or None
     # for a file no reading reaches, read as either), each declaration in it pointing to a reading of its file.
     queue = sorted(((p, "root") for p in roots if p in parsed), reverse=True)
