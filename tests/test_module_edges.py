@@ -1,15 +1,16 @@
 """Rust's test modules on the scripts' edges: --show of one, --keep-tests and --not-test, a binary file, a file
-the scripts can't read, a path holding a newline, and the fixes trace and the pairs, which leave them out."""
+the scripts can't read, a path holding a newline, and the fixes trace and the pairs, which leave them out; and on
+the rule's, with no manifest: how far a macro's test-only-ness and a built include! reach."""
 
 import os
 import unittest
 
 try:
     from . import support
-    from .test_modules import rows
+    from .test_modules import modules, rows
 except ImportError:
     import support
-    from test_modules import rows
+    from test_modules import modules, rows
 
 
 class ScriptsOnTheEdges(unittest.TestCase):
@@ -81,6 +82,31 @@ class ScriptsOnTheEdges(unittest.TestCase):
         repo.done()
         result = support.run("heatmap.py", "-C", repo.path)
         self.assertEqual(rows(result.out), {"src/lib.rs"})
+
+
+
+class WithNoManifest(unittest.TestCase):
+    """Where no manifest says which package a file is in: a macro's test-only-ness reaches the calls in its folder
+    and under it, and a built include! names its file from the including file's folder or one above it."""
+
+    def test_a_macros_reach(self):
+        template = "macro_rules! modules { ($($m:ident),*) => { $(#[cfg(test)] mod $m;)* } }\n"
+        files = {"src/lib.rs": template + "mod a;\n", "src/a/mod.rs": "modules!(x);\n", "src/a/x.rs": ""}
+        self.assertEqual(modules(files), {"src/a/x.rs": ["src/a/mod.rs"]})
+        # A plain one of that name nearer the call shadows it, as rustc reads them: x.rs is code.
+        files["src/a/mod.rs"] = "macro_rules! modules { ($($m:ident),*) => { $(pub mod $m;)* } }\nmodules!(x);\n"
+        self.assertEqual(modules(files), {})
+
+    def test_a_built_includes_reach(self):
+        # Past a leading .., and with a \ read as Windows reads it where no file is so named.
+        for built in ("/../shared/x.rs", "\\..\\shared\\x.rs"):
+            with self.subTest(built=built):
+                files = {"a/src/lib.rs": "include!(concat!(env!(\"SRC\"), \"%s\"));\n" % built.replace("\\", "\\\\"),
+                         "a/shared/x.rs": "",
+                         "b/src/lib.rs": "#[cfg(test)]\n#[path = \"../../a/shared/x.rs\"]\nmod x;\n"}
+                self.assertEqual(modules(files), {})
+        files["a/src/lib.rs"] = "pub fn f() {}\n"
+        self.assertEqual(modules(files), {"a/shared/x.rs": ["b/src/lib.rs"]})
 
 
 if __name__ == "__main__":
