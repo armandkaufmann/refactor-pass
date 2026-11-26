@@ -423,6 +423,7 @@ INCLUDE_AT = re.compile(r"\binclude\s*!\s*(\(\s*)?(\S?)")  # include!, its brack
 # A macro called with words for arguments, as a macro that declares modules is (modules!(util, net)); the words.
 MACRO_CALL = re.compile(r"(?<![\w$])([A-Za-z_]\w*)\s*!\s*\(([\w\s,]*)\)")
 CALLED_AT = re.compile(r"(?<![\w$])([A-Za-z_]\w*)\s*!\s*$")
+MACRO_NAMED = re.compile(r"(?<![\w$])([A-Za-z_]\w*)\s*!")  # A macro's name, where a file calls one.
 
 
 def rust_tokens(text):
@@ -636,10 +637,14 @@ def rust_test_modules(tracked, read):
     texts = read(sorted(known) + manifests) if known else {}
     parsed = dict((p, rust_modules(t)) for p, t in texts.items() if p in known and any(r.search(t) for r in RUST_READ))
     module_macros = set(m for p in parsed for m in parsed[p][4][0])
-    if module_macros:  # A file that calls one is read too, for its calls.
-        calls = re.compile(r"(?<![\w$])(?:%s)\s*!" % "|".join(sorted(module_macros)))
-        parsed.update((p, rust_modules(t)) for p, t in texts.items() if p in known and p not in parsed and
-                      any(macro in t for macro in module_macros) and calls.search(t))
+    if module_macros:  # A file that calls one is read too, for its calls. A few are each searched for by name; past
+        # that, each macro a file calls is looked up once, so the time doesn't grow with the number of macros.
+        few = sorted(module_macros) if len(module_macros) <= 16 else None
+        calls = few and re.compile(r"(?<![\w$])(?:%s)\s*!" % "|".join(few))
+        parsed.update((p, rust_modules(t)) for p, t in texts.items()
+                      if p in known and p not in parsed and "!" in t and (
+                          any(macro in t for macro in few) and calls.search(t) if few else
+                          any(call.group(1) in module_macros for call in MACRO_NAMED.finditer(t))))
     # The folders the tracked files are in, numbered, each with its parent and its files and folders by name. A folder
     # elsewhere is one of these and a count of the folders under it that hold none: (number, count).
     parent, child, files, own = [None], {}, {}, {}
