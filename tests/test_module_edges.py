@@ -1,7 +1,7 @@
 """Rust's test modules on the scripts' edges: --show of one, --keep-tests and --not-test, a binary file, a file
 the scripts can't read, a path holding a newline, the fixes trace and the pairs, which leave them out, and the
-heatmap's tests' own files; and on the rule's: which macro a call is to, what a call or an include! holds, and with
-no manifest, how far a built include! reaches."""
+heatmap's tests' own files; and on the rule's: what a macro declares, what a call or an include! holds, and with no
+manifest, how far a built include! reaches."""
 
 import os
 import unittest
@@ -218,59 +218,47 @@ class WhatAMacroDeclares(unittest.TestCase):
         for call in ("modules!(util);", "modules! { util }"):
             with self.subTest(call=call):
                 self.check(macro + "pub mod net {\n    %s\n}\n" % call, "net/util.rs", "code")
-        # A brace call in test code declares for tests.
+        # A brace call in test code isn't read: util.rs is a test by the #[path] alone.
         self.check(macro + "#[cfg(test)]\nmodules! { util }\n", "util.rs", "test")
 
-
-class WhichMacroACallIsTo(unittest.TestCase):
-    """A call outside test code takes a macro's test-only-ness only from the macro_rules! rustc's textual scope gives
-    it in its own file: the last of its name before it in a scope still open there, past any only in test code.
-    Another of that name there, one that declares no module this can read, or none at all, makes the call plain.
-    Each answer is rustc's, but where the macro is in another file, which leaves a test measured."""
-
-    TEST_ONLY = "macro_rules! modules { ($($m:ident),*) => { $(#[cfg(test)] mod $m;)* } }\n"
-    FORWARD = ("macro_rules! inner { ($m:ident) => { pub mod $m; } }\n"
-               "macro_rules! modules { ($($t:tt)*) => { inner!($($t)*); } }\n")
-
-    def check(self, lib, expected, more=()):
-        files = dict({"Cargo.toml": "[package]\nname = \"s\"\n", "src/lib.rs": lib, "src/util.rs": "",
-                      "src/fixtures.rs": "", "src/a/fixtures.rs": "", "src/macros.rs": self.FORWARD}, **dict(more))
-        self.assertEqual(modules(files), expected)
-
-    def test_its_own_files(self):
-        # y's call is to y's forwarder, so util.rs is code; x's is to x's test-only macro.
-        self.check("mod x;\nmod y;\n", {"src/x/fixtures.rs": ["src/x.rs"]},
-                   {"src/x.rs": self.TEST_ONLY + "modules!(fixtures);\n", "src/x/fixtures.rs": "",
-                    "src/y.rs": self.FORWARD + "modules!(util);\n", "src/y/util.rs": ""})
-
-    def test_a_scope_that_has_closed(self):
-        # The test-only macro in mod a, or in a function's body, is out of scope after its }: util.rs is code.
-        self.check("#[macro_use]\nmod macros;\nmod a {\n    %s    modules!(fixtures);\n}\nmodules!(util);\n"
-                   % self.TEST_ONLY, {"src/a/fixtures.rs": ["src/lib.rs"]})
-        self.check("#[macro_use]\nmod macros;\nfn f() {\n    %s}\nmodules!(util);\n" % self.TEST_ONLY, {})
-
-    def test_the_last_one_before_the_call(self):
-        for lib in (self.FORWARD + "modules!(util);\n" + self.TEST_ONLY + "modules!(fixtures);\n",
-                    self.TEST_ONLY + "modules!(fixtures);\n" + self.FORWARD + "modules!(util);\n"):
+    def test_a_macro_only_keeps_code(self):
+        # Whichever macro a call is to, its words are code: a forwarder first, then a test-only one under a cfg
+        # that's off, or in a module that is, or in another macro's call that drops it, or before the forwarder
+        # defined in ( ) or [ ]; and a module macro so defined.
+        forward = ("macro_rules! inner { ($m:ident) => { pub mod $m; } }\n"
+                   "macro_rules! modules { ($($t:tt)*) => { inner!($($t)*); } }\n")
+        only = "macro_rules! modules { ($($m:ident),*) => { $(#[cfg(test)] mod $m;)* } }\n"
+        pick = "macro_rules! pick { (off { $($a:tt)* } on { $($b:tt)* }) => { $($b)* } }\n"
+        inner = "macro_rules! inner { ($m:ident) => { pub mod $m; } }\n"
+        for lib in (forward + "#[cfg(feature = \"x\")]\n" + only,
+                    forward + "#[cfg(feature = \"x\")]\n#[macro_use]\nmod m {\n" + only + "}\n",
+                    forward + pick + "pick! { off { " + only.strip() + " } on { } }\n",
+                    inner + only + "macro_rules! modules ( ($($t:tt)*) => { inner!($($t)*); } );\n",
+                    inner + only + "macro_rules! modules [ ($($t:tt)*) => { inner!($($t)*); } ];\n",
+                    "macro_rules! modules ( ($($m:ident),*) => { $(pub mod $m;)* } );\n",
+                    "macro_rules! modules [ ($($m:ident),*) => { $(pub mod $m;)* } ];\n"):
             with self.subTest(lib=lib):
-                self.check(lib, {"src/fixtures.rs": ["src/lib.rs"]})
+                self.check(lib + "modules!(util);\n", "util.rs", "code")
 
-    def test_in_a_macros_brackets_or_body(self):
-        # One a macro's brackets hold is in the scope around them; one another macro_rules! holds is made only where
-        # that one is called, never here, so the call is to the forwarder #[macro_use] mod macros; brings in.
-        wrap = "macro_rules! wrap { ($($i:item)*) => { $($i)* } }\n"
-        self.check(wrap + "wrap! {\n%s}\nmodules!(fixtures);\n" % self.TEST_ONLY, {"src/fixtures.rs": ["src/lib.rs"]})
-        self.check("#[macro_use]\nmod macros;\nmacro_rules! outer { () => { %s } }\nmodules!(util);\n"
-                   % self.TEST_ONLY.strip(), {})
-
-    def test_macro_use(self):
-        # #[macro_use] mod macros; brings in macros this doesn't read, after the test-only one, and an inline module's
-        # keep its own past its }: either way the call is to the forwarder.
-        self.check(self.TEST_ONLY + "#[macro_use]\nmod macros;\nmodules!(util);\n", {})
-        self.check(self.TEST_ONLY + "#[macro_use]\nmod a {\n%s}\nmodules!(util);\n" % self.FORWARD, {})
-        # The limit: a test-only macro in another file, which rustc compiles util.rs for tests alone by, is never
-        # taken for the one called, so util.rs stays measured.
-        self.check("#[macro_use]\nmod macros;\nmodules!(util);\n", {}, {"src/macros.rs": self.TEST_ONLY})
+    def test_what_a_call_holds(self):
+        # A path to the macro, a raw word, a visibility or an attribute before it, mod in the call, a string after
+        # it, templates of tts or items, a call in another macro's call, and a macro another one defines.
+        plain = "macro_rules! modules { ($($m:ident),*) => { $(pub mod $m;)* } }\n"
+        for lib in ("#[macro_export]\n" + plain + "crate::modules!(util);\n",
+                    "#[macro_export]\n" + plain + "self::modules! { util }\n", plain + "modules!(r#util);\n",
+                    "macro_rules! modules { ($($v:vis $m:ident),*) => { $($v mod $m;)* } }\nmodules!(pub util);\n",
+                    "macro_rules! modules { ($($(#[$a:meta])* $m:ident),*) => { $($(#[$a])* mod $m;)* } }\n"
+                    "modules!(#[allow(dead_code)] util);\n",
+                    "macro_rules! modules { ($(mod $m:ident;)*) => { $(pub mod $m;)* } }\nmodules! { mod util; }\n",
+                    "macro_rules! modules { ($($m:ident => $s:literal),*) => { $(pub mod $m;)* } }\n"
+                    "modules!(util => \"x\");\n",
+                    "macro_rules! modules { ($($t:tt)*) => { $(pub mod $t;)* } }\nmodules!(util);\n",
+                    "macro_rules! modules { ($($i:item)*) => { $($i)* } }\nmodules! { pub mod util; }\n",
+                    plain + "macro_rules! wrap { ($($t:tt)*) => { $($t)* } }\nwrap! { modules!(util); }\n",
+                    "macro_rules! make { () => { macro_rules! modules { ($m:ident) => { pub mod $m; } } } }\nmake!();\n"
+                    "modules!(util);\n"):
+            with self.subTest(lib=lib):
+                self.check(lib, "util.rs", "code")
 
 
 class WhatTheyPrint(unittest.TestCase):

@@ -334,6 +334,13 @@ GROWING = {
     "mod-comments": (40000, lambda n: {"src/lib.rs": "mod x /*" * n}, "modules"),
     "mod-comment-names": (40000, lambda n: {"src/lib.rs": "mod /*" * n}, "modules"),
     # An include! of thousands of strings: they were joined again at each.
+    # Hundreds of macro_rules! of one name, each declaring in its own inline module, each called: each call took every
+    # one's modules; and a template's modules nested thousands deep, read one more each.
+    "same-name-templates": (300, lambda n: {"src/lib.rs": "".join(
+        "macro_rules! m { ($x:ident) => { pub mod o%d { pub mod $x; } }; }\nm!(u%d);\n" % (k, k) for k in range(n))},
+        "modules"),
+    "template-deep": (8000, lambda n: {"src/lib.rs": "macro_rules! m { ($x:ident) => { " + "pub mod o { " * n +
+                                       "pub mod $x; " + "} " * n + "}; }\nm!(util);\n"}, "modules"),
     "include-strings": (3000, lambda n: {"src/lib.rs": "mod zz;\ninclude!(concat!(" + "\"s\", " * n + "));\n"},
                         "modules"),
     "mod-line-comments": (10000, lambda n: {"src/lib.rs": "// mod x /*\n" * n}, "modules"),

@@ -345,29 +345,23 @@ class WhenItsATest(unittest.TestCase):
                  "src/main.rs": "#[cfg(test)]\nmod util;\n#[cfg(test)]\nmod probe;\n",
                  "src/util.rs": "", "src/net.rs": "", "src/disk/store.rs": "", "src/probe.rs": ""}
         self.assertEqual(modules(files), {"src/probe.rs": ["src/main.rs"]})
-        # Called in test code, it declares for tests; and a macro whose mod $name has a body declares no file.
+        # Called in test code, it isn't read, so probe.rs is a test by its #[path] alone; and a macro whose mod $name
+        # has a body declares no file.
         files = {"src/lib.rs": "macro_rules! modules { ($($m:ident),*) => { $(pub mod $m;)* } }\n#[cfg(test)]\n"
                                "modules!(probe);\n#[cfg(test)]\n#[path = \"probe.rs\"]\nmod again;\n"
                                "macro_rules! wrap { ($m:ident) => { mod $m {} } }\nmod disk;\n#[cfg(test)]\n"
                                "#[path = \"disk/inner.rs\"]\nmod inner;\n", "src/disk.rs": "wrap!(inner);\n",
                  "src/probe.rs": "", "src/disk/inner.rs": ""}
         self.assertEqual(modules(files), {"src/probe.rs": ["src/lib.rs"], "src/disk/inner.rs": ["src/lib.rs"]})
-        # A macro whose mod $m; needs test declares for tests wherever it's called; and a call in test code does,
-        # with its cfg or in a test module.
+        # The limit: no macro makes a file a test. rustc compiles fixtures.rs, mocks.rs, gen.rs and t/more.rs for tests
+        # alone, by a test-only mod $m; or a call in test code; here they stay measured, as code.
         files = {"src/lib.rs": "macro_rules! test_mods { ($($m:ident),*) => { $(#[cfg(test)] mod $m;)* } }\n"
                                "test_mods!(fixtures, mocks);\n#[cfg(test)]\n#[path = \"fixtures.rs\"]\nmod fx;\n"
                                "macro_rules! m { ($n:ident) => { mod $n; } }\n#[cfg(test)]\nm!(gen);\n"
                                "#[cfg(test)]\nmod t {\n    m! { more }\n}\n",
                  "src/fixtures.rs": "", "src/mocks.rs": "", "src/gen.rs": "", "src/t/more.rs": ""}
-        self.assertEqual(modules(files), {"src/fixtures.rs": ["src/lib.rs"], "src/mocks.rs": ["src/lib.rs"],
-                                          "src/gen.rs": ["src/lib.rs"], "src/t/more.rs": ["src/lib.rs"]})
-        scoping = support.load("scoping")
-        found = scoping.rust_test_modules(sorted(files), lambda paths: dict((p, files[p]) for p in paths))
-        self.assertEqual([scoping.rust_test_reason(p, found) for p in ("src/mocks.rs", "src/gen.rs", "src/t/more.rs")],
-                         ["one of Rust's test modules, declared only for tests, in src/lib.rs"] * 2 +
-                         ["one of Rust's test modules, declared in src/lib.rs, in code compiled only for tests"])
-        # Outside test code, a macro only in test code is never the one called: the call is to the forwarder before
-        # it, to a macro the rule can't read, so util.rs is code.
+        self.assertEqual(modules(files), {})
+        # And a macro only in test code makes none either: util.rs is code.
         man = "[package]\nname = \"%s\"\n"
         forward = ("macro_rules! inner { ($m:ident) => { pub mod $m; } }\n"
                    "macro_rules! modules { ($($t:tt)*) => { inner!($($t)*); } }\n")
