@@ -40,7 +40,7 @@ XTest.php...), anything in a folder named test, tests, __tests__, spec or
 the like, and Rust compiled only for tests: a file brought in only by mod
 declarations that need test (#[cfg(test)] mod x;, or one in test code),
 unless Cargo builds it other than as a test, code include!s it, a symlink
-leads to it or a macro in its package may declare modules; one marked
+leads to it or a macro may declare modules in its package; one marked
 #![cfg(test)], whatever it is; or a crate Cargo builds only as a test.
 --test adds a pattern, --not-test counts a file set aside that isn't one,
 and --keep-tests counts them all. The output names any set aside in doubt: a

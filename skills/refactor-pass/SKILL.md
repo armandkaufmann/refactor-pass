@@ -64,7 +64,7 @@ what it said, and go on without it, from `git log` and the code.
   or folder, and Rust compiled only for tests (a file brought in only by mod
   declarations that need test, as `#[cfg(test)] mod x;` or one in a test
   module does, unless Cargo builds it other than as a test, code `include!`s
-  it, a symlink leads to it or a macro in its package may declare modules;
+  it, a symlink leads to it or a macro may declare modules in its package;
   one marked `#![cfg(test)]`, whatever it is; a crate Cargo builds only as a
   test), stay out of the table and pairs, and are listed apart when they
   change with several files; `measure.py --list-tests` says which and why.

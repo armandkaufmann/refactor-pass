@@ -428,9 +428,7 @@ ITEM_HEAD = re.compile(r"\s*(?:(?:pub|fn|impl|trait|struct|enum|type|static|cons
 BRANCH_BEFORE = re.compile(r"(?<![\w$])if\s*$|\$\(\s*$")  # cfg_if! { if #[cfg(test)] { ... } }, $( #[a] ... )*
 ENV_BEFORE = re.compile(r"\benv\s*!\s*\(\s*$")  # Before a string that names a variable, not a path.
 ATOM = re.compile(r"\$?(?:r#)?[A-Za-z_]\w*|\w+|[^\s\w]")  # In a run: a word, a $name, a number or a mark.
-ALIAS = re.compile(r"\b([A-Za-z_]\w*)\s+as\s+([A-Za-z_]\w*)\b")  # use modules as mods;, in a use.
-WORD, AS, WORDS = re.compile(r"\w"), re.compile(r"\sas\s"), re.compile(r"[A-Za-z_]\w*")
-USE_LEAD = re.compile(r"[ \t]*(?:pub(?:[ \t]*\([^()\n]*\))?[ \t]+)?")  # Before use, first on its line.
+WORD, WORDS = re.compile(r"\w"), re.compile(r"[A-Za-z_]\w*")
 
 
 def rust_tokens(text):
@@ -649,16 +647,23 @@ def rust_modules(text):
 
 
 def rust_macros(text):
-    """The macro_rules! a Rust file defines, read by its tokens, past comments and strings, its body in any bracket:
-    per one, [its name, or None where it can't be read (a $name), whether its body holds a mod declaration (mod, a
-    name or a $name, ;), the words in its body but those in a definition inside it, the definition it's in, or
-    None, and whether an attribute before it holds macro_export (one inside another, as that one), so that other
-    crates may call it]. Outside the definitions, only their heads, and whole attributes, are read."""
+    """The macros a Rust file defines, macro_rules! and macro (macros 2.0: macro m($x:ident) { ... }, or with arms),
+    read by its tokens, past comments and strings, the body in any bracket: per one, [its name, or None where it can't
+    be read (a $name), whether its body holds a mod declaration (mod, any $names, a name or a $name, ;), the words in
+    its body but those in a definition inside it, the definition it's in, or None, whether other crates may call it, the
+    strings of the path attributes in its body (#[path = "..."], or a cfg_attr's), None for one that isn't a string
+    (#[path = $p]) or an attribute a call may give (#[$a]), and the strings in it, both but those in a definition inside
+    it]. Others may call a macro 2.0, and a macro_rules! after an attribute that holds macro_export, or in a body that
+    does anywhere, or in one others may call. A body holds the mod declarations of those in it. Outside the definitions,
+    only their heads, and whole attributes, are read."""
     found, stack, step, name, declaring, export = [], [], 0, None, 0, False  # stack: per bracket, the definition
-    tokens = rust_tokens(text)  # it's in; step: into macro_rules ! name; declaring: into mod name ;.
+    tokens = rust_tokens(text)  # it's in; step: into macro_rules ! name; declaring: into mod $names name ;.
+    opening, newer, after, attribute = [], False, None, 0  # Per bracket its opening; a macro 2.0's head; one past
+    previous, pathed = None, False  # its parameters, before its body; the brackets of attributes open; the atom
+    # before; whether it's a path attribute's =.
     for kind, token in tokens:
         current = stack[-1] if stack else None
-        if current is None and kind == "attribute":
+        if current is None and kind == "attribute" and after is None:
             depth, holds = 1, False
             for inner, part in tokens:
                 if inner == "bracket" and part in "[]":
@@ -668,34 +673,63 @@ def rust_macros(text):
                 holds = holds or inner is None and "macro_export" in part
             export, step = export or (holds and "!" not in token), 0
             continue
-        if current is None and not step and (kind is not None or "macro_rules" not in token):
+        if current is None and not step and after is None and (kind is not None or "macro" not in token):
             export = export and kind is None and not token.strip()
             continue
         for atom in ATOM.findall(token) if kind is None else ('""' if kind == "string" else "".join(token.split()),):
             word = atom[0].isalpha() or atom[0] == "_" or atom.startswith("r#")
+            if after is not None and atom == "{":  # A macro 2.0's body, after its parameters.
+                current, after = after, None
+                stack.append(current)
+                opening.append(atom)
+                continue
+            after = None
             if atom in ("(", "[", "{", "#[", "#!["):
+                params = step == 3 and newer and atom == "("  # A macro 2.0's parameters, then its body.
                 if step == 3:  # A definition's body.
-                    found.append([name, False, set(), current, export if current is None else found[current][4]])
+                    found.append([name, False, set(), current, newer or export or current is not None and
+                                  found[current][4], [], []])
                     current, step, export = len(found) - 1, 0, False
                 stack.append(current)
+                opening.append("params" if params else atom)
+                attribute += atom in ("#[", "#![")
             elif atom in (")", "]", "}"):
-                stack.pop() if stack else None
+                closed = stack.pop() if stack else None
+                kind_of = opening.pop() if opening else None
+                attribute -= kind_of in ("#[", "#![")
                 current = stack[-1] if stack else None
+                after = closed if kind_of == "params" else None
             elif word and current is not None:
                 found[current][2].add(atom[2:] if atom.startswith("r#") else atom)
-            if declaring == 2 and atom == ";" and current is not None:
+            if kind == "string" and current is not None:
+                found[current][6].append(string_text(token))
+            if declaring in (2, 3) and atom == ";" and current is not None:
                 found[current][1] = True
-            declaring = 1 if atom == "mod" else 2 if declaring == 1 and (word or atom[:1] == "$" and len(atom) > 1) \
-                else 0
-            head = atom == "macro_rules" or step == 1 and atom == "!" or step == 2 and (word or atom[:1] == "$")
+            if previous == "=" and pathed and current is not None:  # #[path = "x.rs"], or #[path = $p].
+                found[current][5].append(string_text(token) if kind == "string" else None)
+            if previous in ("#[", "#![") and atom[:1] == "$" and current is not None:  # #[$a], which may be one.
+                found[current][5].append(None)
+            pathed = atom == "=" and attribute and previous == "path"
+            dollar = atom[:1] == "$" and len(atom) > 1
+            declaring = 1 if atom == "mod" else (2 if dollar else 3 if word else 0) if declaring in (1, 2) else 0
+            head = atom in ("macro_rules", "macro") or step == 1 and atom == "!" or step == 2 and (word or dollar)
             export = export and (head or current is not None)
             if step == 2 and (word or atom[:1] == "$"):
                 name, step = (None if atom[:1] == "$" else atom[2:] if atom.startswith("r#") else atom), 3
             else:
-                step = 1 if atom == "macro_rules" else 2 if step == 1 and atom == "!" else 0
+                newer = atom == "macro"
+                step = 1 if atom == "macro_rules" else 2 if step == 1 and atom == "!" or newer else 0
+            previous = atom
     for k in range(len(found) - 1, -1, -1):  # A body holds what one inside it does.
-        if found[k][1] and found[k][3] is not None:
-            found[found[k][3]][1] = True
+        up = found[k][3]
+        if up is not None:
+            found[up][1] = found[up][1] or found[k][1]
+    top, exported = [], {}  # Per definition the outermost it's in; per outermost, whether its body holds macro_export.
+    for k, definition in enumerate(found):
+        top.append(k if definition[3] is None else top[definition[3]])
+        exported[top[k]] = exported.get(top[k], False) or "macro_export" in definition[2]
+    for k, definition in enumerate(found):
+        definition[4] = definition[4] or definition[3] is not None and exported[top[k]]
     return found
 
 
@@ -727,70 +761,189 @@ def cargo_roots(manifests, folder_of, find):
 
 
 def aliases(text):
-    """The names a file's use declarations give what they bring in (use crate::modules as mods;), as (old, new):
-    those of each use first on its line, to its ;, so that prose's "as" in a comment gives none."""
-    found, at = [], text.find("use")
-    while at >= 0:
-        end = text.find(";", at)
-        if USE_LEAD.fullmatch(text, text.rfind("\n", 0, at) + 1, at) and not WORD.match(text, at + 3) and \
-                end > at and AS.search(text, at, end):
-            found += ALIAS.findall(text, at, end)
-        at = text.find("use", at + 3)
+    """The names a file's public use declarations give what they bring in (pub use crate::modules as mods;), as
+    (old, new), read by its tokens, past comments and strings: each pub use, wherever it starts, to its ;. Another
+    use gives a name only where it is, or in its crate, whose files mention the old one or are compiled with them."""
+    found, atoms, previous = [], None, None  # The atoms of the pub use read, and the atom before.
+    for kind, token in rust_tokens(text):
+        for atom in ATOM.findall(token) if kind in (None, "mod") else ('""' if kind == "string" else token.strip(),):
+            if atoms is None:
+                atoms = [] if atom == "use" and previous == "pub" else None
+            elif atom == ";":
+                names = [each[2:] if each.startswith("r#") else each for each in atoms]
+                found += [(names[k - 1], names[k + 1]) for k in range(1, len(names) - 1) if names[k] == "as" and
+                          WORDS.fullmatch(names[k - 1]) and WORDS.fullmatch(names[k + 1]) and names[k + 1] != "_"]
+                atoms = None
+            else:
+                atoms.append(atom)
+            previous = atom
     return found
 
 
-def macro_packages(texts, paths, package, shared=()):
+def mentioning(names):
+    """A test of whether a text mentions any of names as a word: each name looked for, or past 16, its words read."""
+    if len(names) > 16:
+        return lambda text: not names.isdisjoint(WORDS.findall(text))
+    words = [(name, re.compile(re.escape(name) + r"(?!\w)")) for name in sorted(names)]
+
+    def holds(text):
+        for name, word in words:
+            for found in word.finditer(text) if name in text else ():
+                at = found.start()  # Not after a word's character either.
+                if not at or not (text[at - 1].isalnum() or text[at - 1] == "_"):
+                    return True
+        return False
+    return holds
+
+
+def spread(names, files, texts, pairs):
+    """The names reached from names among files: each pair (old, new) pairs(path) gives a file, read once and only
+    where it mentions a name reached (as each holds its old one), adds new where old is reached; past four rounds,
+    each file left is found by its words, read once."""
+    reached, batch, unread, index, given, rounds = set(names), sorted(names), list(files), None, {}, 0
+    while batch:
+        rounds += 1
+        if index is None and rounds > 4:  # A chain of new names: each file's words read once, from here on.
+            index = {}
+            for path in unread:
+                for word in set(WORDS.findall(texts[path])):
+                    index.setdefault(word, []).append(path)
+            unread = set(unread)
+        if index is None:
+            holds = mentioning(set(batch))
+            reading = [p for p in unread if holds(texts[p])]
+            taken = set(reading)
+            unread = [p for p in unread if p not in taken]
+        else:
+            reading = sorted(set(p for name in batch for p in index.pop(name, ()) if p in unread))
+            unread.difference_update(reading)
+        for path in reading:
+            for old, new in pairs(path):
+                given.setdefault(old, set()).add(new)
+        batch = sorted(set(new for name in batch for new in given.get(name, ()) if new not in reached))
+        reached.update(batch)
+    return reached
+
+
+def past_comments(text, at, ends=None):
+    """Where the text after at goes on past spaces and comments, block comments nested as Rust's are; ends, if
+    given, keeps where each comment met leads, so that no comment is passed twice."""
+    met = []
+    while True:
+        at = SPACE.match(text, at).end()
+        if ends is not None and at in ends:
+            at = ends[at]
+            break
+        met.append(at)
+        if text.startswith("//", at):
+            end = text.find("\n", at)
+            at = len(text) if end < 0 else end
+        elif text.startswith("/*", at):
+            depth, at = 1, at + 2
+            for mark in BLOCK_COMMENT.finditer(text, at):
+                depth, at = depth + (1 if mark.group() == "/*" else -1), mark.end()
+                if not depth:
+                    break
+            else:
+                at = len(text)
+        else:
+            break
+    for each in met if ends is not None else ():
+        ends[each] = at
+    return at
+
+
+def macro_head(text):
+    """Whether a text holds a macro 2.0's head: the word macro, a name and its bracket, past any comments."""
+    at, ends = text.find("macro"), {}
+    while at >= 0:
+        if not (at and (text[at - 1].isalnum() or text[at - 1] in "_$#")) and not WORD.match(text, at + 5):
+            start = past_comments(text, at + 5, ends)
+            name = NAME_AT.match(text, start) if start > at + 5 else None
+            if name and text[past_comments(text, name.end(), ends):][:1] in ("(", "{"):
+                return True
+        at = text.find("macro", at + 5)
+    return False
+
+
+SPACE, NAME_AT = re.compile(r"\s*"), re.compile(r"(?:r#)?[A-Za-z_]\w*")
+
+
+def macro_packages(texts, paths, package, shared=(), lands=None, compiled=None):
     """The packages, as package(path) gives each .rs file's, where a macro may declare modules: each in which a file
-    defines a macro_rules! whose body holds a mod declaration (rust_macros), or one whose name can't be read, or
-    mentions the name of one that reaches other packages, as a word anywhere in its text. One reaches them when
-    it's exported, or defined in a file another package's crate compiles (shared); so does one that reaches them
-    whose body mentions one of its package's, or one that reaches them, and the name a use first on its line gives
-    one that reaches them (use modules as mods;). One that reaches no other package keeps only its own."""
-    # Read in the files that may hold one: by a mod declaration (RUST_READ's), or by one that reaches others.
-    defined = dict((path, rust_macros(texts[path])) for path in paths if "macro_rules" in texts[path] and (
-        path in shared or "macro_export" in texts[path] or RUST_READ[0].search(texts[path])))
-    found, reach, queue, walked, renamed, mentions = set(), set(), [], set(), None, {}
-    for path, here in defined.items():
-        for k, (name, declares, words, _, export) in enumerate(here):
-            for word in words:  # Per word, the definitions that reach other packages whose bodies mention it.
-                if export or path in shared:
-                    mentions.setdefault(word, {}).setdefault(package(path), []).append((path, k))
-            if declares:
-                found.add(package(path))
-                queue.append((name, package(path)))  # Its package's.
-                if name is not None and (export or path in shared) and name not in reach:
-                    reach.add(name)
-                    queue.append((name, None))  # And others'.
-    while queue:
-        name, top = queue.pop()
-        for path, k in [m for at in ([top] if top is not None else sorted(mentions.get(name, {}), key=str))
-                        for m in mentions.get(name, {}).get(at, ())]:
-            while k is not None and (path, k) not in walked:  # The definition, and those it's in that reach others.
-                walked.add((path, k))
-                definition = defined[path][k]
-                if definition[0] is None:
+    defines a macro whose body holds a mod declaration (rust_macros), a module macro, or mentions the name of one
+    that reaches other packages, as a word anywhere in its text; and those a path attribute in a module macro may
+    name a file in: lands(path, string) gives the packages a string may name one in from a file's folder, or from
+    any (path None). One reaches them when others may call it (rust_macros), or when it's defined in a file another
+    package's crate compiles (shared); so does one that reaches them whose body mentions one that does, and the name
+    a pub use gives one (pub use modules as mods;). One that reaches no other package keeps only its own. A path
+    attribute's string, in its body, names a file from wherever it's called; one a call gives (#[path = $p]), from
+    the file of the call: each string in those that mention the macro, or one whose body does, or a name a pub use
+    gives either, in its package, or in a file of another its crates compile (compiled(packages)), or in any where
+    it reaches others; and each string in those bodies, from wherever they're called."""
+    defined = {}
+
+    def defs(path):
+        if path not in defined:
+            defined[path] = rust_macros(texts[path]) if "macro_rules" in texts[path] or macro_head(texts[path]) \
+                else []
+        return defined[path]
+
+    reaching = lambda path, definition: definition[4] or path in shared
+    found, reach, pathed = set(), set(), []
+    for path in paths:  # The files that may hold one, by a mod declaration (RUST_READ's), or one that reaches others.
+        text = texts[path]
+        if (path in shared or "macro_export" in text or RUST_READ[0].search(text)) and \
+                ("macro_rules" in text or macro_head(text)):
+            here, outermost, trees = defs(path), [], {}
+            for k, definition in enumerate(here):
+                outermost.append(k if definition[3] is None else outermost[definition[3]])
+                if definition[1]:
                     found.add(package(path))
-                elif definition[0] not in reach and (definition[4] or path in shared):
-                    reach.add(definition[0])
-                    queue.append((definition[0], None))
-                k = definition[3]
-        if renamed is None and top is None:
-            renamed = {}
-            for path in paths:
-                for given, used in aliases(texts[path]):
-                    renamed.setdefault(given, set()).add(used)
-        for used in sorted(renamed.get(name, ())) if top is None else ():
-            if used not in reach:
-                reach.add(used)
-                queue.append((used, None))
-    if len(reach) <= 16:  # Each name looked for in each file, or past that, each file's words read once.
-        words = [(name, re.compile(r"(?<!\w)%s(?!\w)" % re.escape(name))) for name in sorted(reach)]
-        holds = lambda text: any(name in text and word.search(text) for name, word in words)
-    else:
-        holds = lambda text: not reach.isdisjoint(WORDS.findall(text))
+                    reach.update([definition[0]] if definition[0] and reaching(path, definition) else [])
+                tree = trees.setdefault(outermost[k], [[], set(), False])  # Its path strings, names, if it reaches.
+                tree[0] += definition[5]
+                tree[1].update([definition[0]] if definition[0] else [])
+                tree[2] = tree[2] or reaching(path, definition)
+            pathed += [(path,) + tuple(tree) for top, tree in sorted(trees.items()) if tree[0] and here[top][1]]
+
+    def calls(path, only_reaching):
+        """Per word the body of a macro in a file mentions, the macro's name, or the nearest one's it's in where it
+        has none, of those that reach others or of any; and the new names its pub uses give."""
+        out, named = [], []
+        for definition in defs(path):
+            named.append(definition[0] or (named[definition[3]] if definition[3] is not None else None))
+            if named[-1] and (reaching(path, definition) or not only_reaching):
+                out += [(word, named[-1]) for word in sorted(definition[2])]
+        return out + (aliases(texts[path]) if "as" in texts[path] and "use" in texts[path] else [])
+
+    reach = spread(reach, paths, texts, lambda path: calls(path, True))
+    holds = mentioning(reach)
     for path in paths:
         if reach and package(path) not in found and holds(texts[path]):
             found.add(package(path))
+    # The names whose calls may give a path attribute its string: of those that reach others, and of the rest; and
+    # the packages of the rest.
+    wanted, near = [set(), set()], set()
+    for path, strings, names, reaches in pathed if lands else ():
+        for string in strings:
+            found.update(lands(None, string) if string is not None else ())
+        if None in strings:
+            wanted[not reaches].update(names)
+            near.update([] if reaches else [package(path)])
+    # Their calls: in any file, or for the rest, in one of their packages or of another their crates compile.
+    elsewhere = compiled(near) if wanted[1] and compiled else set()
+    local = [p for p in paths if package(p) in near or p in elsewhere] if wanted[1] else []
+    names = [spread(wanted[0], paths, texts, lambda path: calls(path, False)) if wanted[0] else set(),
+             spread(wanted[1], local, texts, lambda path: calls(path, False)) if wanted[1] else set()]
+    holds, local = [mentioning(each) for each in names], set(local)
+    for caller in paths:
+        if names[0] and holds[0](texts[caller]) or caller in local and holds[1](texts[caller]):
+            for kind, token in rust_tokens(texts[caller]):
+                found.update(lands(caller, string_text(token)) if kind == "string" else ())
+            for definition in defs(caller):  # Those in their bodies, from wherever they're called.
+                for string in definition[6] if definition[0] in names[0] or definition[0] in names[1] else ():
+                    found.update(lands(None, string))
     return found
 
 
@@ -804,8 +957,9 @@ def rust_test_modules(tracked, read, links=None):
     gives the files' texts; a file it gives none for, as one deleted, isn't there.
     Per test module, (how, declared): how it's known, "declared", "marked" (#![cfg(test)]) or "crate" (Cargo's test
     crate), and the files whose declarations bring it in. In a package where a macro may declare modules
-    (macro_packages), no file is one by its declarations, and none brings a test module in: its marked files and
-    the roots of its test crates are still tests.
+    (macro_packages, and each whose files the crates of one bring in other than for tests, where its macros may be
+    called), no file is one by its declarations, nor passes being one on: its marked files and the roots of its
+    test crates are still tests.
 
     A declaration's file is where rustc finds it: from a crate root's or a mod.rs's folder, or a module file's
     own (src/disk.rs's src/disk/), with each inline module's name, or its #[path], added; name.rs there, or
@@ -819,14 +973,17 @@ def rust_test_modules(tracked, read, links=None):
     known, manifests = set(p for p in known if p in texts), [p for p in manifests if p in texts]
     parsed = dict((p, rust_modules(t)) for p, t in texts.items() if p in known and any(r.search(t) for r in RUST_READ))
     # The folders the tracked files are in, numbered, each with its parent and its files and folders by name. A folder
-    # elsewhere is one of these and a count of the folders under it that hold none: (number, count).
-    parent, child, files, own = [None], {}, {}, {}
-    for path in sorted(known) + manifests:
+    # elsewhere is one of these and a count of the folders under it that hold none: (number, count). Numbered in
+    # order, each folder's own are below it, up to the last of them (last); and each has its name (names).
+    parent, child, files, own, last, names = [None], {}, {}, {}, [0], [None]
+    for path in sorted(set(known) | set(manifests)):
         folder = 0
         for part in path.split("/")[:-1]:
             if (folder, part) not in child:
                 child[(folder, part)] = len(parent)
                 parent.append(folder)
+                last.append(len(parent) - 1)
+                names.append(part)
             folder = child[(folder, part)]
         own[path] = folder
         if path in known:
@@ -954,14 +1111,23 @@ def rust_test_modules(tracked, read, links=None):
 
     # A crate root no manifest names: a file no declaration could bring in, read either way. And those a file of
     # another package brings in, whose macros may reach it.
-    maybe, crossing = set(), set()
+    # Per package, those whose files its crates may compile other than for tests alone (joins); and each file a
+    # declaration or an include! brings in from another package's folder, with its file and whether only for tests
+    # (crossed). A link's file declares from where the link is.
+    maybe, crossing, joins, crossed = set(), set(), {}, []
+
+    def cross(source, target, test=None):
+        if package(own[source]) != package(own[target]):
+            crossing.add(target)
+            crossed.extend([(source, target, test)] if test is not None else [])
+
     for path in parsed:
         for kind in ("mod-rs", "module"):
             state = states(path, kind)
             for declaration in declarations(path):
-                maybe.update(t[0] for t in targets(state, declaration))
-                crossing.update(t[0] for t in targets(state, declaration)
-                                if package(own[t[0]]) != package(own[path]))
+                for target in targets(state, declaration):
+                    maybe.add(target[0])
+                    cross(path, target[0], target[2])
     tested = roots - code  # The crates Cargo builds only as tests, whose code is a test's.
     roots |= set(p for p in parsed if p not in maybe)
     # Per folder and first part, the folders that hold it, up from there; per folder, those above it; per name, the
@@ -1010,7 +1176,8 @@ def rust_test_modules(tracked, read, links=None):
                 found += [find((top, 0), included.lstrip("/\\"))] if top is not None else \
                     nearby(own[path], included.lstrip("/\\"))
             code.update(t for t in found if t)
-            crossing.update(t for t in found if t and package(own[t]) != package(own[path]))
+            for target in found:  # Code: rustc finds what they declare from their own folder.
+                cross(path, target, False) if target else None
     # What a tracked link names, a file or a folder's files, through any link on its way, not out of the repo, may be
     # brought in through it, so it's code.
     ordered, followed = sorted(known), set()
@@ -1046,7 +1213,98 @@ def rust_test_modules(tracked, read, links=None):
             for kind in ("mod-rs", "module") if path in parsed else ():
                 state = states(path, kind)
                 stack += [t[0] for declaration in declarations(path) for t in targets(state, declaration)]
-    macro = macro_packages(texts, sorted(known), lambda path: package(own[path]), shared)
+    for source, target, test in crossed:  # But from a test crate's root (a marked file's all need test).
+        if not test and source not in tested:
+            joins.setdefault(package(own[source]), set()).add(package(own[target]))
+    for folder in range(len(parent) - 1, 0, -1):
+        last[parent[folder]] = max(last[parent[folder]], last[folder])
+    named, tops, trie = {}, sorted(has_manifest), {}
+    for path in sorted(known):  # Per name, the files and folders so named, each with the folder above.
+        named.setdefault(posixpath.basename(path), []).append((path, own[path]))
+    for (above, name), folder in child.items():
+        named.setdefault(name, []).append((folder, above))
+
+    def take(skips, low, high):
+        """The numbers from low to below high not taken before, each taken now: one taken points past itself."""
+        found, at = [], low
+        while True:
+            end = at
+            while end in skips:
+                end = skips[end]
+            while at in skips and skips[at] != end:  # The way shortened.
+                skips[at], at = end, skips[at]
+            if end >= high:
+                return found
+            found.append(end)
+            skips[end], at = end + 1, end + 1
+
+    def under(folder):
+        """The packages of the files in a folder and below it: its own, and those of the manifests below it."""
+        return set([package(folder)] + tops[bisect.bisect_left(tops, folder):bisect.bisect_right(tops, last[folder])])
+
+    def ending(parts):
+        """The files and folders whose paths end in parts, by a tree of names from the end, each node opened once:
+        a node is [per name, the node one name up, or None till opened; its files and folders, each with the folder
+        whose name is next up, or the top; those in folder order, and their folders, once read; and those taken]."""
+        node = trie.get(parts[-1])
+        if node is None:
+            node = trie[parts[-1]] = [None, named.get(parts[-1], []), None, None, {}]
+        for part in reversed(parts[:-1]):
+            if node[0] is None:
+                node[0] = {}
+                for target, above in node[1]:
+                    if above:
+                        node[0].setdefault(names[above], [None, [], None, None, {}])[1].append((target, parent[above]))
+            node = node[0].get(part)
+            if node is None:
+                return None
+        return node
+
+    def lands(path, string):
+        """The packages a path attribute's string may name a file in, from a file's folder, or from any (path None):
+        those of the files, and the folders' files, whose paths end in it, under the folder its leading ..s climb
+        to, whatever the inline modules it's in add, each file and folder taken once per path; a rooted one names
+        none."""
+        found = set()
+        for each in set([string, string.replace("\\", "/")]):
+            if not each or re.match(r"/|[A-Za-z]:", each):
+                continue
+            rest, base = posixpath.normpath(each), 0 if path is None else own[path]
+            while rest == ".." or rest.startswith("../"):
+                rest, base = rest[3:] or ".", parent[base] if base else 0
+            if rest == ".":  # The folder itself.
+                found |= under(base)
+                continue
+            node = ending(tuple(rest.split("/")))
+            if node is None:
+                continue
+            if node[2] is None:  # In folder order, once: a file by its folder.
+                node[2] = sorted((t if isinstance(t, int) else own[t], str(t), t) for t, _ in node[1])
+                node[3] = [entry[0] for entry in node[2]]
+            for k in take(node[4], bisect.bisect_left(node[3], base), bisect.bisect_right(node[3], last[base])):
+                target = node[2][k][2]
+                found |= under(target) if isinstance(target, int) else set([package(own[target])])
+        return found
+
+    def compiled(packages):
+        """The files of other packages the crates of packages bring in other than for tests, and theirs."""
+        found, stack = set(), sorted(t for s, t, test in crossed if not test and package(own[s]) in packages)
+        while stack:
+            path = stack.pop()
+            if path not in found:
+                found.add(path)
+                for kind in ("mod-rs", "module") if path in parsed else ():
+                    state = states(path, kind)
+                    stack += [t[0] for declaration in declarations(path) for t in targets(state, declaration)]
+        return found
+
+    macro = macro_packages(texts, sorted(known), lambda path: package(own[path]), shared, lands, compiled)
+    # And a package another's crate compiles files of, where that one's macros may be called, is one too.
+    stack = sorted(macro, key=str)
+    while stack:
+        for other in sorted(joins.get(stack.pop(), set()) - macro, key=str):
+            macro.add(other)
+            stack.append(other)
     # Each file is read once per way it's brought in (a reading: the file, and "root", "mod-rs", "module", or None
     # for a file no reading reaches, read as either), each declaration in it pointing to a reading of its file.
     queue = sorted(((p, "root") for p in roots if p in parsed), reverse=True)

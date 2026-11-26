@@ -104,7 +104,7 @@ Test files are set aside as the heatmap sets them aside, by name or folder,
 and Rust compiled only for tests: a file brought in only by mod declarations
 that need test (#[cfg(test)] mod tests;, or one in a test module or file),
 unless Cargo builds it other than as a test, code include!s it, a symlink
-leads to it or a macro in its package may declare modules; one marked
+leads to it or a macro may declare modules in its package; one marked
 #![cfg(test)], whatever it is; or a crate Cargo builds only as a test. So
 they stay out of the percentiles; the output names five of each kind of the
 Rust ones at most, --list-tests every test file with why, and any set aside
