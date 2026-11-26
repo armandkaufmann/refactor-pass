@@ -339,6 +339,12 @@ GROWING = {
                                                                    "m%d!(q%d);\n" % (k, k, k) for k in range(n)))] +
                                            [("src/z%d.rs" % k, "fn f() { println!(\"{}\", 1); }\n") for k in range(n)]),
                       "modules"),
+    # Files thousands of folders deep, with no manifest, and a built include!: the path each file's name ends in,
+    # from each of its folders, was taken to look the include up by.
+    "deep-built-include": (2000, lambda n: dict([("/".join("d%d" % k for k in range(n)) + "/x%d.rs" % j, "")
+                                                for j in range(4)] +
+                                               [("/".join("d%d" % k for k in range(n)) + "/lib.rs",
+                                                 "include!(concat!(env!(\"X\"), \"/x0.rs\"));\n")]), "modules"),
 }
 
 

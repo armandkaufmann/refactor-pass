@@ -7,6 +7,7 @@
   test_heatmap.py     heatmap.py's columns, window and scopes
   test_modules.py     Rust's test modules in files of their own, known by the mod declarations that bring them
                       in, set aside by both scripts
+  test_module_edges.py  the same on the scripts' edges: --show, a binary file, one they can't read
   test_pairs.py       files that change together, and the tests that change with several
   test_window.py      bots, reformats, asked commits and --since
   test_fixes.py       the fixes trace: which commits say they fixed a defect, read by type and by words

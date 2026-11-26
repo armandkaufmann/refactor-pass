@@ -69,6 +69,14 @@ class WhereADeclarationPoints(unittest.TestCase):
         files = {"src/lib.rs": "mod disk;\n", "src/disk.rs": "#[cfg(test)]\nmod x;\n", "src/disk/x.rs": "",
                  "src/x.rs": "#[cfg(test)]\nmod y;\n", "src/x/y.rs": "", "src/y.rs": ""}
         self.assertEqual(modules(files), {"src/disk/x.rs": ["src/disk.rs"], "src/x/y.rs": ["src/x.rs"]})
+        # Whatever their names' order: a file no reading reaches is read as either only where no other such file
+        # could bring it in, so helper.rs's test-only #[path] is aaa.rs's only reading, as it's zzz.rs's.
+        for name in ("aaa", "zzz"):
+            with self.subTest(name=name):
+                files = {"src/lib.rs": "pub fn f() {}\n", "src/b.rs": "pub mod helper;\n",
+                         "src/b/helper.rs": "#[cfg(test)]\n#[path = \"%s.rs\"]\nmod t;\n" % name,
+                         "src/b/%s.rs" % name: "pub mod inner;\n", "src/b/%s/inner.rs" % name: ""}
+                self.assertEqual(modules(files), {"src/b/%s.rs" % name: ["src/b/helper.rs"]})
         # A mod.rs is read as one.
         files = {"src/lib.rs": "mod a;\n", "src/a.rs": "mod x;\n", "src/x/mod.rs": "#[cfg(test)]\nmod y;\n",
                  "src/x/y.rs": "", "src/x/mod/y.rs": ""}
@@ -305,6 +313,21 @@ class WhenItsATest(unittest.TestCase):
                  "src/b.rs": "", "src/c.rs": "", "src/gen.rs": "", "other/Cargo.toml": "[package]\nname = \"o\"\n",
                  "other/src/lib.rs": "#[cfg(test)]\nmod gen;\n", "other/src/gen.rs": ""}
         self.assertEqual(modules(files), {"other/src/gen.rs": ["other/src/lib.rs"]})
+        # A path built on OUT_DIR is in the build's output, not the package, so it names no file the repo tracks.
+        built = "include!(concat!(env!(\"OUT_DIR\"), \"/%s\"));\n"
+        files = {"Cargo.toml": "[package]\nname = \"k\"\n", "x.rs": "",
+                 "src/lib.rs": built % "x.rs" + "#[cfg(test)]\n#[path = \"../x.rs\"]\nmod x;\n"}
+        self.assertEqual(modules(files), {"x.rs": ["src/lib.rs"]})
+        files = {"BUILD.bazel": "", "a/src/lib.rs": "pub mod proto {\n    %s}\n#[cfg(test)]\nmod testing;\n" % (
+                     built % "mod.rs"), "a/src/testing/mod.rs": "", "b/src/lib.rs": "#[cfg(test)]\nmod support;\n",
+                 "b/src/support/mod.rs": ""}
+        self.assertEqual(modules(files), {"a/src/testing/mod.rs": ["a/src/lib.rs"],
+                                          "b/src/support/mod.rs": ["b/src/lib.rs"]})
+        # With no manifest above it, a built path names the file from the including file's folder or one above
+        # it, not every file of that name in the repo.
+        files = {"a/src/lib.rs": "include!(concat!(env!(\"SRC\"), \"/src/x.rs\"));\n#[cfg(test)]\nmod x;\n",
+                 "a/src/x.rs": "", "b/src/lib.rs": "#[cfg(test)]\nmod x;\n", "b/src/x.rs": ""}
+        self.assertEqual(modules(files), {"b/src/x.rs": ["b/src/lib.rs"]})
 
     def test_what_a_macro_declares(self):
         # A macro_rules! that declares the modules it's given declares them where it's called, with brackets or
@@ -322,6 +345,20 @@ class WhenItsATest(unittest.TestCase):
                                "#[path = \"disk/inner.rs\"]\nmod inner;\n", "src/disk.rs": "wrap!(inner);\n",
                  "src/probe.rs": "", "src/disk/inner.rs": ""}
         self.assertEqual(modules(files), {"src/probe.rs": ["src/lib.rs"], "src/disk/inner.rs": ["src/lib.rs"]})
+        # A macro whose mod $m; needs test declares for tests wherever it's called; and a call in test code does,
+        # with its cfg or in a test module.
+        files = {"src/lib.rs": "macro_rules! test_mods { ($($m:ident),*) => { $(#[cfg(test)] mod $m;)* } }\n"
+                               "test_mods!(fixtures, mocks);\n#[cfg(test)]\n#[path = \"fixtures.rs\"]\nmod fx;\n"
+                               "macro_rules! m { ($n:ident) => { mod $n; } }\n#[cfg(test)]\nm!(gen);\n"
+                               "#[cfg(test)]\nmod t {\n    m! { more }\n}\n",
+                 "src/fixtures.rs": "", "src/mocks.rs": "", "src/gen.rs": "", "src/t/more.rs": ""}
+        self.assertEqual(modules(files), {"src/fixtures.rs": ["src/lib.rs"], "src/mocks.rs": ["src/lib.rs"],
+                                          "src/gen.rs": ["src/lib.rs"], "src/t/more.rs": ["src/lib.rs"]})
+        scoping = support.load("scoping")
+        found = scoping.rust_test_modules(sorted(files), lambda paths: dict((p, files[p]) for p in paths))
+        self.assertEqual([scoping.rust_test_reason(p, found) for p in ("src/mocks.rs", "src/gen.rs", "src/t/more.rs")],
+                         ["one of Rust's test modules, declared only for tests, in src/lib.rs"] * 2 +
+                         ["one of Rust's test modules, declared in src/lib.rs, in code compiled only for tests"])
         # Defined in a file that declares nothing else.
         files = {"src/lib.rs": "#[macro_use]\nmod macros;\nmodules!(util);\n",
                  "src/main.rs": "#[cfg(test)]\nmod util;\n", "src/util.rs": "",
@@ -434,6 +471,14 @@ class BothScripts(unittest.TestCase):
             self.assertRegex(result.out, r"(?m)^%s: Rust,.*\nA test file: %s; measured whole here\.$" % (
                 re.escape(path), re.escape(why)))
 
+    def test_a_cfg_attrs_path_is_declared_only_for_tests(self):
+        scoping = support.load("scoping")
+        files = {"src/lib.rs": "#[cfg_attr(test, path = \"x_tests.rs\")]\nmod x;\n", "src/x.rs": "",
+                 "src/x_tests.rs": ""}
+        found = scoping.rust_test_modules(sorted(files), lambda paths: dict((p, files[p]) for p in paths))
+        self.assertEqual(scoping.rust_test_reason("src/x_tests.rs", found),
+                         "one of Rust's test modules, declared only for tests, in src/lib.rs")
+
     def test_a_few_named_and_where_every_one_is(self):
         # Five of each kind at most, as the doubts are, and where to see every one, with why.
         scoping = support.load("scoping")
@@ -458,6 +503,24 @@ class BothScripts(unittest.TestCase):
                       "code compiled only for tests\n", result.out)
         self.assertIn("  src/tests/mod.rs: in a folder named tests\n", result.out)
         self.assertNotIn("lines  band", result.out)
+        result = support.run("measure.py", "-C", self.repo, "--list-tests", "--keep-tests")
+        self.assertEqual(result.code, 0, result)
+        self.assertIn("Test files set aside: none, as --keep-tests measures them all.\n", result.out)
+        result = support.run("measure.py", "-C", self.repo, "--list-tests", "--show", "src/lib.rs")
+        self.assertEqual(result.code, 2, result)
+        self.assertIn("--list-tests lists the test files instead of the table, and --show lists a file's functions: "
+                      "give one or the other", result.err)
+        result = support.run("measure.py", "-C", self.repo, "--list-tests", "--test", "src/lib.rs", "--test",
+                             "src/commands/*")
+        self.assertIn("  src/lib.rs: by --test src/lib.rs\n", result.out)
+        self.assertIn("  src/commands/mod.rs: by --test src/commands/*\n", result.out)
+        # And those set aside in doubt, as the table's output names them.
+        repo = support.Repo("list-doubts")
+        repo.commit("2026-01-05", "Start", {"app/ABTest.php": "<?php\n", "app/main.php": "<?php\n"})
+        repo.done()
+        result = support.run("measure.py", "-C", repo.path, "--list-tests")
+        self.assertIn("  app/ABTest.php: named like a test (*Test.php)\nSet aside as tests, but maybe not: "
+                      "app/ABTest.php (named like a test, in no folder of tests).", result.out)
 
 
 class TwoReadings(unittest.TestCase):
@@ -479,6 +542,13 @@ class TwoReadings(unittest.TestCase):
         self.assertIn("Rust's test modules are read here at HEAD, and the working tree, which measure.py reads, "
                       "differs from it in 1 .rs or Cargo.toml file, so the two may set aside different files.",
                       support.run("heatmap.py", "-C", repo.path).out)
+        # A rename changes two paths, whatever git's diff.renames.
+        support.git(repo.path, "checkout", "--", "src/lib.rs")
+        support.git(repo.path, "mv", "src/probe.rs", "src/probe2.rs")
+        for renames in ("true", "copies", "false"):
+            with self.subTest(renames=renames):
+                support.git(repo.path, "config", "diff.renames", renames)
+                self.assertEqual(support.load("scoping").rust_read_differs(repo.path), 2)
 
     def test_the_two_readers_agree(self):
         # The brackets each sees outside literals and comments, on every literal Rust has.
@@ -716,77 +786,6 @@ class EachShape(unittest.TestCase):
         self.assertEqual(scoping.rust_tests_said(sorted(found), found, "THERE"),
                          "; 2 of them Rust compiled only for tests, each by the #![cfg(test)] at its top: a.rs and "
                          "b.rs; 1 of them a Rust crate Cargo builds only as a test: it.rs. THERE")
-
-
-class ScriptsOnTheEdges(unittest.TestCase):
-    """What the scripts say, or don't, of a test module that --show names, --keep-tests or --not-test keeps, a file
-    they can't read, and the fixes trace and the pairs, which leave it out."""
-
-    @classmethod
-    def setUpClass(cls):
-        repo = support.Repo("module-edges")
-        files = {"src/lib.rs": "mod a;\n#[cfg(test)]\nmod probe;\n#[cfg(test)]\nmod probe_test;\n#[cfg(test)]\n"
-                               "mod shared;\n", "src/a.rs": "fn a() {\n    go();\n}\n",
-                 "src/bin/tool.rs": "#[cfg(test)]\n#[path = \"../shared.rs\"]\nmod shared;\nfn main() {\n}\n",
-                 "src/shared.rs": "fn s() {\n}\n", "src/probe_test.rs": "fn p() {\n}\n",
-                 "src/probe.rs": "fn p1() {\n    a();\n}\n#[cfg(test)]\nfn p2() {\n    b();\n}\n",
-                 "src/bin/check.rs": "#![cfg(test)]\nfn c() {\n}\n", "docs/notes.md": "Notes.\n",
-                 "src/blob.rs": b"\0\n#[cfg(test)]\nmod packed;\n", "src/packed.rs": "fn k() {\n}\n"}
-        repo.commit("2026-01-05", "Start", files)
-        for n in range(1, 6):
-            repo.commit("2026-01-%02d" % (5 + n), "Fix a crash in probe %d" % n, {
-                "src/probe.rs": files["src/probe.rs"] + "\n" * n, "src/a.rs": files["src/a.rs"] + "\n" * n})
-        repo.done()
-        cls.repo = repo.path
-
-    def test_show(self):
-        result = support.run("measure.py", "-C", self.repo, "docs", "--show", "src/probe.rs", "--show", "src/shared.rs",
-                             "--show", "src/bin/check.rs", "--show", "src/probe_test.rs")
-        self.assertEqual(result.code, 0, result)
-        self.assertRegex(result.out, r"src/probe\.rs: Rust, 7 code lines, band -, 2 functions.*\nA test file: ")
-        self.assertRegex(result.out, r"\nA test file: .*src/bin/tool\.rs and src/lib\.rs; measured whole here\.\n")
-        self.assertIn("\nA test file: Rust compiled only for tests, by the #![cfg(test)] at its top; measured whole "
-                      "here.\n", result.out)
-        self.assertEqual(result.out.count("A test file: "), 3)
-        for args in (["--keep-tests"], ["--not-test", "src/probe.rs"]):
-            with self.subTest(args=args):
-                result = support.run("measure.py", "-C", self.repo, "--show", "src/probe.rs", *args)
-                self.assertEqual(result.code, 0, result)
-                self.assertNotIn("A test file", result.out)
-
-    def test_a_binary_file_declares_nothing(self):
-        for script in ("measure.py", "heatmap.py"):
-            with self.subTest(script=script):
-                self.assertIn("src/packed.rs", rows(support.run(script, "-C", self.repo, "--top", "20").out))
-
-    def test_left_out_of_the_fixes_and_the_pairs(self):
-        result = support.run("heatmap.py", "-C", self.repo, "--min-shared", "3", "--min-revs", "3")
-        self.assertEqual(result.code, 0, result)
-        fixes, pairs = result.out.split("Fixes by file")[1].split("Changed together")
-        self.assertIn("src/a.rs", fixes)
-        self.assertNotIn("src/probe.rs", fixes + pairs)
-
-    @unittest.skipIf(support.WINDOWS or (hasattr(os, "geteuid") and os.geteuid() == 0), "a file anyone can read")
-    def test_a_file_it_cant_read(self):
-        repo = support.Repo("unreadable")
-        repo.commit("2026-01-05", "Start", {"src/lib.rs": "mod a;\n", "src/a.rs": "fn a() {\n}\n"})
-        repo.done()
-        os.chmod(os.path.join(repo.path, "src", "a.rs"), 0)
-        try:
-            result = support.run("measure.py", "-C", repo.path)
-        finally:
-            os.chmod(os.path.join(repo.path, "src", "a.rs"), 0o644)
-        self.assertEqual(result.code, 0, result)
-        self.assertIn("Couldn't read 1 file", result.out)
-
-    @unittest.skipIf(support.WINDOWS, "a file's name can't hold a newline on Windows")
-    def test_a_path_holding_a_newline(self):
-        repo = support.Repo("newline")
-        repo.commit("2026-01-05", "Start", {"odd\nname.rs": "fn o() {\n}\n", "src/lib.rs": "#[cfg(test)]\nmod b;\n",
-                                             "src/b.rs": "fn b() {\n}\n"})
-        repo.done()
-        result = support.run("heatmap.py", "-C", repo.path)
-        self.assertEqual(rows(result.out), {"src/lib.rs"})
 
 
 if __name__ == "__main__":
