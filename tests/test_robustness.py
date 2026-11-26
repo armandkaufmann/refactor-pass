@@ -320,6 +320,13 @@ GROWING = {
     "cfg-strings": (2500, lambda n: {"src/lib.rs": "#[cfg(any(" + 'feature = "x", ' * n + "))]\nmod a;\n",
                                      "src/a.rs": ""}, "modules"),
     "deep-blocks": (6000, lambda n: {"src/lib.rs": "{" * n + "mod a;" * n + "}" * n, "src/a.rs": ""}, "modules"),
+    # Comments after a word ending in mod, a line of slashes and a run of /**/, which a reading of a file's comments
+    # that could split them many ways split in every one (exponential, on a doc comment's URL); and a manifest's [
+    # before thousands of spaces.
+    "comment-runs": (2000, lambda n: {"src/lib.rs": ("// dynamodb\n" + "/" * 48 + "\nmodb " + "/**/" * 32 + "\n") * n,
+                                      "src/a.rs": ""}, "modules"),
+    "manifest-header": (2000000, lambda n: {"Cargo.toml": "[" + " " * n + "\n", "src/lib.rs": "mod a;\n",
+                                            "src/a.rs": ""}, "modules"),
 }
 
 
