@@ -1,6 +1,7 @@
 """Rust's test modules on the scripts' edges: --show of one, --keep-tests and --not-test, a binary file, a file
 the scripts can't read, a path holding a newline, and the fixes trace and the pairs, which leave them out; and on
-the rule's, with no manifest: how far a macro's test-only-ness and a built include! reach."""
+the rule's: which macro a call is to, and with no manifest, how far a macro's test-only-ness and a built include!
+reach."""
 
 import os
 import unittest
@@ -83,6 +84,37 @@ class ScriptsOnTheEdges(unittest.TestCase):
         result = support.run("heatmap.py", "-C", repo.path)
         self.assertEqual(rows(result.out), {"src/lib.rs"})
 
+
+
+class WhichMacroACallIsTo(unittest.TestCase):
+    """A call takes a macro's test-only-ness only where every macro_rules! of its name it may be to declares only
+    for tests: the last one before it in its own file, else each in its package, or with no manifest, in its folder
+    or one above it. Any other of that name, one that declares no module it can read, makes the call plain."""
+
+    TEST_ONLY = "macro_rules! modules { ($($m:ident),*) => { $(#[cfg(test)] mod $m;)* } }\n"
+    FORWARD = ("macro_rules! inner { ($m:ident) => { pub mod $m; } }\n"
+               "macro_rules! modules { ($($t:tt)*) => { inner!($($t)*); } }\n")
+
+    def test_its_own_files(self):
+        # As rustc reads them: y's call is to y's forwarder, so util.rs is code; x's is to x's test-only macro.
+        for manifest in ({"Cargo.toml": "[package]\nname = \"s\"\n"}, {}):
+            with self.subTest(manifest=bool(manifest)):
+                files = dict(manifest, **{"src/lib.rs": "mod x;\nmod y;\n", "src/x/fixtures.rs": "",
+                                          "src/x.rs": self.TEST_ONLY + "modules!(fixtures);\n",
+                                          "src/y.rs": self.FORWARD + "modules!(util);\n", "src/y/util.rs": ""})
+                self.assertEqual(modules(files), {"src/x/fixtures.rs": ["src/x.rs"]})
+
+    def test_one_in_a_file_that_holds_nothing_else(self):
+        # macros.rs forwards to a dependency's macro, so y's call, which can be to it, is plain: read for its macro
+        # alone, as a test-only module macro shares its name.
+        for manifest in ({"Cargo.toml": "[package]\nname = \"s\"\n"}, {}):
+            with self.subTest(manifest=bool(manifest)):
+                forward = "macro_rules! modules { ($($t:tt)*) => { dep::declare!($($t)*); } }\n"
+                files = dict(manifest, **{"src/lib.rs": "#[macro_use]\nmod macros;\nmod x;\nmod y;\n",
+                                          "src/macros.rs": forward,
+                                          "src/x.rs": self.TEST_ONLY + "modules!(fixtures);\n", "src/x/fixtures.rs": "",
+                                          "src/y.rs": "modules!(util);\n", "src/y/util.rs": ""})
+                self.assertEqual(modules(files), {"src/x/fixtures.rs": ["src/x.rs"]})
 
 
 class WithNoManifest(unittest.TestCase):
