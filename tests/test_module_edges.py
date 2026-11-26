@@ -1,6 +1,7 @@
 """Rust's test modules on the scripts' edges: --show of one, --keep-tests and --not-test, a binary file, a file
-the scripts can't read, a path holding a newline, and the fixes trace and the pairs, which leave them out; and on
-the rule's: which macro a call is to, and with no manifest, how far a built include! reaches."""
+the scripts can't read, a path holding a newline, the fixes trace and the pairs, which leave them out, and the
+heatmap's tests' own files; and on the rule's: which macro a call is to, what a call or an include! holds, and with
+no manifest, how far a built include! reaches."""
 
 import os
 import unittest
@@ -83,6 +84,86 @@ class ScriptsOnTheEdges(unittest.TestCase):
         result = support.run("heatmap.py", "-C", repo.path)
         self.assertEqual(rows(result.out), {"src/lib.rs"})
 
+
+
+class TiedTests(unittest.TestCase):
+    """A test module's own files are those whose declarations bring it in, whatever their names, and only those:
+    they aren't among the production files it changes with, and a file of its name elsewhere is."""
+
+    def test_its_own_file(self):
+        repo = support.Repo("tied-modules")
+        for n in range(1, 6):
+            repo.commit("2026-01-%02d" % n, "Change %d" % n, {
+                "src/lib.rs": "mod disk;\nmod a;\nmod b;\nmod importer;\n" + support.lines(n),
+                "src/importer.rs": support.lines(n),
+                "src/disk.rs": "#[cfg(test)]\nmod checks;\n" + support.lines(n),
+                "src/disk/checks.rs": support.lines(n), "src/a.rs": support.lines(n), "src/b.rs": support.lines(n),
+                "crates/x/src/lib.rs": "#![cfg(test)]\n" + support.lines(n),
+                "crates/y/src/lib.rs": "#[cfg(test)]\nmod importer;\n", "crates/y/src/importer.rs": support.lines(n)})
+        repo.done()
+        result = support.run("heatmap.py", "-C", repo.path)
+        self.assertIn("  src/disk/checks.rs: 4 files, src/a.rs (5), src/b.rs (5), src/importer.rs (5), "
+                      "src/lib.rs (5)\n",
+                      result.out)
+        self.assertIn("  crates/x/src/lib.rs: 5 files,", result.out)
+        self.assertRegex(result.out, r"crates/y/src/importer\.rs: 5 files,.* src/importer\.rs \(5\)")
+
+    def test_a_test_by_name_keeps_its_own_by_name(self):
+        # A test by its name, or Cargo's test crate, keeps its own file by name too: each changes with one more
+        # production file only, and isn't listed.
+        repo = support.Repo("tied-named")
+        for n in range(1, 6):
+            repo.commit("2026-01-%02d" % n, "Change %d" % n, {
+                "Cargo.toml": "[package]\nname = \"x\"\n\n[[test]]\nname = \"p\"\npath = \"checks/parser.rs\"\n",
+                "src/lib.rs": "mod parser;\nmod lexer;\n#[cfg(test)]\nmod parser_test;\n",
+                "src/parser.rs": support.lines(n), "src/lexer.rs": support.lines(n),
+                "checks/parser.rs": support.lines(n),
+                "src/parser_test.rs": support.lines(n), "tests/parser.rs": "mod common;\n" + support.lines(n),
+                "tests/common/mod.rs": ""})
+        repo.done()
+        tied = support.run("heatmap.py", "-C", repo.path).out.split("Tests changed together")[1]
+        self.assertNotIn("parser", tied)
+        # And a test by its folder that's no crate of Cargo's, src/tests/parser.rs.
+        repo = support.Repo("tied-folder")
+        for n in range(1, 6):
+            repo.commit("2026-01-%02d" % n, "Change %d" % n, {
+                "src/lib.rs": "pub mod parser;\npub mod lexer;\n#[cfg(test)]\nmod tests;\n",
+                "src/parser.rs": support.lines(n), "src/lexer.rs": support.lines(n),
+                "src/tests/mod.rs": "mod parser;\n", "src/tests/parser.rs": support.lines(n)})
+        repo.done()
+        self.assertNotIn("parser", support.run("heatmap.py", "-C", repo.path).out.split("Tests changed together")[1])
+
+
+class WhatACallOrAnIncludeHolds(unittest.TestCase):
+    """A call's words and an include!'s strings, read across what else is in its brackets, as rustc reads them: each
+    file is named by a test's #[path] too, so only the plain call or the include! keeps it code."""
+
+    MACRO = ("macro_rules! modules { ($($m:ident),* $(,)?) => { $(pub mod $m;)* };\n"
+             "    ($($m:ident),* ; $e:expr) => { $(pub mod $m;)* }; }\n")
+    TESTS = "#[cfg(test)]\n#[path = \"util.rs\"]\nmod t1;\n#[cfg(test)]\n#[path = \"net.rs\"]\nmod t2;\n"
+
+    def test_a_calls_words(self):
+        # Past a comment, over lines; past a ; and an expression; in square brackets.
+        for call in ("modules!(\n    util, // helpers\n    net,\n);\n", "modules!(util, net; 1 + 1);\n",
+                     "modules!(\n    util, /* helpers */\n    net,\n);\n", "modules![util, net];\n"):
+            with self.subTest(call=call):
+                files = {"src/lib.rs": self.MACRO + call + self.TESTS, "src/util.rs": "", "src/net.rs": ""}
+                self.assertEqual(modules(files), {})
+
+    def test_where_a_template_declares(self):
+        # m!(util) declares outer::util, src/outer/util.rs, code; src/util.rs only the test's #[path] names.
+        files = {"src/lib.rs": "macro_rules! m { ($x:ident) => { pub mod outer { pub mod $x; } }; }\nm!(util);\n" +
+                 self.TESTS.replace("net.rs", "outer/util.rs"), "src/util.rs": "", "src/outer/util.rs": ""}
+        self.assertEqual(modules(files), {"src/util.rs": ["src/lib.rs"]})
+
+    def test_a_built_includes_strings(self):
+        # From the including file's folder, as one string or joined, and through a brace in its argument.
+        for include in ('include!(concat!("util.rs"));\n', 'include!(concat!("ut", "il.rs"));\n',
+                        'include!(concat!{env!("CARGO_MANIFEST_DIR"), "/src/util.rs"});\n'):
+            with self.subTest(include=include):
+                files = {"Cargo.toml": "[package]\nname = \"k\"\n", "src/util.rs": "",
+                         "src/lib.rs": include + "#[cfg(test)]\n#[path = \"util.rs\"]\nmod t1;\n"}
+                self.assertEqual(modules(files), {})
 
 
 class WhichMacroACallIsTo(unittest.TestCase):

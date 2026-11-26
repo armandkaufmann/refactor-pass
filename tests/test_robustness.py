@@ -332,6 +332,10 @@ GROWING = {
     "glob-lines": (150000, lambda n: {"src/lib.rs": '    "node_modules/*",\n' * n}, "modules"),
     "mod-words": (300000, lambda n: {"src/lib.rs": "mod" * n}, "modules"),
     "mod-comments": (40000, lambda n: {"src/lib.rs": "mod x /*" * n}, "modules"),
+    "mod-comment-names": (40000, lambda n: {"src/lib.rs": "mod /*" * n}, "modules"),
+    # An include! of thousands of strings: they were joined again at each.
+    "include-strings": (3000, lambda n: {"src/lib.rs": "mod zz;\ninclude!(concat!(" + "\"s\", " * n + "));\n"},
+                        "modules"),
     "mod-line-comments": (10000, lambda n: {"src/lib.rs": "// mod x /*\n" * n}, "modules"),
     # Thousands of macros that declare modules, each called once, and as many files that call other macros: each file
     # was searched for every one's name.

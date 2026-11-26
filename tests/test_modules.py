@@ -176,11 +176,13 @@ class WhereADeclarationPoints(unittest.TestCase):
                          {"src/a.rs": ["src/lib.rs"]})
 
     def test_every_literal_prefix(self):
-        # A string is one whatever its prefix, b, c, r, br or cr, so a { in it opens nothing: p.rs is code.
-        files = {"src/lib.rs": "static C: &CStr = cr#\"x\"{\"#;\nconst D: &CStr = c\"a{\";\n"
+        # A string is one whatever its prefix, b, c, r, br or cr, so a { in it opens nothing: mod p; is read at the
+        # top, where it needs no #[path], so p.rs, which a test's #[path] names too, is code.
+        files = {"src/lib.rs": "#[cfg(test)]\n#[path = \"p.rs\"]\nmod p2;\nstatic C: &CStr = cr#\"x\"{\"#;\n"
+                               "const D: &CStr = c\"a{\";\n"
                                "const E: &[u8] = br#\"\"{\"#;\n"
                                "const F: &[u8] = b\"{\";\nconst G: &str = r\"{\";\nconst H: u8 = b'{';\n"
-                               "#[path = \"p.rs\"]\nmod p;\n#[cfg(test)]\nmod t;\n", "src/p.rs": "", "src/t.rs": ""}
+                               "mod p;\n#[cfg(test)]\nmod t;\n", "src/p.rs": "", "src/t.rs": ""}
         self.assertEqual(modules(files), {"src/t.rs": ["src/lib.rs"]})
 
     def test_a_paths_backslash_and_its_order(self):
@@ -314,8 +316,7 @@ class WhenItsATest(unittest.TestCase):
         # In brackets or braces too; and where its path is built, the file a string of it names in the package.
         files = {"Cargo.toml": "[package]\nname = \"k\"\n", "src/lib.rs": "#[cfg(test)]\nmod b;\n#[cfg(test)]\nmod c;\n"
                  "#[cfg(test)]\n#[path = \"gen.rs\"]\nmod gen;\ninclude![\"b.rs\"];\ninclude! {\"c.rs\"}\n"
-                 "pub fn f() {\n"
-                 "    include!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/src/gen.rs\"));\n}\n",
+                 "include!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/src/gen.rs\"));\n",
                  "src/b.rs": "", "src/c.rs": "", "src/gen.rs": "", "other/Cargo.toml": "[package]\nname = \"o\"\n",
                  "other/src/lib.rs": "#[cfg(test)]\nmod gen;\n", "other/src/gen.rs": ""}
         self.assertEqual(modules(files), {"other/src/gen.rs": ["other/src/lib.rs"]})
@@ -346,8 +347,8 @@ class WhenItsATest(unittest.TestCase):
         self.assertEqual(modules(files), {"src/probe.rs": ["src/main.rs"]})
         # Called in test code, it declares for tests; and a macro whose mod $name has a body declares no file.
         files = {"src/lib.rs": "macro_rules! modules { ($($m:ident),*) => { $(pub mod $m;)* } }\n#[cfg(test)]\n"
-                               "modules!(probe);\n#[cfg(test)]\n#[path = \"probe.rs\"]\nmod again;\nmod disk;\n"
-                               "macro_rules! wrap { ($m:ident) => { mod $m {} } }\n#[cfg(test)]\n"
+                               "modules!(probe);\n#[cfg(test)]\n#[path = \"probe.rs\"]\nmod again;\n"
+                               "macro_rules! wrap { ($m:ident) => { mod $m {} } }\nmod disk;\n#[cfg(test)]\n"
                                "#[path = \"disk/inner.rs\"]\nmod inner;\n", "src/disk.rs": "wrap!(inner);\n",
                  "src/probe.rs": "", "src/disk/inner.rs": ""}
         self.assertEqual(modules(files), {"src/probe.rs": ["src/lib.rs"], "src/disk/inner.rs": ["src/lib.rs"]})
@@ -506,6 +507,7 @@ class BothScripts(unittest.TestCase):
                          "a.rs and it.rs. THERE")
         self.assertEqual(scoping.rust_test_reason("it.rs", found),
                          "a Rust crate Cargo builds only as a test, by Cargo.toml")
+        self.assertEqual(scoping.a_few(["m%d" % k for k in range(5)]), "m0, m1, m2, m3 and m4")
 
     def test_list_tests(self):
         result = support.run("measure.py", "-C", self.repo, "--list-tests")
@@ -544,7 +546,7 @@ class TwoReadings(unittest.TestCase):
     def test_the_working_tree_against_head(self):
         repo = support.Repo("two-readings")
         repo.commit("2026-01-05", "Start", {"src/lib.rs": "#[cfg(test)]\nmod probe;\n",
-                                             "src/probe.rs": "fn p() {\n}\n"})
+                                             "src/probe.rs": "fn p() {\n}\n", "x/Cargo.toml": "[package]\n"})
         repo.done()
         for script in ("measure.py", "heatmap.py"):
             with self.subTest(script=script):
@@ -556,6 +558,9 @@ class TwoReadings(unittest.TestCase):
         self.assertIn("Rust's test modules are read here at HEAD, and the working tree, which measure.py reads, "
                       "differs from it in 1 .rs or Cargo.toml file, so the two may set aside different files.",
                       support.run("heatmap.py", "-C", repo.path).out)
+        repo.write("x/Cargo.toml", "[package]\nname = \"x\"\n")
+        self.assertIn("differs from HEAD in 2 .rs or Cargo.toml files;", support.run("measure.py", "-C", repo.path).out)
+        support.git(repo.path, "checkout", "--", "x/Cargo.toml")
         # A rename changes two paths, whatever git's diff.renames.
         support.git(repo.path, "checkout", "--", "src/lib.rs")
         support.git(repo.path, "mv", "src/probe.rs", "src/probe2.rs")
@@ -577,45 +582,6 @@ class TwoReadings(unittest.TestCase):
                 found = "".join(t if k == "bracket" else "[" for k, t in scoping.rust_tokens(text)
                                 if k in ("bracket", "attribute"))
                 self.assertEqual(found, seen)
-
-
-class TiedTests(unittest.TestCase):
-    """A test module's own files are those whose declarations bring it in, whatever their names, and only those:
-    they aren't among the production files it changes with, and a file of its name elsewhere is."""
-
-    def test_its_own_file(self):
-        repo = support.Repo("tied-modules")
-        for n in range(1, 6):
-            repo.commit("2026-01-%02d" % n, "Change %d" % n, {
-                "src/lib.rs": "mod disk;\nmod a;\nmod b;\nmod importer;\n" + support.lines(n),
-                "src/importer.rs": support.lines(n),
-                "src/disk.rs": "#[cfg(test)]\nmod checks;\n" + support.lines(n),
-                "src/disk/checks.rs": support.lines(n), "src/a.rs": support.lines(n), "src/b.rs": support.lines(n),
-                "crates/x/src/lib.rs": "#![cfg(test)]\n" + support.lines(n),
-                "crates/y/src/lib.rs": "#[cfg(test)]\nmod importer;\n", "crates/y/src/importer.rs": support.lines(n)})
-        repo.done()
-        result = support.run("heatmap.py", "-C", repo.path)
-        self.assertIn("  src/disk/checks.rs: 4 files, src/a.rs (5), src/b.rs (5), src/importer.rs (5), "
-                      "src/lib.rs (5)\n",
-                      result.out)
-        self.assertIn("  crates/x/src/lib.rs: 5 files,", result.out)
-        self.assertRegex(result.out, r"crates/y/src/importer\.rs: 5 files,.* src/importer\.rs \(5\)")
-
-    def test_a_test_by_name_keeps_its_own_by_name(self):
-        # A test by its name, or Cargo's test crate, keeps its own file by name too: each changes with one more
-        # production file only, and isn't listed.
-        repo = support.Repo("tied-named")
-        for n in range(1, 6):
-            repo.commit("2026-01-%02d" % n, "Change %d" % n, {
-                "Cargo.toml": "[package]\nname = \"x\"\n\n[[test]]\nname = \"p\"\npath = \"checks/parser.rs\"\n",
-                "src/lib.rs": "mod parser;\nmod lexer;\n#[cfg(test)]\nmod parser_test;\n",
-                "src/parser.rs": support.lines(n), "src/lexer.rs": support.lines(n),
-                "checks/parser.rs": support.lines(n),
-                "src/parser_test.rs": support.lines(n), "tests/parser.rs": "mod common;\n" + support.lines(n),
-                "tests/common/mod.rs": ""})
-        repo.done()
-        tied = support.run("heatmap.py", "-C", repo.path).out.split("Tests changed together")[1]
-        self.assertNotIn("parser", tied)
 
 
 class Corners(unittest.TestCase):
