@@ -139,12 +139,14 @@ class WhatACallOrAnIncludeHolds(unittest.TestCase):
     file is named by a test's #[path] too, so only the plain call or the include! keeps it code."""
 
     MACRO = ("macro_rules! modules { ($($m:ident),* $(,)?) => { $(pub mod $m;)* };\n"
-             "    ($($m:ident),* ; $e:expr) => { $(pub mod $m;)* }; }\n")
+             "    ($($m:ident),* ; $e:expr) => { $(pub mod $m;)* };\n"
+             "    ($e:expr; $($m:ident),*) => { $(pub mod $m;)* }; }\n")
     TESTS = "#[cfg(test)]\n#[path = \"util.rs\"]\nmod t1;\n#[cfg(test)]\n#[path = \"net.rs\"]\nmod t2;\n"
 
     def test_a_calls_words(self):
         # Past a comment, over lines; past a ; and an expression; in square brackets.
         for call in ("modules!(\n    util, // helpers\n    net,\n);\n", "modules!(util, net; 1 + 1);\n",
+                     "modules!((1 + 1); util, net);\n",
                      "modules!(\n    util, /* helpers */\n    net,\n);\n", "modules![util, net];\n"):
             with self.subTest(call=call):
                 files = {"src/lib.rs": self.MACRO + call + self.TESTS, "src/util.rs": "", "src/net.rs": ""}
@@ -159,10 +161,13 @@ class WhatACallOrAnIncludeHolds(unittest.TestCase):
     def test_a_built_includes_strings(self):
         # From the including file's folder, as one string or joined, and through a brace in its argument.
         for include in ('include!(concat!("util.rs"));\n', 'include!(concat!("ut", "il.rs"));\n',
-                        'include!(concat!{env!("CARGO_MANIFEST_DIR"), "/src/util.rs"});\n'):
+                        'include!(concat!{env!("CARGO_MANIFEST_DIR"), "/src/util.rs"});\n',
+                        'include!(concat!(env!("CARGO_MANIFEST_DIR"), stringify!(), stringify!(), "/src/util.rs"));\n',
+                        'include!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/gen/", "util.rs"));\n'):
             with self.subTest(include=include):
-                files = {"Cargo.toml": "[package]\nname = \"k\"\n", "src/util.rs": "",
-                         "src/lib.rs": include + "#[cfg(test)]\n#[path = \"util.rs\"]\nmod t1;\n"}
+                at = "gen/util.rs" if "gen/" in include else "util.rs"
+                files = {"Cargo.toml": "[package]\nname = \"k\"\n", "src/" + at: "",
+                         "src/lib.rs": include + "#[cfg(test)]\n#[path = \"%s\"]\nmod t1;\n" % at}
                 self.assertEqual(modules(files), {})
 
 
