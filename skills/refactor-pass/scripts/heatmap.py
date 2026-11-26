@@ -38,11 +38,12 @@ Test files are set aside, so a spec beside its source doesn't top the list:
 those named as the common frameworks name them (Board.spec.ts, test_x.py,
 XTest.php...), anything in a folder named test, tests, __tests__, spec or
 the like, and Rust compiled only for tests: a file brought in only by mod
-declarations that need test (#[cfg(test)] mod x;, or one in such a file),
-unless Cargo builds it as another crate or code include!s it; one marked
-#![cfg(test)]; or a crate Cargo builds only as a test. --test adds a
-pattern, --not-test counts a file set aside that isn't a test, and
---keep-tests counts them all. The output names any set aside in doubt: a
+declarations that need test (#[cfg(test)] mod x;, or one in test code),
+unless Cargo builds it other than as a test, code include!s it, a symlink
+leads to it or a macro in its package may declare modules; one marked
+#![cfg(test)], whatever it is; or a crate Cargo builds only as a test.
+--test adds a pattern, --not-test counts a file set aside that isn't one,
+and --keep-tests counts them all. The output names any set aside in doubt: a
 name such as ABTest.php in no folder of tests, or a spec folder in which no
 file is named like a test or is a Rust test.
 
@@ -62,9 +63,9 @@ says how many; in a repo that squash-merges, that can be most of them.
 Last, the tests that change together with several production files besides
 their own: the file of the same name less the test's marker or, when there
 is none, the controller, handler or command of that name, as a feature test
-names it (ShowDashboardTest.php and ShowDashboardController.php), and the
-files that declare a Rust test module. Each is a lead, not a verdict: a
-test that reaches into those files' private members or internal paths is
+names it (ShowDashboardTest.php and ShowDashboardController.php); for a Rust
+test module, only the files that declare it. Each is a lead, not a verdict:
+a test that reaches into those files' private members or internal paths is
 tied to their internals, while a broad test that follows features through
 them, or follows files that already change together, isn't.
 
@@ -559,28 +560,6 @@ def not_landed(repo, shas):
                 scoping.git(repo, "merge-base", "--is-ancestor", found[0], "HEAD").returncode != 0:
             lost.add(sha)
     return lost
-
-
-def texts_at(repo, rev, paths):
-    """The texts of the files at rev, of those asked for, read in one batch; one missing there, or binary, is
-    left out."""
-    wanted = [p for p in paths if "\n" not in p]
-    if not wanted:
-        return {}
-    data = scoping.git(repo, "cat-file", "--batch", input="".join("%s:%s\n" % (rev, p) for p in wanted).encode()).stdout
-    texts, pos = {}, 0
-    for path in wanted:
-        end = data.index(b"\n", pos)
-        header = data[pos:end].split(b" ")
-        pos = end + 1
-        if len(header) != 3 or not SHA.fullmatch(header[0].decode()) or not header[2].isdigit():
-            continue
-        size = int(header[2])
-        blob = data[pos:pos + size]
-        pos += size + 1
-        if header[1] == b"blob" and b"\0" not in blob[:8000]:
-            texts[path] = blob.decode("utf-8", errors="replace")
-    return texts
 
 
 def line_counts(repo, wanted):
@@ -1459,7 +1438,7 @@ def main():
                         help="globs naming files set aside as tests that aren't, matched as --test's are, such "
                              "as 'app/ABTest.php' or 'docs/spec/*': they count like the rest")
     parser.add_argument("--keep-tests", action="store_true",
-                        help="count test files like the rest, in the table and the pairs")
+                        help="count test files like the rest")
     parser.add_argument("--top", type=scoping.count(0), default=25,
                         help="files to print, and to put on --page (default 25)")
     parser.add_argument("--pairs", type=scoping.count(0), default=15,
@@ -1615,7 +1594,8 @@ def main():
 
     def modules():
         if "modules" not in rust_read:
-            rust_read["modules"] = scoping.rust_test_modules(tracked, lambda wanted: texts_at(repo, "HEAD", wanted))
+            rust_read["modules"] = scoping.rust_test_modules(
+                tracked, lambda wanted: scoping.texts_at(repo, "HEAD", wanted), scoping.tracked_links(repo, "HEAD"))
         return rust_read["modules"]
 
     def is_test(path):

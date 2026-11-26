@@ -102,8 +102,9 @@ app/sub/deep.py; and **/ matches any number of folders, none included, so
 'app/**/*.py' takes app/main.py too. Use the same scope as the heatmap.
 Test files are set aside as the heatmap sets them aside, by name or folder,
 and Rust compiled only for tests: a file brought in only by mod declarations
-that need test (#[cfg(test)] mod tests;, or one in such a file), unless
-Cargo builds it as another crate or code include!s it; one marked
+that need test (#[cfg(test)] mod tests;, or one in a test module or file),
+unless Cargo builds it other than as a test, code include!s it, a symlink
+leads to it or a macro in its package may declare modules; one marked
 #![cfg(test)], whatever it is; or a crate Cargo builds only as a test. So
 they stay out of the percentiles; the output names five of each kind of the
 Rust ones at most, --list-tests every test file with why, and any set aside
@@ -113,7 +114,9 @@ fn, an impl...), which the heatmap counts in the file: the output says how
 many lines and in which files, and --show which lines. --keep-tests measures
 them all.
 Any copy of this skill a project keeps in the repo is left out, unless a
-scope names its folder. Reads the working tree's tracked files only.
+scope names its folder. Reads the working tree's tracked files only, but for
+Rust's test modules, which read a file a sparse checkout leaves out from
+git's index.
 
 Examples:
   measure.py src tests
@@ -1840,17 +1843,32 @@ def weighted(lengths, percents=PERCENTS):
 def not_there(repo, missing):
     """Why files git tracks aren't in the working tree, for the output: those a sparse checkout leaves out (git
     marks them skip-worktree), and those deleted and not committed; a few of each by name."""
-    sparse = set(entry[2:] for entry in (scoping.run(repo, "ls-files", "-t", "-z") or "").split("\0")
-                 if entry.startswith("S "))
-    left_out = [p for p in missing if p in sparse]
+    sparse = left_out(repo)
+    left_out_here = [p for p in missing if p in sparse]
     deleted = [p for p in missing if p not in sparse]
     parts = []
-    if left_out:
+    if left_out_here:
         parts.append("%d file%s a sparse checkout leaves out (%s)" % (
-            len(left_out), "" if len(left_out) == 1 else "s", a_few(left_out)))
+            len(left_out_here), "" if len(left_out_here) == 1 else "s", a_few(left_out_here)))
     if deleted:
         parts.append("%d deleted and not committed (%s)" % (len(deleted), a_few(deleted)))
     return ", and ".join(parts)
+
+
+def left_out(repo):
+    """The files git tracks that a sparse checkout leaves out of the working tree, which git marks skip-worktree."""
+    return set(entry[2:] for entry in (scoping.run(repo, "ls-files", "-t", "-z") or "").split("\0")
+               if entry.startswith("S "))
+
+
+def rust_texts(repo, paths):
+    """The texts Rust's test modules are read in: the working tree's, and the index's of a file a sparse checkout
+    leaves out of it, as rustc would read it there."""
+    texts = working_texts(repo, paths)
+    missing = [p for p in paths if p not in texts]
+    sparse = left_out(repo) if missing else ()
+    texts.update(scoping.texts_at(repo, "", [p for p in missing if p in sparse]))
+    return texts
 
 
 def working_texts(repo, paths):
@@ -1872,6 +1890,15 @@ def a_few(paths):
     """The first five paths, and how many more."""
     names = paths[:5] + (["%d more" % (len(paths) - 5)] if len(paths) > 5 else [])
     return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+
+
+def differs_said(repo, rust):
+    """Where Rust was read here, the line saying the working tree differs from HEAD, the heatmap's, in it, if so."""
+    differs = scoping.rust_read_differs(repo) if rust else 0
+    if differs:
+        print("Rust's test modules are read here from the working tree, which differs from HEAD in %d .rs or "
+              "Cargo.toml file%s; the heatmap reads HEAD, so the two may set aside different files."
+              % (differs, "" if differs == 1 else "s"))
 
 
 def doubts_said(doubts):
@@ -1925,7 +1952,8 @@ def main():
     # Rust's test modules in files of their own, by the declarations that bring them in, which may be outside the
     # scope: read in every tracked .rs file of the working tree, where the scope or --show has one.
     rust = not args.keep_tests and any(p.endswith(".rs") for p in paths + shows)
-    modules = scoping.rust_test_modules(tracked, lambda wanted: working_texts(repo, wanted)) if rust else {}
+    modules = scoping.rust_test_modules(tracked, lambda wanted: rust_texts(repo, wanted),
+                                        scoping.tracked_links(repo)) if rust else {}
     tests = set() if args.keep_tests else set(
         p for p in paths if scoping.is_test(p, args.test, args.not_test, modules))
     # Those set aside by their declarations alone, so the output can say which.
@@ -1940,6 +1968,7 @@ def main():
             print("  %s: %s" % (path, scoping.test_reason(path, args.test, args.not_test, modules)))
         if doubts:
             print(doubts_said(doubts))
+        differs_said(repo, rust)
         return
 
     measured, failed, unreadable, missing = {}, [], [], []
@@ -2011,11 +2040,7 @@ def main():
                                      if tests else "none in the scope",
                                      scoping.rust_tests_said(declared, modules,
                                                              "--list-tests lists every one, with why")))
-        differs = scoping.rust_read_differs(repo) if rust else 0
-        if differs:
-            print("Rust's test modules are read here from the working tree, which differs from HEAD in %d .rs or "
-                  "Cargo.toml file%s; the heatmap reads HEAD, so the two may set aside different files."
-                  % (differs, "" if differs == 1 else "s"))
+        differs_said(repo, rust)
     # The files in the scope with tests inside them, those with the most lines of them first.
     inside = sorted(((sum(part[2] for part in parts), path) for path, parts in within.items() if path in in_paths),
                     key=lambda kv: (-kv[0], kv[1]))
