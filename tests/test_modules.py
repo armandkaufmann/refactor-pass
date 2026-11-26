@@ -342,10 +342,10 @@ class WhenItsATest(unittest.TestCase):
         # and e's of the name it's renamed, p's by q's decl!, whose file p's crate brings in, and s's by q's
         # inc!, whose file s includes. The limit: c's tests.rs, which rustc compiles for tests alone, stays
         # measured, and makes b's fixture.rs, which only it declares, no test, though its marked file and its
-        # test crate's root are tests. b, which mentions none of them, keeps its test module, whose helper.rs,
-        # in c's package, isn't one; so does g, though h's comment says to use inner as well, and r, which names
-        # q's local!, exported nowhere, as the fn before it is; and with no manifest above them, x/ and y/ are
-        # one package, so y/t.rs stays measured, as y's own.
+        # test crate's root are tests; and as c's crate brings fixture.rs in, where c's macros may be called, b's
+        # test module stays measured too, though it mentions none of them. g keeps its test module, though h's
+        # comment says to use inner as well, and so does r, which names q's local!, exported nowhere, as the fn
+        # before it is; and with no manifest above them, x/ and y/ are one package, so y/t.rs stays measured.
         man, test_util = "[package]\nname = \"%s\"\n", "#[cfg(test)]\n#[path = \"util.rs\"]\nmod t;\n"
         files = {"c/Cargo.toml": man % "c", "b/src/fixture.rs": "", "c/src/mock.rs": "#![cfg(test)]\n",
                  "c/src/tests.rs": "#[path = \"../../b/src/fixture.rs\"]\nmod fixture;\n",
@@ -370,9 +370,8 @@ class WhenItsATest(unittest.TestCase):
                  "p/src/lib.rs": "#[macro_use]\n#[path = \"../../q/src/macros.rs\"]\nmod macros;\ndecl!(util);\n" +
                  test_util, "p/src/util.rs": "", "r/Cargo.toml": man % "r", "r/src/tests.rs": "",
                  "r/src/lib.rs": "pub fn local() {}\n#[cfg(test)]\nmod tests;\n"}
-        self.assertEqual(modules(files), {"b/src/tests.rs": ["b/src/lib.rs"], "g/src/util.rs": ["g/src/lib.rs"],
-                                          "r/src/tests.rs": ["r/src/lib.rs"], "c/src/mock.rs": "marked",
-                                          "c/tests/it.rs": "crate"})
+        self.assertEqual(modules(files), {"g/src/util.rs": ["g/src/lib.rs"], "r/src/tests.rs": ["r/src/lib.rs"],
+                                          "c/src/mock.rs": "marked", "c/tests/it.rs": "crate"})
         # A file whose macro_rules! name can't be read, but whose body declares, is in such a package too.
         files = {"src/lib.rs": "wrap! { macro_rules! $name { () => { mod q; } } }\n#[cfg(test)]\nmod t;\n",
                  "src/t.rs": ""}

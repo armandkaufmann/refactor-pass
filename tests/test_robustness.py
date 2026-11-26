@@ -367,6 +367,29 @@ GROWING = {
         "include!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/src/f%d.rs\"));\n" % k for k in range(n))}, "modules"),
     "deep-distinct-firsts": (1000, lambda n: {"/".join(["d"] * (n // 10)) + "/lib.rs": "".join(
         "include!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/f%d/x.rs\"));\n" % k for k in range(n))}, "modules"),
+    # And as many, each of one first part that as many folders elsewhere hold: each looked for them again.
+    "repeated-firsts": (2000, lambda n: dict([("/".join(["a"] * (n // 10)) + "/lib.rs", "".join(
+        "include!(concat!(env!(\"S\"), \"/p/f%d.rs\"));\n" % k for k in range(n)))] +
+        [("x%d/p/g.rs" % k, "") for k in range(n)]), "modules"),
+    # Thousands of comments that say macro: each read again past those after it; thousands of module macros, each's
+    # #[path] of one file's name, each looking through all files so named; thousands of calls in as many packages of
+    # one whose call gives its #[path], each of one string, each taking again all files it names; and a chain of
+    # thousands of packages, each's crate bringing in the next's file, the first's macros declaring modules.
+    "macro-comments": (20000, lambda n: {"src/lib.rs": "/// the macro\n" * n + "mod x;\n"}, "modules"),
+    "path-strings": (1000, lambda n: dict([("src/lib.rs", "".join(
+        "macro_rules! m%d { () => { #[path = \"d%d/x.rs\"] mod x; } }\n" % (k, k) for k in range(n)))] +
+        [("src/d%d/x.rs" % k, "") for k in range(n)]), "modules"),
+    "path-calls": (1000, lambda n: dict(
+        [("a/Cargo.toml", "[package]\n"), ("a/src/lib.rs", "#[macro_export]\nmacro_rules! import { ($p:literal) => "
+          "{ #[path = $p] mod x; } }\n")] + [("p%d/Cargo.toml" % k, "[package]\n") for k in range(n)] +
+        [("p%d/src/lib.rs" % k, "a::import!(\"../../x.rs\");\n") for k in range(n)] +
+        [("q%d/x.rs" % k, "") for k in range(n)]), "modules"),
+    "joined-chain": (1000, lambda n: dict(
+        [("p%d/Cargo.toml" % k, "[package]\n") for k in range(n)] +
+        [("p%d/src/lib.rs" % k, "#[cfg(test)]\nmod t;\n" if k else
+          "macro_rules! m { () => { mod q; } }\n#[path = \"../../p1/src/x.rs\"]\nmod x;\n") for k in range(n)] +
+        [("p%d/src/x.rs" % k, "#[path = \"../../p%d/src/x.rs\"]\nmod x;\n" % (k + 1)) for k in range(1, n - 1)] +
+        [("p%d/src/t.rs" % k, "") for k in range(1, n)]), "modules"),
     # Thousands of macro_rules! opened, each inside the last: each looked for the scope it's in below all the others.
     "nested-macro-rules": (2000, lambda n: {"src/lib.rs": "mod zz;\n" + "macro_rules! m {" * n}, "modules"),
     # Files no reading reaches, each read in a round of its own, as s_k reaches r_k as a mod.rs, whose module reading

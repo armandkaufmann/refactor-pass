@@ -299,7 +299,12 @@ class WhatMakesAMacroPackage(unittest.TestCase):
                                                                   "util.rs"),
                 (plain + "modules!(\n    util, /* helpers */\n);\n", "util.rs"),
                 (plain + "modules!(r#util);\n", "util.rs"),
-                (plain + "mod a { }\nmodules!(util);\n", "util.rs")):
+                (plain + "mod a { }\nmodules!(util);\n", "util.rs"),
+                ("macro_rules! make { ($d:tt) => { macro_rules! modules { ($d m:ident) => { pub mod $d m; } } } }\n"
+                 "make!($);\nmodules!(util);\n", "util.rs"),
+                ("#![feature(decl_macro)]\nmacro modules($m:ident) { pub mod $m; }\nmodules!(util);\n", "util.rs"),
+                ("#![feature(decl_macro)]\nmacro /* c */ modules { ($m:ident) => { pub mod $m; } }\nmodules!(util);\n",
+                 "util.rs")):
             with self.subTest(lib=lib):
                 self.check(lib, at, "code")
         # Read for its mod$m alone (templated_nospace): rustc compiles a/helper.rs for tests alone, the limit.
@@ -321,6 +326,152 @@ class WhatMakesAMacroPackage(unittest.TestCase):
                                "#[cfg(test)]\nmod probe;\n",
                  "src/probe.rs": "decl!(file_helper);\n", "src/checks/inline_helper.rs": "",
                  "src/probe/file_helper.rs": ""}
+        self.assertEqual(modules(files), {})
+
+    MAN, EXP = "[package]\nname = \"%s\"\n", "#[macro_export]\nmacro_rules! modules { ($m:ident) => { pub mod $m; } }\n"
+    LOCAL, NEWER = "macro_rules! modules { ($m:ident) => { pub mod $m; } }\n", "#![feature(decl_macro)]\n"
+    IMPORT = "macro_rules! import { ($p:literal, $m:ident) => { #[path = $p] pub mod $m; } }\n"
+    KEPT = {"b/src/util.rs": ["b/src/lib.rs"]}  # A test, by rustc too.
+
+    def packages(self, cases):
+        # Per case, a's lib, b's and other files, and the tests: b/src/util.rs, named only by a test's #[path] in
+        # b's lib, is code where nothing else is said.
+        for a, b, more, expected in cases:
+            files = {"a/Cargo.toml": self.MAN % "a", "a/src/lib.rs": a, "b/Cargo.toml": self.MAN % "b",
+                     "b/src/lib.rs": b + self.TESTS % "util.rs", "b/src/util.rs": ""}
+            files.update(more)
+            with self.subTest(files=files):
+                self.assertEqual(modules(files), expected)
+
+    def test_names_another_package_calls(self):
+        # Each rustc's: a pub use wherever it starts, past comments, in a module, of raw names, in a group (V1); a
+        # macro_rules! exported in another's body, two deep, by $d (V2); a macro 2.0, with arms, past comments,
+        # one that calls a private one, by its path, from a module of its own (V3).
+        exp, newer, kept = self.EXP, self.NEWER, self.KEPT
+        pub = "#[macro_export]\nmacro_rules! fwd { ($m:ident) => { modules!($m); } }\n"
+        self.packages([(a, b, more, {}) for a, b, more in (
+            (exp + "mod x {} pub use modules as mods;\n", "a::mods!(util);\n", {}),
+            (exp + "pub /* c */ use crate::modules /* c */ as // d\n mods;\n", "a::mods!(util);\n", {}),
+            (exp + "#[doc(hidden)] pub use crate::modules as mods;\n", "a::mods!(util);\n", {}),
+            (exp + "pub mod re { pub use crate::modules as mods; }\n", "a::re::mods!(util);\n", {}),
+            (exp + "pub use crate::r#modules as r#mods;\n", "a::mods!(util);\n", {}),
+            (exp + "pub use crate::{modules as mods, modules as more};\n", "a::more!(util);\n", {}),
+            ("macro_rules! make { () => { #[macro_export] macro_rules! modules { ($m:ident) => { pub mod $m; } } } }\n"
+             "make!();\n", "a::modules!(util);\n", {}),
+            ("macro_rules! make { () => { macro_rules! mk2 { () => { #[macro_export] macro_rules! modules { ($m:ident) "
+             "=> { pub mod $m; } } } } mk2!(); } }\nmake!();\n", "a::modules!(util);\n", {}),
+            ("macro_rules! make { ($d:tt) => { #[macro_export] macro_rules! modules { ($d m:ident) => { pub mod $d m; "
+             "} } } }\nmake!($);\n", "a::modules!(util);\n", {}),
+            (newer + "pub macro modules($m:ident) { pub mod $m; }\n", newer + "a::modules!(util);\n", {}),
+            (newer + "pub macro modules { ($m:ident) => { pub mod $m; } }\n", newer + "a::modules!(util);\n", {}),
+            (newer + "pub macro /* c */ modules /* c */ ($m:ident) /* c */ { pub mod $m; }\n",
+             newer + "a::modules!(util);\n", {}),
+            (newer + "macro modules($m:ident) { pub mod $m; }\npub macro fwd($m:ident) { modules!($m); }\n",
+             newer + "a::fwd!(util);\n", {}),
+            (newer + "pub(crate) macro modules($m:ident) { pub mod $m; }\npub macro fwd($m:ident) "
+             "{ crate::modules!($m); }\n", newer + "a::fwd!(util);\n", {}),
+            (newer + "mod m;\npub use m::fwd;\n", newer + "a::fwd!(util);\n", {"a/src/m.rs": "macro modules($m:ident) "
+             "{ pub mod $m; }\npub macro fwd($m:ident) { modules!($m); }\n"}))] + [
+            # A macro an exported one makes, named by the call, calling one that declares.
+            (exp + "#[macro_export]\nmacro_rules! maker { ($n:ident) => { macro_rules! $n { ($m:ident) => { "
+             "$crate::modules!($m); } } } }\n", "a::maker!(fwd2);\nfwd2!(util);\n", {}, {})] + [
+            # And what rustc compiles for tests alone: b only names an exported macro whose call of a module macro
+            # of a's no other crate may make, a name a use gives, which only its own file has, or one as _ gives,
+            # or a word that holds the name.
+            (self.LOCAL + pub, "pub fn fwd() {}\n", {}, kept),
+            (exp, "pub fn m3() {}\n", {"c/Cargo.toml": self.MAN % "c", "c/src/lib.rs": "use a::modules as m3;\n"},
+             kept),
+            (exp + "pub use crate::modules as _;\n", "pub fn f() { let _ = 1; }\n", {}, kept),
+            (exp, "pub fn my_modules() {}\n", {}, kept)])
+        # A rename of a rename, in a third package.
+        files = {"a/Cargo.toml": self.MAN % "a", "a/src/lib.rs": exp, "b/Cargo.toml": self.MAN % "b",
+                 "b/src/lib.rs": "pub use a::modules as m2;\n", "c/Cargo.toml": self.MAN % "c",
+                 "c/src/lib.rs": "b::m2!(util);\n" + self.TESTS % "util.rs", "c/src/util.rs": ""}
+        self.assertEqual(modules(files), {})
+
+    def test_files_another_package_compiles(self):
+        # Each rustc's: a's crate brings in b's x.rs by a #[path], or an include!, and b's y.rs through it; the
+        # module a's macro declares there is b's (V4). Not by a declaration for tests alone, whose file is a test,
+        # from a marked file or from a test crate's root, nor through a link, whose file declares from where the
+        # link is.
+        local, x, kept = self.LOCAL, {"b/src/x.rs": "modules!(util);\n"}, self.KEPT
+        self.packages([
+            (local + "#[path = \"../../b/src/x.rs\"]\nmod x;\n", "", x, {}),
+            (local + "include!(\"../../b/src/x.rs\");\n", "", x, {}),
+            (local + "#[path = \"../../b/src/x.rs\"]\nmod x;\n", "", {"b/src/x.rs": "mod y;\n", "b/src/y.rs":
+             "modules!(util);\n", "b/src/y/util.rs": "", "b/src/lib.rs": self.TESTS % "y/util.rs"}, {}),
+            (local + "#[cfg(test)]\n#[path = \"../../b/src/x.rs\"]\nmod x;\n", "", x,
+             {**kept, "b/src/x.rs": ["a/src/lib.rs"]}),
+            (local + "mod m;\n", "", dict(x, **{"a/src/m.rs": "#![cfg(test)]\n#[path = \"../../b/src/x.rs\"]\nmod x;\n"
+                                                 }),
+             {**kept, "a/src/m.rs": "marked", "b/src/x.rs": ["a/src/m.rs"]}),
+            (local, "", dict(x, **{"a/tests/it.rs": "#[path = \"../../b/src/x.rs\"]\nmod x;\n"}),
+             {**kept, "a/tests/it.rs": "crate"})])
+        files = {"a/Cargo.toml": self.MAN % "a", "a/src/lib.rs": local + "mod x;\n", "a/src/x/util.rs": "",
+                 "a/src/x.rs": support.Link("../../b/src/x.rs"), "b/Cargo.toml": self.MAN % "b", "b/src/util.rs": "",
+                 "b/src/x.rs": "modules!(util);\n", "b/src/lib.rs": "#[cfg(test)]\nmod util;\n"}
+        repo = support.Repo("macro-link")
+        repo.commit("2026-01-05", "Start", files)
+        repo.done()
+        found = support.load("scoping").rust_test_modules(
+            sorted(files), lambda paths: dict((p, files[p]) for p in paths if isinstance(files[p], str)),
+            support.load("scoping").tracked_links(repo.path, "HEAD"))
+        self.assertEqual(sorted(found), ["b/src/util.rs"])
+        # A workspace's root package, and a second hop from b to c.
+        files = {"Cargo.toml": self.MAN % "root",
+                 "src/lib.rs": local + "#[path = \"../m/src/shared.rs\"]\nmod shared;\n",
+                 "m/Cargo.toml": self.MAN % "m", "m/src/shared.rs": "modules!(util);\n", "m/src/util.rs": "",
+                 "m/src/lib.rs": "#[cfg(test)]\nmod util;\n"}
+        self.assertEqual(modules(files), {})
+        files = {"a/Cargo.toml": self.MAN % "a", "a/src/lib.rs": local + "#[path = \"../../b/src/x.rs\"]\nmod x;\n",
+                 "b/Cargo.toml": self.MAN % "b", "b/src/x.rs": "#[path = \"../../c/src/y.rs\"]\nmod y;\n",
+                 "b/src/lib.rs": "", "c/Cargo.toml": self.MAN % "c", "c/src/y.rs": "modules!(util);\n",
+                 "c/src/util.rs": "", "c/src/lib.rs": "#[cfg(test)]\nmod util;\n"}
+        self.assertEqual(modules(files), {})
+
+    def test_paths_in_module_macros(self):
+        # Each rustc's: a #[path] in a module macro's body, by a cfg_attr, on an inline module; one a call gives,
+        # through a forwarder's call or its body, or as an attribute (V5); and one an exported macro's call gives in b,
+        # plainly or by the name a pub use gives it, or a call of a's in b's file a's crate brings in, naming c's file.
+        imp, b_util, kept = self.IMPORT, "../../b/src/util.rs", self.KEPT
+        fwd = "macro_rules! fwd { () => { import!(\"%s\", util); } }\n" % b_util
+        self.packages([(a, "", more, {}) for a, more in (
+            ("macro_rules! modules { ($($m:ident),*) => { $(#[path = \"%s\"] pub mod $m;)* } }\nmodules!(util);\n"
+             % b_util, {}),
+            ("macro_rules! modules { ($m:ident) => { #[cfg_attr(not(test), path = \"%s\")] pub mod $m; } }\n"
+             "modules!(util);\n" % b_util, {"a/src/util.rs": ""}),
+            ("macro_rules! modules { ($m:ident) => { #[path = \"../../b/src\"] pub mod o { pub mod $m; } } }\n"
+             "modules!(util);\n", {}),
+            (imp + "import!(\"%s\", util);\n" % b_util, {}),
+            (imp + "macro_rules! fwd { ($p:literal) => { import!($p, util); } }\nfwd!(\"%s\");\n" % b_util, {}),
+            (imp + fwd + "fwd!();\n", {}), ("#[macro_use]\nmod defs;\nfwd!();\n", {"a/src/defs/mod.rs": imp + fwd}),
+            ("macro_rules! modules { ($(#[$a:meta])* $m:ident) => { $(#[$a])* pub mod $m; } }\n"
+             "modules!(#[path = \"%s\"] util);\n" % b_util, {}),
+            ("macro_rules! modules { ($m:ident) => { #[path = \"../..\"] pub mod o { pub mod b { pub mod src { "
+             "pub mod $m; } } } } }\nmodules!(util);\n", {}))] + [
+            # And for tests alone: path = in a body's code, or a #[path] on an inline module that holds no module.
+            ("macro_rules! modules { ($m:ident) => { pub mod $m; pub fn f() -> &'static str { let path = \"%s\"; path "
+             "} } }\nmodules!(x);\n" % b_util, "", {"a/src/x.rs": ""}, kept),
+            ("macro_rules! m { () => { #[path = \"../../b/src\"] pub mod o { pub fn f() {} } } }\nm!();\nmod x;\n", "",
+             {"a/src/x.rs": ""}, kept)])
+        for rename, name in (("", "import"), ("pub use import as imp;\n", "imp")):
+            files = {"a/Cargo.toml": self.MAN % "a", "a/src/lib.rs": "#[macro_export]\n" + imp + rename,
+                     "b/Cargo.toml": self.MAN % "b", "b/src/lib.rs": "a::%s!(\"../../c/src/util.rs\", util);\n" % name,
+                     "c/Cargo.toml": self.MAN % "c", "c/src/lib.rs": "#[cfg(test)]\nmod util;\n", "c/src/util.rs": ""}
+            with self.subTest(rename=rename):
+                self.assertEqual(modules(files), {})
+        files.update({"a/src/lib.rs": imp + "#[path = \"../../b/src/x.rs\"]\nmod x;\n", "b/src/lib.rs": "",
+                      "b/src/x.rs": "import!(\"../../c/src/util.rs\", util);\n"})
+        self.assertEqual(modules(files), {})
+        # But not where a's crate brings it in for tests alone.
+        files.update({"a/src/lib.rs": imp + "mod t;\n",
+                      "a/src/t.rs": "#[cfg(test)]\n#[path = \"../../b/src/x.rs\"]\nmod x;\n"})
+        self.assertEqual(modules(files), {"b/src/x.rs": ["a/src/t.rs"], "c/src/util.rs": ["c/src/lib.rs"]})
+        # A module in inline ones in a folder a #[path] names, in a package below that folder.
+        files = {"a/Cargo.toml": self.MAN % "a", "w/b/Cargo.toml": self.MAN % "b", "w/b/src/util.rs": "",
+                 "a/src/lib.rs": "macro_rules! modules { ($m:ident) => { #[path = \"../../w\"] pub mod o { pub mod b { "
+                                 "pub mod src { pub mod $m; } } } } }\nmodules!(util);\n",
+                 "w/b/src/lib.rs": "#[cfg(test)]\nmod util;\n"}
         self.assertEqual(modules(files), {})
 
     def test_a_nested_cfg_attr(self):
@@ -432,6 +583,14 @@ class WhatTheMutantsChanged(unittest.TestCase):
         found = scoping.rust_test_modules(sorted(files), lambda paths: dict((p, files[p]) for p in paths))
         self.assertEqual(scoping.rust_test_reason("src/mock.rs", found),
                          "one of Rust's test modules, declared only for tests, in src/lib.rs")
+        # In test code, two cfg_attrs naming one file, in either order: only that code needs test, not the
+        # declaration, which is there either way (M092).
+        pair = ("#[cfg_attr(not(test), path = \"x.rs\")]\n", "#[cfg_attr(test, path = \"x.rs\")]\n")
+        for first, second in (pair, pair[::-1]):
+            files = {"src/lib.rs": "#[cfg(test)]\nmod tests {\n" + first + second + "mod m;\n}\n", "src/tests/x.rs": ""}
+            found = scoping.rust_test_modules(sorted(files), lambda paths: dict((p, files[p]) for p in paths))
+            self.assertEqual(scoping.rust_test_reason("src/tests/x.rs", found), "one of Rust's test modules, "
+                             "declared in src/lib.rs, in code compiled only for tests")
         pair = ("#[cfg_attr(not(test), path = \"a.rs\")]\n", "#[cfg_attr(feature = \"x\", path = \"b.rs\")]\n")
         self.check([({"src/lib.rs": first + second + "mod m;\n", "src/a.rs": "", "src/b.rs": "", "src/m.rs": ""},
                      {"src/m.rs": ["src/lib.rs"]}) for first, second in (pair, pair[::-1])] + [
@@ -446,6 +605,17 @@ class WhatTheMutantsChanged(unittest.TestCase):
               "src/z1.rs": "#[cfg(test)]\n#[path = \"z2.rs\"]\nmod z2;\n",
               "src/z2.rs": "#[cfg(test)]\n#[path = \"z1.rs\"]\nmod z1;\n"},
              {"src/z1.rs": ["src/x.rs", "src/z2.rs"], "src/z2.rs": ["src/z1.rs"]})])
+
+
+    def test_a_word_and_a_macro_body(self):
+        # mod in a longer word declares nothing (tk10); a macro_rules! body's brackets open no block, so the mod in
+        # one, in a module whose #[path] names b's folder, is b's (rm39). Each rustc's.
+        self.check([({"src/lib.rs": "#![allow(non_upper_case_globals)]\nconst modx: u8 = 1;\npub const A: [u8; 2] = "
+                                    "[modx; 2];\n#[cfg(test)]\nmod x;\n", "src/x.rs": ""},
+                     {"src/x.rs": ["src/lib.rs"]}),
+                    ({"a/Cargo.toml": self.MAN, "a/src/lib.rs": "#[path = \"../../b/src\"]\nmod o {\n    macro_rules! "
+                      "m { () => { mod y; } }\n    m!();\n}\n", "b/Cargo.toml": self.MAN, "b/src/y.rs": "",
+                      "b/src/lib.rs": "#[cfg(test)]\nmod y;\n"}, {})])
 
 
 class WithNoManifest(unittest.TestCase):
