@@ -424,7 +424,7 @@ INCLUDE_AT = re.compile(r"\binclude\s*!\s*(\(\s*)?(\S?)")  # include!, its brack
 MACRO_CALL = re.compile(r"(?<![\w$])([A-Za-z_]\w*)\s*!\s*\(([\w\s,]*)\)")
 CALLED_AT = re.compile(r"(?<![\w$])([A-Za-z_]\w*)\s*!\s*$")
 MACRO_NAMED = re.compile(r"(?<![\w$])([A-Za-z_]\w*)\s*!")  # A macro's name, where a file calls one.
-MACRO_NAMES = re.compile(r"\bmacro_rules\s*!\s*(?:r#)?(\w+)")  # A macro_rules!'s name, where a file defines one.
+MACRO_USE = re.compile(r"#\s*\[\s*macro_use\b")  # A #[macro_use], on a mod: its macros outlive it.
 
 
 def rust_tokens(text):
@@ -503,9 +503,11 @@ def rust_modules(text):
     per string an include! holds, whole when the string is all its argument (include!("x.rs")), not when it's a
     part (include!(concat!(..., "/x.rs"))); none of one built on OUT_DIR, the build's output, not the package.
     macros: (defined, called): per macro_rules! it defines, [name, whether it's in test code, whether it declares a
-    module of a name it's given (mod $m;), whether every such declaration needs test]; and per macro it calls with
-    words (modules!(util, net)), (macro, words, scope, whether the code it's in needs test, whether its own cfg
-    does, the last macro_rules! of that name before it in the file or None)."""
+    module of a name it's given (mod $m;), whether every such declaration needs test, whether it's known, the
+    order it came in]; and per macro it calls with words (modules!(util, net)), (macro, words, scope, whether the
+    code it's in needs test, whether its own cfg does, the macro_rules! textual scope gives it in this file, or
+    None where there's none, or it can't be told: one a #[macro_use] mod x; may bring in after it, or one that
+    another macro_rules! defines when it's called)."""
     if text.startswith("\ufeff"):
         text = text[1:]
     if text.startswith("#!") and not re.match(r"#!\s*\[", text):  # A shebang line, which rustc passes over.
@@ -515,7 +517,26 @@ def rust_modules(text):
     # yet, whether it's a macro's, and the macro_rules! it's in, with whether that's in test code, or None.
     frames = [[0, False, True, False, None]]
     declared, included, pending, name, before, tokens = [], [], [], None, "", rust_tokens(text)
-    defined, called, latest = [], [], {}
+    defined, called = [], []
+    # Per macro name, and None for the macros a #[macro_use] mod x; brings in, the macro_rules! in scopes still open,
+    # the last defined last; per bracket open, the names defined in it, and whether they outlive it, as a
+    # #[macro_use] inline module's do. (A macro's expansion can't shadow one of these: rustc refuses that.)
+    visible, opened, keeps = {}, [[]], [False]
+    homes = [0]  # Per bracket open, the one at or below it that's a scope: not a macro's brackets.
+
+    def define(key, record):
+        defined.append(record)
+        record.append(len(defined))
+        visible.setdefault(key, []).append(record)
+        opened[homes[-1]].append(key)
+
+    def macro_for(name, test):
+        """The known macro_rules! textual scope gives a call of that name, or None; in test code, any, and outside
+        it, only one that isn't in test code itself."""
+        found = next((r for r in reversed(visible.get(name, ())) if test or not r[1]), None)
+        brought = next((r for r in reversed(visible.get(None, ())) if test or not r[1]), None)
+        return found if found is not None and found[4] and (brought is None or brought[5] < found[5]) else None
+
     pending_test = False  # Whether an attribute pending, before the item it's on, is a cfg that needs test.
     include = None  # After include!: "open" to its argument, "inside" it past something other than a string, "out"
     start = 0  # in one built on OUT_DIR; and where its strings start in included.
@@ -541,7 +562,7 @@ def rust_modules(text):
             name = (found.group(1)[2:] if found.group(1).startswith("r#") else found.group(1)) if found else None
             if "!" in token:
                 called.extend((m.group(1), re.findall(r"\w+", m.group(2)), frames[-1][0], test_code, pending_test,
-                               latest.get(m.group(1))) for m in MACRO_CALL.finditer(token))
+                               macro_for(m.group(1), test_code)) for m in MACRO_CALL.finditer(token))
             if len(frames[-1]) > 5 and re.match(r"[\w\s,]*$", token):
                 frames[-1][5].extend(re.findall(r"\w+", token))
             at = INCLUDE_AT.search(token) if "include" in token else None
@@ -574,26 +595,39 @@ def rust_modules(text):
                     choices = [(c, cfg_terms(a, RUST_CFG_ATTR.match(a))) for a, _, c in pending[:first]
                                if c is not None]
                     declared.append((name, path, frames[-1][0], test, choices, pending_test))
+                    if any(MACRO_USE.match(a) for a, _, _ in pending):  # Its file's macros, which this doesn't read.
+                        define(None, [None, test, False, False, False])
             elif token == "{":
+                keeps.append(False)
+                opened.append([])
                 if name:
                     path = next((p for _, p, _ in pending if p is not None), None)
                     scopes.append((frames[-1][0], "module", name) if path is None else (frames[-1][0], "path", path))
                     frames.append([len(scopes) - 1, test, True, False, frames[-1][4]])
+                    keeps[-1] = any(MACRO_USE.match(a) for a, _, _ in pending)
                 elif frames[-1][3] or MACRO_BEFORE_BRACE.search(before):
                     macro = MACRO_DEFINED.search(before)
-                    if macro:
-                        defined.append([macro.group(1), test, False, True])
-                        latest[macro.group(1)] = defined[-1]
+                    if macro:  # One another macro_rules! holds is defined only where that one is called: not known.
+                        define(macro.group(1), [macro.group(1), test, False, True, frames[-1][4] is None])
                     frames.append([frames[-1][0], test, True, True, defined[-1] if macro else frames[-1][4]])
                     call = CALLED_AT.search(before)
                     if call and not macro and call.group(1) != "include":  # modules! { util, net }
-                        called.append((call.group(1), [], frames[-1][0], test, pending_test, latest.get(call.group(1))))
+                        called.append((call.group(1), [], frames[-1][0], test, pending_test,
+                                       macro_for(call.group(1), test)))
                         frames[-1].append(called[-1][1])
                 else:
                     scopes.append((frames[-1][0], "block", None))
                     frames.append([len(scopes) - 1, test, True, False, frames[-1][4]])
+                homes.append(homes[-1] if frames[-1][3] else len(frames) - 1)  # A macro's brackets are no scope.
             elif len(frames) > 1:
                 frames.pop()
+                homes.pop()
+                names, keep = opened.pop(), keeps.pop()
+                if keep:  # Into the scope it's in.
+                    opened[homes[-1]].extend(names)
+                else:
+                    for key in reversed(names):
+                        visible[key].pop()
             pending, pending_test = [], False
             include = include if token == "{" and include == "open" else None
         else:  # [ or ]: include![...] opens its argument.
@@ -657,11 +691,6 @@ def rust_test_modules(tracked, read):
                       if p in known and p not in parsed and "!" in t and (
                           any(macro in t for macro in few) and calls.search(t) if few else
                           any(call.group(1) in module_macros for call in MACRO_NAMED.finditer(t))))
-    only_tests = set(d[0] for p in parsed for d in parsed[p][4][0] if d[2] and d[3])
-    if only_tests:  # A file that defines another macro_rules! of the name of one that declares only for tests is read
-        # too, as a call may be to it.
-        parsed.update((p, rust_modules(t)) for p, t in texts.items() if p in known and p not in parsed and
-                      "macro_rules" in t and any(m.group(1) in only_tests for m in MACRO_NAMES.finditer(t)))
     # The folders the tracked files are in, numbered, each with its parent and its files and folders by name. A folder
     # elsewhere is one of these and a count of the folders under it that hold none: (number, count).
     parent, child, files, own = [None], {}, {}, {}
@@ -794,41 +823,13 @@ def rust_test_modules(tracked, read):
                          (file_in(down(base, name), "mod.rs"), "mod-rs", test, own))
         return [f for f in found if f[0]]
 
-    # The macro_rules! of a module macro's name, where a call may be to them, as far as can be told: in their package,
-    # or, with no manifest above, in their file's folder and those under it; per (package, or ("folder", folder)),
-    # macro, and whether only those outside test code count, whether every one declares modules, each only for
-    # tests. A call outside test code can't be to a macro_rules! that's only in test code.
-    defined = {}
-    for path in parsed:
-        top = package(own[path])
-        for macro, gated, declares, test in parsed[path][4][0]:
-            for outside in () if macro not in module_macros else (False,) if gated else (False, True):
-                key = (top if top is not None else ("folder", own[path]), macro, outside)
-                defined[key] = defined.get(key, True) and declares and test
-    reach = {}
-
-    def for_tests(path, macro, outside):
-        """Whether every macro of that name a call in path may be to declares only for tests; not where none may."""
-        top = package(own[path])
-        if top is not None:
-            return defined.get((top, macro, outside), False)
-        key = (own[path], macro, outside)
-        if key not in reach:
-            found, folder = [], own[path]
-            while folder is not None:
-                found += [defined[k] for k in [(("folder", folder), macro, outside)] if k in defined]
-                folder = parent[folder]
-            reach[key] = bool(found) and all(found)
-        return reach[key]
-
     # Per file, its mod declarations, and the words it gives a macro that declares modules, each one of them, for
-    # tests where the call is in test code or every macro it may be to declares only for tests: the last of that
-    # name before it in its file, where there's one it may be to, else those for_tests finds.
+    # tests where the call is in test code, or where the macro_rules! textual scope gives it in its file declares
+    # only for tests; else plain.
     every = dict((path, parsed[path][2] + [
         (word, None, scope, test or template, [], own or template)
-        for macro, words, scope, test, own, local in parsed[path][4][1] if macro in module_macros
-        for template in [local[2] and local[3] if local is not None and (test or not local[1]) else
-                         for_tests(path, macro, not test)] for word in words]) for path in parsed)
+        for macro, words, scope, test, own, record in parsed[path][4][1] if macro in module_macros
+        for template in [record is not None and record[2] and record[3]] for word in words]) for path in parsed)
     declarations = every.__getitem__
 
     # A crate root no manifest names: a file no declaration could bring in, read either way.
