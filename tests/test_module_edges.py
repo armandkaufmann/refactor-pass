@@ -161,6 +161,10 @@ class WhatACallOrAnIncludeHolds(unittest.TestCase):
             with self.subTest(call=call):
                 files = {"src/lib.rs": self.MACRO + call + self.TESTS, "src/util.rs": "", "src/net.rs": ""}
                 self.assertEqual(modules(files), {})
+        # A call's words end at its ): probe.rs, declared after it for tests, is a test.
+        files = {"src/lib.rs": self.MACRO + "modules!(util);\n#[cfg(test)]\nmod probe;\n", "src/util.rs": "",
+                 "src/probe.rs": ""}
+        self.assertEqual(modules(files), {"src/probe.rs": ["src/lib.rs"]})
 
     def test_an_escape_in_a_path(self):
         # A \n in a #[path]'s string is a newline, as in a file so named.
@@ -197,11 +201,12 @@ class WhatAMacroDeclares(unittest.TestCase):
         self.assertEqual(modules(files), {"src/" + at: ["src/lib.rs"]} if expected == "test" else {})
 
     def test_what_isnt_a_module_macro(self):
-        # A fixed mod name, an inline module's mod $m {}, past the arm's ;, and a $name that isn't after mod.
-        for lib in ("macro_rules! decl { ($x:ident) => { pub mod fixed; pub fn $x() {} }; }\ndecl!(util);\n",
+        # A fixed mod name, an inline module's mod $m {}, past the arm's ;, and a $name that isn't after mod. Called
+        # in braces, whose words are read whatever the macro.
+        for lib in ("macro_rules! decl { ($x:ident) => { pub mod fixed; pub fn $x() {} }; }\ndecl! { util }\n",
                     "macro_rules! wrap { ($m:ident) => { pub mod $m {} }; }\nwrap!(util);\n",
-                    "macro_rules! touch { ($e:ident) => { pub fn touched() { let $e = 1; $e; } }; }\ntouch!(util);\n",
-                    "macro_rules! noop { ($e:ident) => {}; }\nnoop!(util);\n"):
+                    "macro_rules! touch { ($e:ident) => { pub fn touched() { let $e = 1; $e; } }; }\ntouch! { util }\n",
+                    "macro_rules! noop { ($e:ident) => {}; }\nnoop! { util }\n"):
             with self.subTest(lib=lib):
                 self.check(lib, "util.rs", "test")
 

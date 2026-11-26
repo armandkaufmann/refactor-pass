@@ -596,6 +596,7 @@ class Corners(unittest.TestCase):
         for name, text in [("raw path", "#[cfg(test)]\n#[path = r\"probe.rs\"]\nmod fixture;\n"),
                            ("raw path with #s", "#[cfg(test)]\n#[path = r#\"probe.rs\"#]\nmod fixture;\n"),
                            ("space before ;", "#[cfg(test)]\nmod probe ;\n"), ("# [", "# [cfg(test)]\nmod probe;\n"),
+                           ("a tab after mod", "#[cfg(test)]\nmod\tprobe;\n"),
                            ("any of alls", "#[cfg(any(all(test, unix), all(test, windows)))]\nmod probe;\n"),
                            ("a stray }", "}\n#[cfg(test)]\nmod probe;\n"),
                            ("a brace in a character", "mod outer {\n    const C: char = '}';\n    const B: u8 = b'}';\n"
