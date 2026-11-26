@@ -404,7 +404,7 @@ RUST_TOKEN = re.compile(r"""(//[^\n]*|/\*)|(b?r\#*")|(b?"(?:\\.|[^"\\])*(?:"|\\?
                         r"""(\bmod\b)|([{}\[\];])|"""
                         r"""(?:[^/"'\#{}\[\];\w]+|(?!\bmod\b)(?!b?r\#*")(?!b?["'])\w+|/(?![/*])|"""
                         r"""'(?![^'\\\n]'|\\)|\#(?!!?\s*\[))+|\w+|.""", re.S)
-RUST_GAP = r"(?:\s|/\*.*?\*/|//[^\n]*)*"
+RUST_GAP = r"(?:\s|/\*(?:[^*]|\*(?!/))*\*/|//[^\n]*(?:\n|\Z))*"  # Each comment one way only, or a search can take ages.
 # What a file must hold to be read so, each found on its own, which is quicker: a declaration, an inner cfg, include!.
 RUST_READ = (re.compile(r"mod" + RUST_GAP + r"(?:r#)?\w+" + RUST_GAP + r";", re.S), re.compile(r"#\s*!\s*\[\s*cfg"),
              re.compile(r"include\s*!"))
@@ -556,9 +556,9 @@ def cargo_roots(manifests, folder_of, find):
         for line in text.splitlines():
             if line.lstrip().startswith("#"):
                 continue
-            header = re.match(r"\s*\[\[?\s*([^\]]*?)\s*\]", line)
+            header = re.match(r"\s*\[\[?([^\]]*)\]", line)
             if header:
-                table = header.group(1)
+                table = header.group(1).strip()
                 continue
             for key, value, literal in re.findall(r"""\b(path|build)\s*=\s*(?:"((?:\\.|[^"\\])*)"|'([^']*)')""", line):
                 if key == "build" and table != "package":
