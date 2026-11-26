@@ -77,6 +77,12 @@ class WhereADeclarationPoints(unittest.TestCase):
                          "src/b/helper.rs": "#[cfg(test)]\n#[path = \"%s.rs\"]\nmod t;\n" % name,
                          "src/b/%s.rs" % name: "pub mod inner;\n", "src/b/%s/inner.rs" % name: ""}
                 self.assertEqual(modules(files), {"src/b/%s.rs" % name: ["src/b/helper.rs"]})
+        # A round at a time: r.rs, reached by s.rs's #[path] as a mod.rs, can't bring a.rs in, so a.rs is read as
+        # either only in the next round, and b2.rs, which a.rs declares for tests, never is.
+        files = {"src/lib.rs": "pub fn f() {}\n", "src/b.rs": "pub mod s;\n",
+                 "src/b/s.rs": "#[path = \"r.rs\"]\nmod r;\n", "src/b/r.rs": "mod a;\n",
+                 "src/b/r/a.rs": "#[cfg(test)]\nmod b2;\n", "src/b/r/a/b2.rs": "mod c;\n"}
+        self.assertEqual(modules(files), {"src/b/r/a/b2.rs": ["src/b/r/a.rs"]})
         # A mod.rs is read as one.
         files = {"src/lib.rs": "mod a;\n", "src/a.rs": "mod x;\n", "src/x/mod.rs": "#[cfg(test)]\nmod y;\n",
                  "src/x/y.rs": "", "src/x/mod/y.rs": ""}
