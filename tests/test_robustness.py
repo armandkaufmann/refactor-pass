@@ -485,6 +485,11 @@ GROWING = {
     "attributes-then-call.cs": (480, lambda n: "[a] " * n + "= f(\n"),
     "modifiers-then-call.java": (1800, lambda n: "public " * n + "= f(\n"),
     "brackets-then-call.c": (7000, lambda n: "[]" * n + " = f(\n"),
+    # A Rust file's # before thousands of spaces, line ends or comments, read for an attribute's #[ or #![ by a split of
+    # them around the ! that may come, in every way.
+    "attribute-spaces": (130000, lambda n: {"src/lib.rs": "mod a;\n#" + " " * n, "src/a.rs": ""}, "modules"),
+    "attribute-lines": (130000, lambda n: {"src/lib.rs": "mod a;\n#" + "\n" * n, "src/a.rs": ""}, "modules"),
+    "attribute-comments": (5500, lambda n: {"src/lib.rs": "mod a;\n#" + "/**/ " * n, "src/a.rs": ""}, "modules"),
     # Thousands of PHP heredocs opened, none closed by any line, each looked for its closing line.
     "unclosed-heredocs.php": (1000, lambda n: "<?php\n" + "$x = <<<A\n" * n),
 }
