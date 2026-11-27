@@ -407,10 +407,10 @@ def cfg_needs_test(attribute):
 # name), and one never closed runs to the end. A file that holds none of RUST_READ isn't read so.
 GAP = r"""(?:\s|/\*(?:[^*]|\*(?!/))*\*/|//[^\n]*\n)*"""  # Spaces and comments, a block comment unnested.
 RUST_TOKEN = re.compile(r"""(//[^\n]*|/\*)|([bc]?r\#*")|([bc]?"(?:\\.|[^"\\])*(?:"|\\?\Z)|"""
-                        r"""b?'(?:\\(?:x[0-9a-fA-F]{2}|u\{[0-9a-fA-F]{1,6}\}|.)|[^'\\\n])')|(\#%s!?%s\[)|"""
+                        r"""b?'(?:\\(?:x[0-9a-fA-F]{2}|u\{[0-9a-fA-F]{1,6}\}|.)|[^'\\\n])')|(\#%s(?:!%s)?\[)|"""
                         r"""(\bmod\b)|([{}\[\];])|"""
                         r"""(?:[^/"'\#{}\[\];\w]+|(?!\bmod\b)(?![bc]?r\#*")(?![bc]?")(?!b?')\w+|/(?![/*])|"""
-                        r"""'(?![^'\\\n]'|\\)|\#(?!%s!?%s\[))+|\w+|.""" % (GAP, GAP, GAP, GAP), re.S)
+                        r"""'(?![^'\\\n]'|\\)|\#(?!%s(?:!%s)?\[))+|\w+|.""" % (GAP, GAP, GAP, GAP), re.S)
 COMMENTS = re.compile(r"/\*(?:[^*]|\*(?!/))*\*/|//[^\n]*")
 # What a file must hold to be read so, each searched for on its own, the word first, so that every search takes time
 # in step with the text: mod, not in a word, then a name and a ; or a comment, or a comment, or a $name (mod$m;
