@@ -466,6 +466,12 @@ GROWING = {
     "escaped-slashes.js": (5000, lambda n: "x = y / " + "\\/" * n + "\n"),
     "escaped-slashes-hole.js": (4000, lambda n: "x = `${y / " + "\\/" * n + "}`\n"),
     "escaped-slashes-after.js": (5000, lambda n: "if (x) /a/ / " + "\\/" * n + "\n"),
+    # A JavaScript object opened at the end of a line of thousands of characters, then thousands of lines in it: of keys
+    # given functions, of if (x) {}, of keys given values, each of which read its line again for what opened it.
+    "object-keys.js": (20000, lambda n: "x = " + "a" * (n // 2) + " + {\n" + "  k: function () {},\n" * (n // 40) +
+                       "}\n"),
+    "object-ifs.js": (30000, lambda n: "x = " + "a" * (n // 2) + " + {\n" + "  if(x){}\n" * (n // 40) + "}\n"),
+    "object-values.js": (35000, lambda n: "x = " + "a" * (n // 2) + " + {\n" + "  k: 1,\n" * (n // 40) + "}\n"),
     # Thousands of PHP heredocs opened, none closed by any line, each looked for its closing line.
     "unclosed-heredocs.php": (1000, lambda n: "<?php\n" + "$x = <<<A\n" * n),
 }
