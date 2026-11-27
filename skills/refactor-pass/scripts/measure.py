@@ -58,12 +58,13 @@ when it holds a class, a namespace, a template or a name qualified by
 its class. A signature may run over
 several lines, and a body may sit on its signature's line. Each
 language's strings are read as it writes them (Ruby's regular
-expressions, % literals and heredocs, C#'s @"...", Rust's r#"..."#, C++'s
-R"(...)"), with the code in an interpolation's hole (Swift's \\(...),
-Kotlin's ${...}, C#'s $"{...}"), and C's, C++'s, C#'s and Swift's #if as
-their preprocessor does. A function runs to the end of its body, found by
-indentation (Python, GDScript, Ruby) or by matching brackets (the rest).
-Files in other languages get lines only, and the output says which.
+expressions, % literals and heredocs, PHP's heredocs and nowdocs, C#'s
+@"...", Rust's r#"..."#, C++'s R"(...)"), with the code in an
+interpolation's hole (Swift's \\(...), Kotlin's ${...}, C#'s $"{...}"),
+and C's, C++'s, C#'s and Swift's #if as their preprocessor does. A
+function runs to the end of its body, found by indentation (Python,
+GDScript, Ruby) or by matching brackets (the rest). Files in other
+languages get lines only, and the output says which.
 
 It points at code to read; it doesn't judge it. What it gets wrong:
   - a nested function counts in its own length and in its parent's;
@@ -74,14 +75,14 @@ It points at code to read; it doesn't judge it. What it gets wrong:
   - shapes can catch a macro, and miss a function a macro makes; and in
     TypeScript a member typed as a function, in a type written after an =
     (as a generic's default), counts as a function;
-  - a brace or a quote in a PHP heredoc, or in a JavaScript regular
-    expression that follows a closing bracket or a name (not after an
-    operator, an arrow or a word such as return or typeof), can put a
-    function's end in the wrong place or lose the function;
+  - a brace or a quote in a JavaScript regular expression that follows a
+    closing bracket or a name (not after an operator, an arrow or a word
+    such as return or typeof), can put a function's end in the wrong place
+    or lose the function;
   - an arrow function that returns JSX with no brackets around it ends at
     its first line;
-  - a line inside a PHP heredoc can count as code or not, depending on how
-    it starts;
+  - a line of a PHP heredoc's {$...} that runs over lines ends the heredoc
+    if it starts with the heredoc's name, as a line of its text would;
   - where a function ends by indentation, a line indented less than its
     body ends it there, as a misindented end does in Ruby;
   - between #if and #else, when each branch opens a function's body its
@@ -124,6 +125,7 @@ Examples:
 """
 
 import argparse
+import bisect
 import os
 import re
 import sys
@@ -895,10 +897,36 @@ QUOTES, HASHES = re.compile(r'"+'), re.compile(r"#+")
 # Characters that start nothing outside a string or a comment, in any language: not a comment's start (# or
 # /), a quote, a raw string's start ($ @ #, or b c r R u U L at the start of a word) or a regular expression's;
 # and what a raw string can't open just after, a word's character, a $ or an @. In Rust, an @ before a raw string
-# is a macro's token or a binding's (@r"...", as inline snapshots write), so the string opens there.
+# is a macro's token or a binding's (@r"...", as inline snapshots write), so the string opens there. In PHP, not a <
+# either, which can open a heredoc.
 PLAIN = re.compile(r"(?:[^/#\"'`$@bcrRuUL]|(?<=[\w$@])[bcrRuUL])+")
 PLAIN_RUST = re.compile(r"(?:[^/#\"'`$@bcrRuUL]|(?<=[\w$])[bcrRuUL])+")
+PLAIN_PHP = re.compile(r"(?:[^/#\"'`$@bcrRuUL<]|(?<=[\w$@])[bcrRuUL])+")
 GLUED, GLUED_RUST = re.compile(r"[\w$@]"), re.compile(r"[\w$]")
+# PHP's heredoc and nowdoc: <<<ID, <<<"ID" or <<<'ID' at the end of a line, whose text is the lines after it up to
+# the first that starts with ID, after any spaces or tabs and before no character a name can hold, as PHP 7.3 and
+# later end one: indented or not, and with code after it on its line (ID;, ID), ...). A name is letters, digits,
+# _ and any character past ASCII, not starting with a digit.
+PHP_NAME = r"(?![0-9])(?:\w|[^\x00-\x7f])+"
+PHP_HEREDOC = re.compile(r"<<<[ \t]*(?:(%s)|'(%s)'|\"(%s)\")\r?$" % (PHP_NAME, PHP_NAME, PHP_NAME))
+PHP_LEADING_NAME = re.compile(r"[ \t]*((?:\w|[^\x00-\x7f])+)")
+
+
+def php_heredoc(lines, k, i, starts):
+    """Where the PHP heredoc or nowdoc that opens at lines[k][i] ends: the line that closes it, and the column after
+    its name there; or None if none opens there, or no line closes it, as then PHP doesn't compile it and its text
+    is read as code, losing no function. starts holds the lines by the name each starts with, read once per file,
+    when first asked."""
+    opened = PHP_HEREDOC.match(lines[k], i)
+    if not opened:
+        return None
+    if not starts:
+        for j, line in enumerate(lines):
+            found = PHP_LEADING_NAME.match(line)
+            starts.setdefault(found.group(1) if found else None, []).append(j)
+    closing = starts.get(next(name for name in opened.groups() if name), [])
+    at = bisect.bisect_right(closing, k)
+    return (closing[at], PHP_LEADING_NAME.match(lines[closing[at]]).end()) if at < len(closing) else None
 
 
 def skeleton(lines, comments, quotes, attributes=False, language=None):
@@ -920,12 +948,19 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
     templates = []
     holes = None  # In a string with holes: what opens one (string_holes).
     opens_raw = RAW_STRING.get(language)
-    plain_text, glued = (PLAIN_RUST, GLUED_RUST) if language == "Rust" else (PLAIN, GLUED)
-    for line in lines:
-        began_inside.append(state is not None or bool(templates) or raw is not None)
+    plain_text, glued = (PLAIN_RUST, GLUED_RUST) if language == "Rust" else \
+        (PLAIN_PHP, GLUED) if language == "PHP" else (PLAIN, GLUED)
+    heredoc = None  # In a PHP heredoc's text: the line that closes it, and the column after its name there.
+    starts = {}  # PHP's lines by the name each starts with, for php_heredoc.
+    for n, line in enumerate(lines):
+        began_inside.append(state is not None or bool(templates) or raw is not None or heredoc is not None)
         code = []
         i = 0
         close = None  # In a block comment, where the next */ on the line is (-1 for none), until it's passed.
+        if heredoc is not None:  # Its text is the string's to its closing name, after which the line goes on as code.
+            i = len(line) if n < heredoc[0] else heredoc[1]
+            code.append("s" * i if n < heredoc[0] else "s" * (i - 1) + '"')
+            heredoc = heredoc if n < heredoc[0] else None
         while i < len(line):
             plain = plain_text.match(line, i) if state is None and raw is None and not templates else None
             if plain:  # Characters that start nothing, copied at once.
@@ -1001,6 +1036,10 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
                 run = HASHES.match(line, i).end()
                 code.append(line[i:run])
                 i = run
+            elif language == "PHP" and line.startswith("<<<", i):  # A heredoc or a nowdoc, or else a <.
+                heredoc = php_heredoc(lines, n, i, starts)
+                code.append('"' + "s" * (len(line) - i - 1) if heredoc else "<")
+                i = len(line) if heredoc else i + 1
             elif line.startswith('"""', i) or line.startswith("'''", i):
                 state = QUOTES.match(line, i).group() if language == "C#" and line[i] == '"' else line[i:i + 3]
                 holes = string_holes(language, quotes, state, line, i)
