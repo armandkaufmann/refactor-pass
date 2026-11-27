@@ -1340,10 +1340,10 @@ def ruby_skeleton(lines):
 
 def regex_end(line, i, ends):
     """Where the JavaScript regular expression that may open with the / at line[i] ends, past its closing /; or None
-    if none opens there. ends keeps what's been read of the line, so that a line of thousands of / and [, or of \/,
+    if none opens there. ends keeps what's been read of the line, so that a line of thousands of / and [, or of \\/,
     isn't read again from each /: per [ found to open a class, where the expression it's in ends, and so for each [
     inside that class, as a class read from it reads on from where the outer one does; and per / read past as an
-    escape's, \/, where one that opens with it would end, as it reads on from where the expression it's in does."""
+    escape's, \\/, where one that opens with it would end, as it reads on from where the expression it's in does."""
     if i in ends:
         return ends[i]
     j, opened, escaped = i + 1, [], []
