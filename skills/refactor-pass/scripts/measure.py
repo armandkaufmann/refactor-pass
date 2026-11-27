@@ -234,7 +234,7 @@ CONSTRUCTOR = r"|^\s*" + ANNOTATIONS + r"([A-Z]\w*)\s*\(" + SIGNATURE_REST
 # and an operator, whose name is operator and what follows it (operator ==, implicit operator Money).
 CS_SHAPES = (r"^\s*" + ANNOTATIONS + MODIFIERS + r"(?:" + TYPE_WORD + r"\s+)*(operator\s*(?:[^\w\s(]+|true\b|"
              r"false\b|[\w.]+" + TYPE_ARGUMENTS + r"\??))\s*\((?:" + SIGNATURE_REST + r"|[^;]*\)\s*=>)|" +
-             c_head("C#") + SIGNATURE_REST + CONSTRUCTOR + "|" + c_head("C#") + r"[^;]*\)(?:\s*where\s[^;]*?)?\s*=>")
+             c_head("C#") + SIGNATURE_REST + CONSTRUCTOR + "|" + c_head("C#") + r"[^;]*\)(?:\s*where\s[^;]*?=>|\s*=>)")
 JAVA_SHAPES = c_head("Java") + SIGNATURE_REST + CONSTRUCTOR
 
 
@@ -984,6 +984,7 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
     nested = 0  # In a block comment, how many comments inside it are open, where they nest.
     nests = language in NESTING_COMMENTS
     raw = None  # Inside a string with no escapes: its closing text.
+    raw_escape = None  # In Swift's, its escape: \# for "#, made once, not again for each character in it.
     # An interpolation's hole in a string is code, up to the bracket that matches its own, and can hold strings
     # of its own: JavaScript's template literal's ${...}, Kotlin's "${...}", Swift's "\(...)", C#'s $"{...}".
     # Per hole still open: how many of its brackets are open inside it, its brackets, and the string it's in
@@ -1023,8 +1024,8 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
                 if raw == '"' and language == "C#" and line.startswith('""', i):  # A verbatim string's quote.
                     code.append("ss")
                     i += 2
-                elif language == "Swift" and line.startswith("\\" + raw.strip('"'), i):  # An escape, as \#".
-                    escape = len(raw.strip('"')) + 2
+                elif language == "Swift" and line.startswith(raw_escape, i):  # An escape, as \#".
+                    escape = len(raw_escape) + 1
                     code.append("s" * escape)
                     i += escape
                 elif line.startswith(raw, i):
@@ -1079,6 +1080,7 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
             elif opens_raw and not glued.match(line[i - 1:i]) and opens_raw[0].match(line, i):
                 opened = opens_raw[0].match(line, i)
                 raw = opens_raw[1](opened)
+                raw_escape = "\\" + raw.strip('"')
                 holes = "{" if language == "C#" and "$" in opened.group() else None
                 code.append('"')
                 i = opened.end()
