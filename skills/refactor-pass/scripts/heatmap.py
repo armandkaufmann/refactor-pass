@@ -643,7 +643,7 @@ RELANDS = re.compile(r'\s*(?:[A-Za-z]+(?:\([^)]*\))?!?:\s*)?(?:reapply\b|revert\
                      r'revert\b)', re.I)
 # Issue references, whose words name the tracker, not the change: "Fixed #12 --" closes an issue of any kind,
 # where "fix: #12" is a fix by its type. An issue is a number (#12, gh-12, org/repo#12), as #include isn't.
-CLOSER = re.compile(r"\b(?:fix(?:e[sd])?|close[sd]?|resolve[sd]?)\s*:?\s*(?:#|gh-|[\w.-]+/[\w.-]+#)\d+\b", re.I)
+CLOSER = re.compile(r"\b(?:fix(?:e[sd])?|close[sd]?|resolve[sd]?)\s*(?::\s*)?(?:#|gh-|[\w.-]+/[\w.-]+#)\d+\b", re.I)
 REFERENCE = re.compile(r"\b(?:issues?|pr|pull|ticket)\s*#?\d+\b", re.I)
 # The words, each with the forms that count as it. A subject's code (in backticks, or an identifier such as
 # should_ignore_error or Data.Render) isn't read.
