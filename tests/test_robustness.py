@@ -501,6 +501,10 @@ GROWING = {
     # an include! read as one comment or many, in every way.
     "head-comments": (50000, lambda n: {"src/lib.rs": "#" + "/**/ " * n + "x\n"}, "modules"),
     "include-comments": (50000, lambda n: {"src/lib.rs": "include" + "/**/ " * n + "x\n"}, "modules"),
+    # A C# method's where clause of thousands of spaces before a ;, each read again for the => that may follow; and a
+    # Swift raw string opened by thousands of #, whose escape was made again at each character in it.
+    "where-spaces.cs": (120000, lambda n: "class A {\n  int F() where" + " " * n + "x;\n}\n"),
+    "raw-hashes.swift": (15000, lambda n: "let s = " + "#" * n + '"' + "a" * (2 * n) + '"' + "#" * n + "\n"),
     # Thousands of PHP heredocs opened, none closed by any line, each looked for its closing line.
     "unclosed-heredocs.php": (1000, lambda n: "<?php\n" + "$x = <<<A\n" * n),
 }
