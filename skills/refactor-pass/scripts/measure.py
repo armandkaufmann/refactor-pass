@@ -135,9 +135,12 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import scoping  # noqa: E402
 
+# A modifier is a word, which a type's word can be too, as a template's > and an attribute's [...] can be: a line that
+# isn't a definition is split between them in every way, so each is read no more times than a definition holds,
+# eight modifiers, sixteen annotations and a template's first seventeen >, and the time stays in step with the line.
 MODIFIERS = r"(?:(?:public|private|protected|internal|static|final|abstract|synchronized|native|virtual|override|" \
             r"sealed|async|extern|inline|unsafe|partial|new|const|constexpr|explicit|friend|default|open|" \
-            r"extern\s+\"s*\")\s+)*"
+            r"extern\s+\"s*\")\s+){0,8}"
 # Per language of the C family: the words a statement starts with, so that a line starting with one holds no
 # definition (not one that's also a method's modifier, as Java's synchronized; C#'s new starts more lines of
 # expressions, as new Options(...) { ... }, than of definitions); and the words it reserves, which never name
@@ -202,9 +205,10 @@ ANGLED = r"<(?:[^<>;{}=()]|\([^;{}()]*\)|<(?:[^<>;{}=()]|\([^;{}()]*\))*>)*>"
 TYPE_ARGUMENTS = r"(?:" + ANGLED + r")?"
 TYPE_WORD = r"(?:(?:[\w>\[\],.?*&:]|" + ANGLED + r"|<(?!" + ANGLED[1:] + r"))+|\([\w<>\[\],.?\s]+\))"
 # Before it all, Java's annotations (@Test, @SuppressWarnings("x")) and C#'s attributes ([InlineData(1)]).
-ANNOTATIONS = r"(?:@[\w.]+(?:\((?:[^()]|\([^()]*\))*\))?\s+|\[(?:[^\[\]()]|\((?:[^()]|\([^()]*\))*\))*\]\s*)*"
-# C++'s template <...> before a definition on its line, whatever its parameters hold (= false, enable_if(...)).
-TEMPLATE = r"(?:template\s*<[^;{}]*?>\s*)?"
+ANNOTATIONS = r"(?:@[\w.]+(?:\((?:[^()]|\([^()]*\))*\))?\s+|\[(?:[^\[\]()]|\((?:[^()]|\([^()]*\))*\))*\]\s*){0,16}"
+# C++'s template <...> before a definition on its line, whatever its parameters hold (= false, enable_if(...)): up
+# to its first > after which the rest is a definition, of the first seventeen.
+TEMPLATE = r"(?:template\s*<[^;{}>]*(?:>[^;{}>]*){0,16}?>\s*)?"
 # After the name and its (: no ; before a body's {, which may hold the whole body, as in int f() { return 1; }.
 SIGNATURE_REST = r"[^;{]*(?:\{.*)?$"
 
@@ -1821,7 +1825,9 @@ def by_pattern(pattern, listed=False):
     pattern = re.compile(pattern)
 
     def find(code, i):
-        match = pattern.match(code[i])
+        # Each of the C family's shapes holds a (, so a line with none isn't read for one: a line of thousands of > or
+        # [...] can be split between a template, annotations and types in more ways than one, each tried.
+        match = pattern.match(code[i]) if not listed or "(" in code[i] else None
         name = next((g for g in match.groups() if g), None) if match else None
         if not name:
             return None
