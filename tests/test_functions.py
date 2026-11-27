@@ -608,6 +608,21 @@ class Heredocs(unittest.TestCase):
         text = "<p>Back <<<X\n<?php\nfunction a() {\n    $t = <<<X\n{\nX;\n    return 1;\n}\n" + b
         self.assertEqual([f[:3] for f in found("a.php", text)], [["a", 3, 8], ["b", 9, 11]])
 
+    def test_holes_over_lines(self):
+        # A heredoc's {$...} and ${...} are code, over lines too, where a line that starts with its name is code, or a
+        # string's, a comment's or a heredoc's of its own of the same name; \{$x} and {\$x} are none, nor a nowdoc's.
+        b = "function b() {\n    return 2;\n}\n"
+        for text, a in (("$t = <<<EOT\n{$f(\nEOT\n)} {\nEOT;", 9), ("$t = <<<EOT\n${f(\nEOT\n)} {\nEOT;", 9),
+                        ("$t = <<<EOT\n{$f(<<<EOT\n{\nEOT\n)} {\nEOT;", 10),
+                        ("$t = <<<EOT\n{$f('\nEOT\n')} {\nEOT;", 9),
+                        ("$t = <<<EOT\n{$f(\"\nEOT\n\")} {\nEOT;", 9), ("$t = <<<EOT\n{$f( // }\nEOT\n)} {\nEOT;", 9),
+                        ("$t = <<<EOT\n{$a[f(function () {\nEOT\n})]} {\nEOT;", 9),
+                        ("$t = <<<EOT\n\\{$x} {\\$x} \\${x} {\n  EOT;", 7),
+                        ("$t = <<<'EOT'\n{$f(\nEOT;\n    $u = ')}';", 8)):
+            with self.subTest(text=text):
+                text = "<?php\nfunction a() {\n    %s\n    return $t;\n}\n%s" % (text, b)
+                self.assertEqual([f[:3] for f in found("a.php", text)], [["a", 2, a], ["b", a + 1, a + 3]])
+
     def test_in_a_class_and_a_default(self):
         text = "<?php\nclass K {\n    public function a() {\n        $t = <<<EOT\nif (x) {\nEOT;\n" \
                "        return $t;\n    }\n    public function b() {\n        return 1;\n    }\n}\n"
