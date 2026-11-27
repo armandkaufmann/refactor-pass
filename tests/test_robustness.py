@@ -441,6 +441,10 @@ GROWING = {
     "regex-classes.js": (4000, lambda n: "x = " + "/[" * n + "\n"),
     "regex-classes-closed.js": (4000, lambda n: "x = " + "/[" * n + "]\n"),
     "regex-class-then-text.js": (4000, lambda n: "x = " + "/[" * n + "]" + "a" * (2 * n) + "\n"),
+    # Thousands of spaces in a C++ conversion operator's name, before which its ( was looked for from each; and around
+    # the & that may come after PHP's function.
+    "operator-then-spaces.cpp": (17000, lambda n: "int f() {\n}\nbool operator x" + " " * n + "y\n"),
+    "function-amp-spaces.php": (60000, lambda n: "<?php\nfunction" + " " * n + "&" + " " * n + "\n"),
     # Thousands of PHP heredocs opened, none closed by any line, each looked for its closing line.
     "unclosed-heredocs.php": (1000, lambda n: "<?php\n" + "$x = <<<A\n" * n),
 }
