@@ -426,6 +426,16 @@ GROWING = {
     # may close by a split of the spaces around the : that may follow, in every way.
     "fix-then-spaces": (70000, lambda n: "fix" + " " * n + "x", "message"),
     "fixes-then-spaces": (150000, lambda n: "a change\n\nfixes" + " " * n + "x", "message"),
+    # JavaScript's other definitions split around an optional part, as they read thousands of spaces: after function,
+    # where a * may come; before a name, and after a modifier, where a * may come before it; after a wrapped function's
+    # keyword; and before an object's { on a line of a key and its ? and :. And a long word inside a function's return
+    # type, whose last word was looked for from each of its characters.
+    "function-then-spaces.js": (57000, lambda n: "function f() {\n  return 1;\n}\nfunction" + " " * n + "(\n"),
+    "spaces-then-name.js": (17000, lambda n: "function f() {\n  return 1;\n}\n" + " " * n + "x\n"),
+    "modifier-then-spaces.ts": (28000, lambda n: "class A {\n  static" + " " * n + "x\n}\n"),
+    "wrapped-then-spaces.js": (100000, lambda n: "const a = memo(function" + " " * n + ")\n"),
+    "key-then-spaces.js": (36000, lambda n: "x" + " " * n + "y {\n  a: () => 1,\n}\n"),
+    "type-word.ts": (40000, lambda n: "function f(): {\n  " + "a" * n + ";\n} {\n}\n"),
     # Thousands of PHP heredocs opened, none closed by any line, each looked for its closing line.
     "unclosed-heredocs.php": (1000, lambda n: "<?php\n" + "$x = <<<A\n" * n),
 }
