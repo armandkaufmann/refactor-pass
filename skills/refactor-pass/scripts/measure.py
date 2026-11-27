@@ -348,7 +348,7 @@ JS_ANY_METHOD = re.compile(r"^\s*(?:(?:public|private|protected|static|async|rea
                            r"declare|accessor)\s+)*\*?\s*([\w$]+)\??\s*(?=[(<])")
 # A name given a value: a variable or a class's property, typed or not; or an object literal's key.
 JS_ASSIGNED = re.compile(r"^\s*(?:export\s+)?(?:(?:const|let|var|public|private|protected|static|readonly|declare|"
-                         r"override|accessor)\s+)*(#?[\w$]+)\s*!?\s*(?::(?:[^=]|=>)+)?=(?![=>])\s*")
+                         r"override|accessor)\s+)*(#?[\w$]+)\s*(?:!\s*)?(?::(?:[^=]|=>)+)?=(?![=>])\s*")
 JS_KEY = re.compile(r"^\s*([\w$]+|\[[^\]]*\])\s*:\s*")
 # A function given to a member in an assignment, named by the last name (exports, for module.exports = ...);
 # and an anonymous one exported as the default, named default.
@@ -356,7 +356,7 @@ JS_MEMBER = re.compile(r"^\s*(?:[\w$]+\.)+(#?[\w$]+)\s*=(?![=>])\s*")
 JS_DEFAULT = re.compile(r"^\s*export\s+default\s+")
 # A declaration typed over several lines, whose = comes after its type (js_after_type).
 JS_TYPED = re.compile(r"^\s*(?:export\s+)?(?:(?:const|let|var|public|private|protected|static|readonly|declare|"
-                      r"override|accessor)\s+)+(#?[\w$]+)\s*[?!]?\s*:\s*")
+                      r"override|accessor)\s+)+(#?[\w$]+)\s*(?:[?!]\s*)?:\s*")
 # What's assigned: a function written out (its keyword, then an optional * and name), an arrow with one
 # bare parameter, or a named function wrapped in a call, such as React.memo(function Card(...) {...}).
 # The keyword is a whole word: functional and functionName are names.
