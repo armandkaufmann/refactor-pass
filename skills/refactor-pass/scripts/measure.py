@@ -789,8 +789,10 @@ GOES_ON_NEXT = re.compile(r"\s*(?:\|\||&&|\?\?|\?(?!\.)|:|\.(?!\.)|[+-](?![+-])|
 # The words after which a / opens a regular expression, since only an expression can follow them; as whole
 # words, not a member's name such as x.in.
 REGEX_AFTER = re.compile(r"(?<![\w$.])(?:return|case|typeof|void|delete|throw|new|await|yield|in|of|do|else)$")
-# A JavaScript regular expression: from / to /, past escapes and the / in a class such as [/].
-REGEX = re.compile(r"/(?:\\.|\[(?:\\.|[^\]\\])*\]|[^/\\\[])+/")
+# A JavaScript regular expression: from / to /, past escapes and the / in a class such as [/] (regex_end). Its
+# characters up to a /, a class's [ or a \ the line ends with; and a class.
+REGEX_RUN = re.compile(r"(?:\\.|[^/\\\[])*")
+REGEX_CLASS = re.compile(r"\[(?:\\.|[^\]\\])*\]")
 # A Python statement that is only a string, as a docstring is: documentation, so not a code line.
 DOCSTRING = re.compile(r"""\s*[rRuUbBfF]{0,2}("{3}|'{3}|"|')""")
 
@@ -957,6 +959,7 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
         code = []
         i = 0
         close = None  # In a block comment, where the next */ on the line is (-1 for none), until it's passed.
+        classes = {}  # Per [ that opens a regular expression's class on the line, where that expression ends.
         if heredoc is not None:  # Its text is the string's to its closing name, after which the line goes on as code.
             i = len(line) if n < heredoc[0] else heredoc[1]
             code.append("s" * i if n < heredoc[0] else "s" * (i - 1) + '"')
@@ -1045,10 +1048,10 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
                 holes = string_holes(language, quotes, state, line, i)
                 code.append(state)
                 i += len(state)
-            elif line[i] == "/" and quotes == "regex" and REGEX.match(line, i) and regex_may_start(code, out):
-                literal = REGEX.match(line, i).group(0)  # A regular expression, which can hold quotes and brackets.
-                code.append("/" + "s" * (len(literal) - 2) + "/")
-                i += len(literal)
+            elif line[i] == "/" and quotes == "regex" and regex_end(line, i, classes) and regex_may_start(code, out):
+                end = regex_end(line, i, classes)  # A regular expression, which can hold quotes and brackets.
+                code.append("/" + "s" * (end - i - 2) + "/")
+                i = end
             elif line[i] == "'" and char_quote:
                 literal = CHARACTER.match(line[i:])  # A character, or else a Rust lifetime.
                 code.append("s" if literal else " ")
@@ -1259,6 +1262,35 @@ def ruby_skeleton(lines):
         waiting = []
         out.append("".join(code) if line.strip() else "")  # Blank, in a string too, as skeleton's are.
     return out, began_inside
+
+
+def regex_end(line, i, classes):
+    """Where the JavaScript regular expression that may open with the / at line[i] ends, past its closing /; or None
+    if none opens there. classes keeps, per [ found to open a class on the line, where the expression it's in ends,
+    and so for each [ inside that class, as a class read from it reads on from where the outer one does: so a line
+    of thousands of / and [ isn't read again to the end of a class from each /."""
+    j, opened = i + 1, []
+    while True:
+        j = REGEX_RUN.match(line, j).end()
+        if line[j:j + 1] != "[":  # Its closing /, unless it holds nothing; or else the line's end, or a \ ending it.
+            end = j + 1 if line[j:j + 1] == "/" and j > i + 1 else None
+            break
+        if j in classes:
+            end = classes[j]
+            break
+        found = REGEX_CLASS.match(line, j)
+        stop = found.end() if found else len(line)
+        k = j
+        while 0 <= k < stop:
+            opened.append(k)
+            k = line.find("[", k + 1, stop)
+        if not found:
+            end = None
+            break
+        j = stop
+    for k in opened:
+        classes[k] = end
+    return end
 
 
 def regex_may_start(code, out):
