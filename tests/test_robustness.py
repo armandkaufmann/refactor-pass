@@ -436,6 +436,11 @@ GROWING = {
     "wrapped-then-spaces.js": (100000, lambda n: "const a = memo(function" + " " * n + ")\n"),
     "key-then-spaces.js": (36000, lambda n: "x" + " " * n + "y {\n  a: () => 1,\n}\n"),
     "type-word.ts": (40000, lambda n: "function f(): {\n  " + "a" * n + ";\n} {\n}\n"),
+    # A line of thousands of / and [ in JavaScript, each / read for a regular expression to the end of the class its [
+    # opens: none closed, all closed by one ] at the end, and then text after it.
+    "regex-classes.js": (4000, lambda n: "x = " + "/[" * n + "\n"),
+    "regex-classes-closed.js": (4000, lambda n: "x = " + "/[" * n + "]\n"),
+    "regex-class-then-text.js": (4000, lambda n: "x = " + "/[" * n + "]" + "a" * (2 * n) + "\n"),
     # Thousands of PHP heredocs opened, none closed by any line, each looked for its closing line.
     "unclosed-heredocs.php": (1000, lambda n: "<?php\n" + "$x = <<<A\n" * n),
 }
