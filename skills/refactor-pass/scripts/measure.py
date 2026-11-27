@@ -890,8 +890,8 @@ def string_holes(language, quotes, quote, line, at):
     return None
 
 
-# A run of quotes, as opens C#'s raw string.
-QUOTES = re.compile(r'"+')
+# A run of quotes, as opens C#'s raw string; and of #s, as opens Swift's.
+QUOTES, HASHES = re.compile(r'"+'), re.compile(r"#+")
 # Characters that start nothing outside a string or a comment, in any language: not a comment's start (# or
 # /), a quote, a raw string's start ($ @ #, or b c r R u U L at the start of a word) or a regular expression's;
 # and what a raw string can't open just after, a word's character, a $ or an @. In Rust, an @ before a raw string
@@ -995,6 +995,12 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
                 holes = "{" if language == "C#" and "$" in opened.group() else None
                 code.append('"')
                 i = opened.end()
+            elif language == "Swift" and line[i] == "#" and not glued.match(line[i - 1:i]):
+                # A run of #s that opens no raw string at its first opens none at a # after it either, as they end
+                # where it does: it's read once, not again from each.
+                run = HASHES.match(line, i).end()
+                code.append(line[i:run])
+                i = run
             elif line.startswith('"""', i) or line.startswith("'''", i):
                 state = QUOTES.match(line, i).group() if language == "C#" and line[i] == '"' else line[i:i + 3]
                 holes = string_holes(language, quotes, state, line, i)
