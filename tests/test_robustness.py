@@ -450,6 +450,12 @@ GROWING = {
     "operators.rb": (9000, lambda n: "x = " + "a + " * n + "\n"),
     "percents.rb": (4000, lambda n: "x = " + "a % " * n + "\n"),
     "questions.rb": (6500, lambda n: "x = " + "?" * n + "\n"),
+    # Thousands of spaces in a JavaScript template's hole before a /, each a piece of the line's code, which was joined
+    # again and stripped at each piece read back; thousands of = after a definition's name, before each of which the
+    # line was copied for a ); and a commit's subject of thousands of tags, the rest of it copied after each.
+    "hole-spaces.js": (8000, lambda n: "x = `${" + " " * n + "/a/}`\n"),
+    "equals.kt": (17500, lambda n: "fun f" + " =" * n + "\n"),
+    "tags": (16000, lambda n: "[a]" * n, "message"),
     # Thousands of PHP heredocs opened, none closed by any line, each looked for its closing line.
     "unclosed-heredocs.php": (1000, lambda n: "<?php\n" + "$x = <<<A\n" * n),
 }
