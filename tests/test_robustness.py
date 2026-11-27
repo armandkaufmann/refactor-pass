@@ -418,6 +418,9 @@ GROWING = {
     # around the ! or ? that may follow it.
     "name-then-spaces.js": (75000, lambda n: "function f() {\n  return 1;\n}\nconst name" + " " * n +
                             "\nconst b = 2;\n"),
+    # A run of thousands of # in Swift, which no quote follows, read for a raw string from each #; and after a name.
+    "hashes.swift": (500000, lambda n: "func f() {\n    return\n}\nlet s = " + "#" * n + "\n"),
+    "glued-hashes.swift": (500000, lambda n: "func f() {\n    return\n}\nlet s = x" + "#" * n + "\n"),
 }
 
 
