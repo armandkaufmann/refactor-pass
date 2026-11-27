@@ -81,8 +81,6 @@ It points at code to read; it doesn't judge it. What it gets wrong:
     or lose the function;
   - an arrow function that returns JSX with no brackets around it ends at
     its first line;
-  - a line of a PHP heredoc's {$...} that runs over lines ends the heredoc
-    if it starts with the heredoc's name, as a line of its text would;
   - where a function ends by indentation, a line indented less than its
     body ends it there, as a misindented end does in Ruby;
   - between #if and #else, when each branch opens a function's body its
@@ -908,10 +906,14 @@ GLUED, GLUED_RUST = re.compile(r"[\w$@]"), re.compile(r"[\w$]")
 # PHP's heredoc and nowdoc: <<<ID, <<<"ID" or <<<'ID' at the end of a line, whose text is the lines after it up to
 # the first that starts with ID, after any spaces or tabs and before no character a name can hold, as PHP 7.3 and
 # later end one: indented or not, and with code after it on its line (ID;, ID), ...). A name is letters, digits,
-# _ and any character past ASCII, not starting with a digit.
+# _ and any character past ASCII, not starting with a digit. A heredoc's holes, {$...} and ${...}, are code, over
+# lines too, where a line that starts with ID ends nothing; a nowdoc ('ID') has none. Its text, up to a hole, past
+# its escapes (\{$x} is no hole).
 PHP_NAME = r"(?![0-9])[0-9A-Za-z_\x80-\U0010ffff]+"  # One class: a character past ASCII can't match two ways.
 PHP_HEREDOC = re.compile(r"<<<[ \t]*(?:(%s)|'(%s)'|\"(%s)\")\r?$" % (PHP_NAME, PHP_NAME, PHP_NAME))
 PHP_LEADING_NAME = re.compile(r"[ \t]*([0-9A-Za-z_\x80-\U0010ffff]+)")
+PHP_HOLES = ("{$", "${")
+PHP_TEXT = re.compile(r"(?:\\.?|[^\\{$]|\{(?!\$)|\$(?!\{))+")
 # PHP's code opens with <?php, in any case, before a space or the line's end, or with <?=, and closes with ?>, which
 # ends a line comment too; around it is HTML, where no heredoc opens. A bare <? opens it only where PHP's
 # short_open_tag is on, which its recommended settings turn off: it isn't read as an opening, so a heredoc in code
@@ -936,10 +938,10 @@ def php_code_after(line, i, code):
 
 
 def php_heredoc(lines, k, i, starts):
-    """Where the PHP heredoc or nowdoc that opens at lines[k][i] ends: the line that closes it, and the column after
-    its name there; or None if none opens there, or no line closes it, as then PHP doesn't compile it and its text
-    is read as code, losing no function. starts holds the lines by the name each starts with, read once per file,
-    when first asked."""
+    """The name of the PHP heredoc or nowdoc that opens at lines[k][i], and whether it's a nowdoc; or None if none
+    opens there, or no line after it starts with its name, as then PHP doesn't compile it and its text is read as
+    code, losing no function. starts holds the lines by the name each starts with, read once per file, when first
+    asked."""
     opened = PHP_HEREDOC.match(lines[k], i)
     if not opened:
         return None
@@ -947,9 +949,9 @@ def php_heredoc(lines, k, i, starts):
         for j, line in enumerate(lines):
             found = PHP_LEADING_NAME.match(line)
             starts.setdefault(found.group(1) if found else None, []).append(j)
-    closing = starts.get(next(name for name in opened.groups() if name), [])
-    at = bisect.bisect_right(closing, k)
-    return (closing[at], PHP_LEADING_NAME.match(lines[closing[at]]).end()) if at < len(closing) else None
+    name = next(name for name in opened.groups() if name)
+    closing = starts.get(name, [])
+    return (name, bool(opened.group(2))) if bisect.bisect_right(closing, k) < len(closing) else None
 
 
 def skeleton(lines, comments, quotes, attributes=False, language=None):
@@ -973,19 +975,18 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
     opens_raw = RAW_STRING.get(language)
     plain_text, glued = (PLAIN_RUST, GLUED_RUST) if language == "Rust" else \
         (PLAIN_PHP, GLUED) if language == "PHP" else (PLAIN, GLUED)
-    heredoc = None  # In a PHP heredoc's text: the line that closes it, and the column after its name there.
     starts = {}  # PHP's lines by the name each starts with, for php_heredoc.
     in_php = False  # In PHP's code, which a file starts outside of, not in HTML around it.
     for n, line in enumerate(lines):
-        began_inside.append(state is not None or bool(templates) or raw is not None or heredoc is not None)
+        began_inside.append(state is not None or bool(templates) or raw is not None)
         code = []
         i = 0
         close = None  # In a block comment, where the next */ on the line is (-1 for none), until it's passed.
         classes = {}  # Per [ that opens a regular expression's class on the line, where that expression ends.
-        if heredoc is not None:  # Its text is the string's to its closing name, after which the line goes on as code.
-            i = len(line) if n < heredoc[0] else heredoc[1]
-            code.append("s" * i if n < heredoc[0] else "s" * (i - 1) + '"')
-            heredoc = heredoc if n < heredoc[0] else None
+        closing = PHP_LEADING_NAME.match(line) if state and state[0] == "\n" else None
+        if closing and closing.group(1) == state[1:]:  # A PHP heredoc's end, outside its holes: code after it.
+            code.append("s" * (closing.end() - 1) + '"')
+            i, state, holes = closing.end(), None, None
         while i < len(line):
             plain = plain_text.match(line, i) if state is None and raw is None and not templates else None
             if plain:  # Characters that start nothing, copied at once.
@@ -995,9 +996,11 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
                 code.append("ss")  # C#'s brace written twice is a brace.
                 i += 2
             elif holes and line.startswith(holes, i):
-                code.append("s" * len(holes))  # The hole's own brackets aren't the code's.
-                templates.append([0, holes[-1], ")" if holes[-1] == "(" else "}", state, holes, raw])
-                i, state, holes, raw = i + len(holes), None, None, None
+                opener = next(h for h in holes if line.startswith(h, i)) if holes == PHP_HOLES else holes
+                bracket = "{" if opener == "{$" else opener[-1]  # PHP's {$x}, whose $ is the code's.
+                code.append("s" * len(opener))  # The hole's own brackets aren't the code's.
+                templates.append([0, bracket, ")" if bracket == "(" else "}", state, holes, raw])
+                i, state, holes, raw = i + len(opener), None, None, None
             elif raw is not None:
                 if raw == '"' and language == "C#" and line.startswith('""', i):  # A verbatim string's quote.
                     code.append("ss")
@@ -1027,6 +1030,11 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
                     i, nested = end + 2, nested - 1
                 else:
                     i, state = end + 2, None
+            elif state and state[0] == "\n":  # A PHP heredoc's text, up to a hole; a nowdoc's, to the line's end.
+                text = PHP_TEXT.match(line, i) if holes else None
+                end = text.end() if text else len(line) if not holes else i + 1
+                code.append("s" * (end - i))
+                i = end
             elif state:
                 if line[i] == "\\" and not (language in NO_ESCAPES and state.startswith(NO_ESCAPES[language])):
                     code.append("s" * len(line[i:i + 2]))  # The string's, as its other characters are.
@@ -1068,9 +1076,11 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
                 code.append(opening.group() if opening else "?>")
                 i = opening.end() if opening else i + 2
             elif language == "PHP" and in_php and line.startswith("<<<", i):  # A heredoc or a nowdoc, or a << as PHP
-                heredoc = php_heredoc(lines, n, i, starts)  # reads one where none opens, so <<<<f opens none.
-                code.append('"' + "s" * (len(line) - i - 1) if heredoc else "<<")
-                i = len(line) if heredoc else i + 2
+                opened = php_heredoc(lines, n, i, starts)  # reads one where none opens, so <<<<f opens none.
+                code.append('"' + "s" * (len(line) - i - 1) if opened else "<<")
+                i = len(line) if opened else i + 2
+                if opened:  # Its text is on the lines after, its state its name after a newline, which no line holds.
+                    state, holes = "\n" + opened[0], None if opened[1] else PHP_HOLES
             elif line.startswith('"""', i) or line.startswith("'''", i):
                 state = QUOTES.match(line, i).group() if language == "C#" and line[i] == '"' else line[i:i + 3]
                 holes = string_holes(language, quotes, state, line, i)
