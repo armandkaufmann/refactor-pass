@@ -576,6 +576,15 @@ class Heredocs(unittest.TestCase):
                     self.assertEqual([f[:3] for f in found("a.php", text.replace("\n", end))],
                                      [["a", 2, 5 + n], ["b", 6 + n, 8 + n], ["c", 9 + n, 11 + n]])
 
+    def test_a_run_of_lt_signs(self):
+        # PHP reads << where no heredoc opens, so a run of an odd number before a name opens one and of an even
+        # number none, as its tokenizer has them.
+        for run, last in ((4, 4), (5, 7), (6, 4), (7, 7)):
+            with self.subTest(run=run):
+                text = "<?php\nfunction a() {\n    $t = 1 %sEOT\n}\nEOT;\n    return $t;\n}\nfunction b() {\n" \
+                       "    return 1;\n}\n" % ("<" * run)
+                self.assertEqual([f[:3] for f in found("a.php", text)], [["a", 2, last], ["b", 8, 10]])
+
     def test_in_a_class_and_a_default(self):
         text = "<?php\nclass K {\n    public function a() {\n        $t = <<<EOT\nif (x) {\nEOT;\n" \
                "        return $t;\n    }\n    public function b() {\n        return 1;\n    }\n}\n"

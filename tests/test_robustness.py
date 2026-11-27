@@ -456,6 +456,11 @@ GROWING = {
     "hole-spaces.js": (8000, lambda n: "x = `${" + " " * n + "/a/}`\n"),
     "equals.kt": (17500, lambda n: "fun f" + " =" * n + "\n"),
     "tags": (16000, lambda n: "[a]" * n, "message"),
+    # A PHP heredoc's name of thousands of letters past ASCII, bare or quoted, that doesn't end its line, and a git
+    # conflict marker's: each letter could be read two ways, a time that doubled with each.
+    "heredoc-name.php": (150000, lambda n: "<?php\n$x = <<<" + "\u00e9" * n + ";\n"),
+    "nowdoc-name.php": (30000, lambda n: "<?php\n$x = <<<'" + "\u4e2d" * n + " x\n"),
+    "conflict-marker.php": (150000, lambda n: "<?php\n<<<<<<< " + "\u4e2d" * n + " (x)\n"),
     # Thousands of PHP heredocs opened, none closed by any line, each looked for its closing line.
     "unclosed-heredocs.php": (1000, lambda n: "<?php\n" + "$x = <<<A\n" * n),
 }
