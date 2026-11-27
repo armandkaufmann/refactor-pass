@@ -15,6 +15,7 @@ import signal
 import subprocess
 import sys
 import time
+import tracemalloc
 import unittest
 
 try:
@@ -234,6 +235,28 @@ class Generics(unittest.TestCase):
             self.fail("measuring lines of 200 generic types took over a minute")
         self.assertEqual(result.code, 0, result)
         self.assertLess(float(result.out), 10, result)
+
+
+# Lines of a megabyte that a pattern read a character at a time, each a choice in a repeat that Python's re keeps a
+# step of for going back to, a hundred bytes or more per character: plain characters, a regular expression's
+# characters and its class's, and a heredoc's text of a run of { that open no hole.
+LONG_LINES = [("a.c", "template <" + "?>" * 500000 + "\n"), ("a.js", "x = (/" + "a" * 1000000 + "/)\n"),
+              ("a.js", "x = (/[" + "a" * 1000000 + "]/)\n"), ("a.php", "<?php\n$t = <<<A\n" + "a{" * 500000 + "\nA;\n")]
+
+
+class Memory(unittest.TestCase):
+
+    def test_long_lines(self):
+        measure = support.load("measure")
+        for name, text in LONG_LINES:
+            with self.subTest(name=name, start=text[:12]):
+                tracemalloc.start()
+                try:
+                    measure.functions(name, text, [])
+                    peak = tracemalloc.get_traced_memory()[1]
+                finally:
+                    tracemalloc.stop()
+                self.assertLess(peak, 30 * 1000 * 1000, "%s: %d MB" % (name, peak // 1000000))
 
 
 # Files whose reading once took a time that grew with the square of their size, or faster. Each is made at a size
