@@ -1143,9 +1143,13 @@ RUBY_HEREDOC = re.compile(r"<<([~-])?(?:([\"'`])([^\"'`\n]+)\2|([A-Za-z_]\w*))")
 RUBY_PERCENT = re.compile(r"%([qQwWiIrsx]?)([^\w\s])")
 RUBY_GLOBAL = re.compile(r"\$(?:[!@&`'+~=/\\,;.<>_*$?:\"]|-\w|\d+)")
 RUBY_OPERATOR = r"\[\]=?|<=>|===?|=~|!=|!~|<<|>>|<=|>=|\*\*|[+\-~!]@?|[*/%<>^&|`]"
-# Where an operator's name can follow def: after def and its spaces, or after a receiver and its . (def self.[]).
+# Where an operator's name can follow def: after def and its spaces, or after a receiver and its . (def self.[]);
+# and after undef, each of its names (undef `, +), or alias, both (alias ` run): a name, an operator's, or a symbol.
 RUBY_DEF = re.compile(r"(?<![\w$@.:])def\s+")
 RUBY_RECEIVER = re.compile(r"(?:self|@@?\w+|[A-Za-z_][\w:]*)\s*\.\s*")
+RUBY_UNDEF = re.compile(r"(?<![\w$@.:])(undef|alias)\s+")
+RUBY_NAME = re.compile(r":?(?:%s|[A-Za-z_\x80-\U0010ffff][0-9A-Za-z_\x80-\U0010ffff]*[?!=]?)" % RUBY_OPERATOR)
+RUBY_NAMES_GO_ON = (re.compile(r"\s*,\s*"), re.compile(r"\s+"))  # Between undef's names, and alias's.
 RUBY_SYMBOL_OPERATOR = re.compile(r":(?:%s)" % RUBY_OPERATOR)
 # The words after which a value can start, so that a /, a % or a ? opens a literal; none is over 6 letters.
 RUBY_VALUE_AFTER = re.compile(r"(?<![\w$@.:])(?:if|unless|elsif|while|until|and|or|not|when|in|return|then|do|"
@@ -1159,12 +1163,22 @@ RUBY_PLAIN = re.compile(r"[^#\[\]<=>!~+\-*/%^&|`:\"'$?{}]+")
 
 
 def ruby_def_names(line):
-    """The columns of a line of Ruby where an operator's name can start, after def: worked out once per line, not
-    again from the line's start for each operator."""
+    """The columns of a line of Ruby where an operator's name can start, after def, undef or alias: worked out once
+    per line, not again from the line's start for each operator."""
     names = set()
     for found in RUBY_DEF.finditer(line):
         receiver = RUBY_RECEIVER.match(line, found.end())
         names.update([found.end()] + ([receiver.end()] if receiver else []))
+    for found in RUBY_UNDEF.finditer(line):
+        alias = found.group(1) == "alias"
+        at, between = found.end(), RUBY_NAMES_GO_ON[alias]
+        for _ in range(2 if alias else len(line)):
+            names.add(at)
+            name = RUBY_NAME.match(line, at)
+            gap = between.match(line, name.end()) if name else None
+            if not gap:
+                break
+            at = gap.end()
     return names
 
 
