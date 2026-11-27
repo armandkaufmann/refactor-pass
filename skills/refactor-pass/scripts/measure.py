@@ -246,7 +246,7 @@ def c_shapes(language):
 # as a constructor or destructor defined outside its class, or a function whose type is on the line above;
 # with no = after it, unlike an assignment (std::tie(a, b) = ...), nor a , ending its line, as an argument's.
 CPP_SHAPES = (r"^\s*" + TEMPLATE + MODIFIERS + r"(?:" + TYPE_WORD + r"\s+)*[*&]*(?:\w+" + TYPE_ARGUMENTS + r"::)*"
-              r"(operator\s*(?:\(\)|[^\w\s(][^\s(]*|[A-Za-z_][\w\s:<>*&]*?))\s*\(" + SIGNATURE_REST + "|" +
+              r"(operator\s*(?:\(\)|[^\w\s(][^\s(]*|[A-Za-z_](?:\s*[\w:<>*&])*))\s*\(" + SIGNATURE_REST + "|" +
               c_shapes("C++") + r"|^\s*" + TEMPLATE + r"(?:(?:explicit|inline|constexpr|virtual)\s+)*" +
               not_a_type("C++") + not_a_name("C++") + r"(?![A-Z][A-Z0-9_]*\s*\()(~?[A-Za-z_]\w*)\s*\(" +
               SIGNATURE_REST + r"|^\s*" + TEMPLATE + not_a_type("C++") + r"((?!\d)\w+" + TYPE_ARGUMENTS +
@@ -743,7 +743,7 @@ LANGUAGES = [
     ("JavaScript", ".js .jsx .mjs .cjs", js_function, "brackets", "// /*", "regex"),
     ("TypeScript", ".ts .tsx .mts .cts", js_function, "brackets", "// /*", "regex"),
     ("Vue", ".vue .svelte", js_function, "brackets", "// /*", "regex"),
-    ("PHP", ".php", r"^\s*(?:(?:abstract|final|public|private|protected|static)\s+)*function\s+&?\s*(\w+)",
+    ("PHP", ".php", r"^\s*(?:(?:abstract|final|public|private|protected|static)\s+)*function\s+(?:&\s*)?(\w+)",
      "brackets", "// /* #", "spans"),
     ("Go", ".go", r"^func\s+(?:\([^)]*\)\s*)?(\w+)", "brackets", "// /*", "char"),
     # pub(crate) and pub(in path), and a raw name such as r#match, named match.
