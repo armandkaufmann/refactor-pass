@@ -505,6 +505,8 @@ GROWING = {
     # Swift raw string opened by thousands of #, whose escape was made again at each character in it.
     "where-spaces.cs": (120000, lambda n: "class A {\n  int F() where" + " " * n + "x;\n}\n"),
     "raw-hashes.swift": (15000, lambda n: "let s = " + "#" * n + '"' + "a" * (2 * n) + '"' + "#" * n + "\n"),
+    # Thousands of Ruby heredocs opened on one line, the first taken off the list of those open as each ends.
+    "heredocs-on-a-line.rb": (30000, lambda n: "x = [" + "<<A, " * n + "]\n" + "A\n" * n, "ruby_skeleton"),
     # Thousands of PHP heredocs opened, none closed by any line, each looked for its closing line.
     "unclosed-heredocs.php": (1000, lambda n: "<?php\n" + "$x = <<<A\n" * n),
 }
