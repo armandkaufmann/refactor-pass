@@ -497,6 +497,10 @@ GROWING = {
     "closes-dashes": (6300, lambda n: "a change\n\n" + "closes-" * n, "message"),
     "fixes-dots": (6600, lambda n: "a change\n\n" + "fixes." * n, "message"),
     "revert-spaces": (170000, lambda n: "Revert \"a\"\n\n" + " \n" * n + "x", "message"),
+    # A Rust file with no mod whose # or include is followed by thousands of /**/, which the search for an inner cfg or
+    # an include! read as one comment or many, in every way.
+    "head-comments": (50000, lambda n: {"src/lib.rs": "#" + "/**/ " * n + "x\n"}, "modules"),
+    "include-comments": (50000, lambda n: {"src/lib.rs": "include" + "/**/ " * n + "x\n"}, "modules"),
     # Thousands of PHP heredocs opened, none closed by any line, each looked for its closing line.
     "unclosed-heredocs.php": (1000, lambda n: "<?php\n" + "$x = <<<A\n" * n),
 }
