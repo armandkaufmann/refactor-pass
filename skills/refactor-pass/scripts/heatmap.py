@@ -766,12 +766,14 @@ def says(text):
 
 
 def untagged(subject):
-    """A subject without the tags at its start that aren't types, as its words are read."""
+    """A subject without the tags at its start that aren't types, as its words are read: each read where the last
+    ends, not in a copy of the rest."""
+    at = 0
     while True:
-        tag = TAG.match(subject)
+        tag = TAG.match(subject, at)
         if not tag or tag.group("tag").strip().lower() in BRACKET_TYPES:
-            return subject
-        subject = subject[tag.end():]
+            return subject[at:]
+        at = tag.end()
 
 
 def type_of(subject):

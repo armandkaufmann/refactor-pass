@@ -1323,12 +1323,17 @@ def regex_may_start(code, out):
     opens a regular expression rather than dividing: it comes after an operator, an opening bracket or an
     arrow, or after a word that only an expression can follow, such as return or typeof. Only the last
     few characters are read, so a long line stays quick."""
-    before = ""
+    # The pieces read back, their length and that of the spaces they end with: a word and the character before it
+    # are 7 at most, so 9 characters past those spaces say all that's asked, however many pieces hold them.
+    pieces, length, spaces = [], 0, None
     for piece in reversed(code):
-        before = piece + before
-        if len(before.strip()) > 8:
+        pieces.append(piece)
+        if spaces is None and piece.strip():
+            spaces = length + len(piece) - len(piece.rstrip())
+        length += len(piece)
+        if spaces is not None and length - spaces > 8:
             break
-    before = before.rstrip() or next((line.rstrip() for line in reversed(out) if line.strip()), "")
+    before = "".join(reversed(pieces)).rstrip() or next((line.rstrip() for line in reversed(out) if line.strip()), "")
     return not before or before[-1] in "(,=:[!&|?{};" or before.endswith("=>") or bool(REGEX_AFTER.search(before))
 
 
@@ -1455,6 +1460,7 @@ def body_by_brackets(code, inside, start, column=0, language=None, opened=None):
     for i in range(start, len(code)):
         offset = column if i == start else 0
         line = code[i][offset:]
+        closed = line.find(")")  # Where a parameter list may have closed first, for an = after it.
         if arrow and line.strip():
             expression, arrow = not line.strip().startswith("{"), False
         scan = line
@@ -1473,7 +1479,7 @@ def body_by_brackets(code, inside, start, column=0, language=None, opened=None):
                 elif line.startswith("=>", j):
                     rest = line[j + 2:].strip()
                     expression, arrow = bool(rest) and not rest.startswith("{"), not rest
-                elif c == "=" and ")" in line[:j] and line[j - 1:j] not in "=!<>" and \
+                elif c == "=" and 0 <= closed < j and line[j - 1:j] not in "=!<>" and \
                         (line[j + 1:j + 2] or " ") not in "=>":
                     expression = True  # Kotlin's fun f() = ..., C++'s = default.
                 elif c == ";":
