@@ -426,6 +426,8 @@ GROWING = {
     # may close by a split of the spaces around the : that may follow, in every way.
     "fix-then-spaces": (70000, lambda n: "fix" + " " * n + "x", "message"),
     "fixes-then-spaces": (150000, lambda n: "a change\n\nfixes" + " " * n + "x", "message"),
+    # Thousands of PHP heredocs opened, none closed by any line, each looked for its closing line.
+    "unclosed-heredocs.php": (1000, lambda n: "<?php\n" + "$x = <<<A\n" * n),
 }
 
 

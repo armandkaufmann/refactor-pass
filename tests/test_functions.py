@@ -548,6 +548,51 @@ class Strings(unittest.TestCase):
         self.assertEqual(set_aside(text)[2], [[1, 6, 6, 1]])
 
 
+# PHP's heredocs and nowdocs, each in a's body, before b and c, as PHP's tokenizer reads them (PHP 8.4): their text
+# runs to the first line that starts with their name, after any spaces or tabs and before no letter, digit or _.
+HEREDOCS = ["$t = <<<EOT\nan open { brace\nEOT;", "$t = <<<'EOT'\nan open { brace\nEOT;", "$t = <<<\"EOT\"\n{\nEOT;",
+            "$t = <<< EOT\na close } brace\nEOT;", "$t = <<<EOT\n    an open { brace\n    EOT;",
+            "$t = <<<'EOT'\n\tit's a \" quote\n\tEOT;", "$t = f(<<<EOT\na ( and a ' and {\nEOT);",
+            "$t = f(<<<EOT\n[ ( {\nEOT, 2);", "$t = [<<<EOT\n[ {\nEOT];", "$t = <<<EOT\n{ \"\nEOT . '{' . f(1);",
+            "$t = f(<<<A\n{ a\nA, <<<'B'\n} ' b\n  B);", "$t = <<<A\n{ a\nA . <<<B\n( b\nB;",
+            "$t = <<<EOT\nEOTS {\nXEOT {\nx EOT; {\nEOT_ {\nEOT1 {\nEOTé {\nEOT;",
+            "$t = <<<EOT\n{$x} ${y} {$a['}']} {$o->f(\"{\")} {$a[\"{\"]} {\nEOT;", "$t = <<<EOT\nEOT;",
+            "$t = b<<<EOT\n{\nEOT;", "$t = <<<ÉTÉ\n{\nÉTÉ;",
+            # And <<< in a string or a comment, opening none; and one that no line closes, which PHP doesn't compile,
+            # read as code, losing no function.
+            "$t = \"<<<EOT\n{\";\nif ($t) {\n    EOT;\n}", "// <<<EOT\nif ($t) {\n    EOT;\n}",
+            "# <<<EOT\nif ($t) {\n    EOT;\n}", "/* <<<EOT\n */ if ($t) {\n    EOT;\n}", "$t = <<<EOT"]
+
+
+class Heredocs(unittest.TestCase):
+
+    def test_heredocs_and_nowdocs(self):
+        for heredoc in HEREDOCS:
+            for end in ("\n", "\r\n"):
+                with self.subTest(heredoc=heredoc, end=end):
+                    n = heredoc.count("\n")
+                    text = "<?php\nfunction a() {\n    %s\n    return $t;\n}\nfunction b() {\n    return 1;\n}\n" \
+                           "function c() {\n    return 2;\n}\n" % heredoc
+                    self.assertEqual([f[:3] for f in found("a.php", text.replace("\n", end))],
+                                     [["a", 2, 5 + n], ["b", 6 + n, 8 + n], ["c", 9 + n, 11 + n]])
+
+    def test_in_a_class_and_a_default(self):
+        text = "<?php\nclass K {\n    public function a() {\n        $t = <<<EOT\nif (x) {\nEOT;\n" \
+               "        return $t;\n    }\n    public function b() {\n        return 1;\n    }\n}\n"
+        self.assertEqual([f[:3] for f in found("a.php", text)], [["a", 3, 8], ["b", 9, 11]])
+        text = "<?php\nfunction page($x = <<<HTML\n<div>}</div>\nHTML) {\n    return $x;\n}\n\nfunction next() {\n" \
+               "    return 1;\n}\n"
+        self.assertEqual(found("a.php", text), [["page", 2, 6, 5], ["next", 8, 10, 3]])
+
+    def test_its_lines(self):
+        # Each line of its text is code, as a line of a multi-line string is, though it starts like a comment, and
+        # one blank is blank; and its indentation is the text's, not the function's nesting.
+        text = "<?php\nfunction f() {\n    $sql = <<<SQL\nSELECT 1\n# not a comment\n\n// nor this\n  \n" \
+               "                        x\nSQL;\n    return $sql;\n}\n"
+        lines, functions, _ = support.load("measure").functions("a.php", text)
+        self.assertEqual((lines, functions), (10, [("f", 2, 12, 9, 0)]))
+
+
 class Comments(unittest.TestCase):
 
     def test_block_comments_that_nest(self):

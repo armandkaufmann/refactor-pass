@@ -24,12 +24,9 @@ CASES = {
     "quoted key": ("a.js", "const routes = {\n  'GET /orders': function (req) {\n    return list(req);\n  },\n};\n"),
     "macro": ("a.c", "FOR_EACH(item, list) {\n    use(item);\n}\n\nint main(void) {\n    return 0;\n}\n"),
     "generic default": ("a.ts", "function h<T = {\n  onStart: () => void,\n}>(x: T) {\n  return x\n}\n"),
-    "heredoc brace": ("a.php", "<?php\nfunction page() {\n    return <<<HTML\n<div>}</div>\nHTML;\n}\n\n"
-                               "function next() {\n    return 1;\n}\n"),
     "regex after bracket": ("a.js", "function f(s) {\n  if (ok(s)) /}/.test(s)\n  return 1\n}\n"
                                     "function g() {\n  return 2\n}\n"),
-    "heredoc comment": ("a.php", "<?php\nfunction f() {\n    $sql = <<<SQL\nSELECT 1\n# not a comment\nSQL;\n"
-                                 "    return $sql;\n}\n"),
+    "heredoc hole": ("a.php", "<?php\nfunction f() {\n    $t = <<<EOT\n{$f(\nEOT\n)} {\nEOT;\n    return $t;\n}\n"),
     "misindented": ("a.rb", "class App\n  def call(env)\n    raise 'bzzzt' if @called > 0\n  @called += 1\n"
                             "    [200, {}, ['OK']]\n  end\nend\n"),
     "alternatives": ("a.c", "#ifdef _WIN32\nint umain(void) {\n#else\nint main(void) {\n#endif\n  return 0;\n}\n"),
@@ -83,18 +80,14 @@ class KnownLimits(unittest.TestCase):
         self.assertEqual(spans("generic default"), [["h", 1, 5, 5]])
 
     @unittest.expectedFailure
-    def test_a_brace_in_a_heredoc(self):
-        self.assertEqual(spans("heredoc brace"), [["page", 2, 6, 5], ["next", 8, 10, 3]])
-
-    @unittest.expectedFailure
     def test_a_regular_expression_after_a_closing_bracket(self):
         self.assertEqual(spans("regex after bracket"), [["f", 1, 4, 4], ["g", 5, 7, 3]])
 
     @unittest.expectedFailure
-    def test_a_line_in_a_heredoc_that_looks_like_a_comment(self):
-        # Each line of the string is code, as a multi-line string's lines are; one that starts like a
-        # comment is taken for one.
-        self.assertEqual(spans("heredoc comment"), [["f", 2, 8, 7]])
+    def test_a_line_in_a_heredocs_hole_that_starts_with_its_name(self):
+        # In a {$...} that runs over lines, PHP reads it as code, the constant EOT here: the heredoc ends two
+        # lines on, at EOT;.
+        self.assertEqual(spans("heredoc hole"), [["f", 2, 9, 8]])
 
     @unittest.expectedFailure
     def test_a_line_indented_less_than_the_body(self):
@@ -141,8 +134,9 @@ class KnownLimits(unittest.TestCase):
                       "anonymous functions and lambdas aren't functions of their own",
                       "a function that doesn't start a line",
                       "shapes can catch a macro, and miss a function a macro makes",
-                      "in a type written after an = (as a generic's default)", "a brace or a quote in a PHP heredoc",
-                      "follows a closing bracket or a name", "a line inside a PHP heredoc can count as code or not",
+                      "in a type written after an = (as a generic's default)",
+                      "a brace or a quote in a JavaScript regular expression", "follows a closing bracket or a name",
+                      "a line of a PHP heredoc's {$...} that runs over lines ends the heredoc",
                       "an arrow function that returns JSX with no brackets around it ends at its first line",
                       "a line indented less than its body ends it there",
                       "only the last branch is read",
