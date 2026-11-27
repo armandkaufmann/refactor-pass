@@ -467,7 +467,7 @@ GROWING = {
     "regex-class-then-text.js": (4000, lambda n: "x = " + "/[" * n + "]" + "a" * (2 * n) + "\n"),
     # Thousands of spaces in a C++ conversion operator's name, before which its ( was looked for from each; and around
     # the & that may come after PHP's function.
-    "operator-then-spaces.cpp": (17000, lambda n: "int f() {\n}\nbool operator x" + " " * n + "y\n"),
+    "operator-then-spaces.cpp": (17000, lambda n: "int f() {\n}\nbool operator x" + " " * n + "y f(;\n"),
     "function-amp-spaces.php": (60000, lambda n: "<?php\nfunction" + " " * n + "&" + " " * n + "\n"),
     # A line of Ruby of thousands of operators, each read for a def before it from the line's start; of thousands of
     # % and of ?, each read for the word before it in a copy of all the line before it.
