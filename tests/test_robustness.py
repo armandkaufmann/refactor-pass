@@ -490,6 +490,12 @@ GROWING = {
     "attribute-spaces": (130000, lambda n: {"src/lib.rs": "mod a;\n#" + " " * n, "src/a.rs": ""}, "modules"),
     "attribute-lines": (130000, lambda n: {"src/lib.rs": "mod a;\n#" + "\n" * n, "src/a.rs": ""}, "modules"),
     "attribute-comments": (5500, lambda n: {"src/lib.rs": "mod a;\n#" + "/**/ " * n, "src/a.rs": ""}, "modules"),
+    # A subject of thousands of fix-, a body of thousands of closes- or fixes., each read for an issue's org/repo#12 to
+    # the run's end; and a revert's body of thousands of lines of spaces, each read from every line's start before it.
+    "fix-dashes": (5500, lambda n: "fix-" * n, "message"),
+    "closes-dashes": (6300, lambda n: "a change\n\n" + "closes-" * n, "message"),
+    "fixes-dots": (6600, lambda n: "a change\n\n" + "fixes." * n, "message"),
+    "revert-spaces": (170000, lambda n: "Revert \"a\"\n\n" + " \n" * n + "x", "message"),
     # Thousands of PHP heredocs opened, none closed by any line, each looked for its closing line.
     "unclosed-heredocs.php": (1000, lambda n: "<?php\n" + "$x = <<<A\n" * n),
 }
