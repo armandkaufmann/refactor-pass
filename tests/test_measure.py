@@ -314,8 +314,8 @@ class TestsInsideFiles(unittest.TestCase):
         self.assertEqual(table(result.out)["src/lib.rs"], ("5", "-", "2", "3", "0", "0"))
         self.assertRegex(result.out, r"(?m)^Rust\s+2\s+3\s+5\s+5\s+5\s+3\s+3\s+3$")
         self.assertIn("Test files: none in the scope.\nTests inside files, set aside as test files are: 72 code lines "
-                      "and 3 functions compiled only for tests (Rust's #[cfg(test)] items), in src/lib.rs (72); a "
-                      "test module in a file of its own (mod tests;) is measured unless named as a test.\n", result.out)
+                      "and 3 functions compiled only for tests (Rust's #[cfg(test)] items), in src/lib.rs (72).\n",
+                      result.out)
 
     def test_show_keeps_the_files_line_numbers(self):
         result = support.run("measure.py", "-C", self.repo, "--show", "src/lib.rs")
@@ -348,7 +348,7 @@ class TestsInManyFiles(unittest.TestCase):
     def test_the_most_first_and_the_totals(self):
         result = support.run("measure.py", "-C", self.repo, "src", "--show", "other/o.rs", "--show", "tests/it.rs")
         self.assertIn("are: 49 code lines and 28 functions compiled only for tests (Rust's #[cfg(test)] items), in 7 "
-                      "files: src/f7.rs (10), src/f6.rs (9), src/f5.rs (8), src/f4.rs (7), src/f3.rs (6) and 2 more;",
+                      "files: src/f7.rs (10), src/f6.rs (9), src/f5.rs (8), src/f4.rs (7), src/f3.rs (6) and 2 more.",
                       result.out)
         self.assertIn("other/o.rs: Rust, 0 code lines, band -, 0 functions", result.out)
         self.assertIn("Set aside as tests: lines 1-4, 4 code lines and 1 function compiled only", result.out)
@@ -358,7 +358,7 @@ class TestsInManyFiles(unittest.TestCase):
     def test_one_function(self):
         result = support.run("measure.py", "-C", self.repo, "src/f1.rs")
         self.assertIn("are: 4 code lines and 1 function compiled only for tests (Rust's #[cfg(test)] items), in "
-                      "src/f1.rs (4);", result.out)
+                      "src/f1.rs (4).", result.out)
 
 
 class Unusual(unittest.TestCase):

@@ -25,8 +25,7 @@ of recent commits:
             differ from what the window's own commits added and removed
 
 Files are listed by commits times size, so the top ones are both busy and
-big. A small file changed often, like a config, and a big one rarely
-changed both come lower. Under them, the newest work they leave out: files
+big. Under them, the newest work they leave out: files
 past --top that 2 or more of the commits of the window's last 60 days (its
 newer half at most) changed, 10 at most; renames, commits of more than
 --max-files files, documentation, tests, CI, build and dependency files and
@@ -37,12 +36,16 @@ author dates, which a rebase or a cherry-pick keeps. This shows these:
 
 Test files are set aside, so a spec beside its source doesn't top the list:
 those named as the common frameworks name them (Board.spec.ts, test_x.py,
-x_test.go, XTest.php, XTests.cs...) and anything in a folder named test,
-tests, __tests__, spec or the like. --test adds a pattern, --not-test keeps
-a file that only looks like a test, and --keep-tests counts them all like
-the rest. The output names any set aside in doubt: a name such as
-ABTest.php in no folder of tests, or a spec folder in which no file is
-named like a test.
+XTest.php...), anything in a folder named test, tests, __tests__, spec or
+the like, and Rust compiled only for tests: a file brought in only by mod
+declarations that need test (#[cfg(test)] mod x;, or one in test code),
+unless Cargo builds it other than as a test, code include!s it, a symlink
+leads to it or a macro may declare modules in its package; one marked
+#![cfg(test)], whatever it is; or a crate Cargo builds only as a test.
+--test adds a pattern, --not-test counts a file set aside that isn't one,
+and --keep-tests counts them all. The output names any set aside in doubt: a
+name such as ABTest.php in no folder of tests, or a spec folder where no
+file is named like a test or is a Rust test.
 
 Then the files that keep changing in the same commits, with two measures:
 of the quieter file's commits, the share that changed both (how likely the
@@ -57,14 +60,14 @@ though no commit need have changed all of its files. Commits that
 changed more than --max-files files are left out of these, and the count
 says how many; in a repo that squash-merges, that can be most of them.
 
-Last, the tests that change together with several production files besides
-their own: the file of the same name less the test's marker or, when there
-is none, the controller, handler or command of that name, as a feature test
-names it (ShowDashboardTest.php and ShowDashboardController.php). Each is a
-lead, not a verdict: a test that reaches into those files' private members
-or internal paths is tied to their internals, while a broad test that
-follows features through them, or follows files that already change
-together, isn't.
+Last, the tests that change with several production files besides their own:
+the file of the same name less the test's marker or, when there is none, the
+controller, handler or command of that name, as a feature test names it
+(ShowDashboardTest.php and ShowDashboardController.php); for a Rust test
+module, only the files that declare it. Each is a lead, not a verdict: a
+test that reaches into those files' private members or internal paths is
+tied to their internals, while a broad test that follows features through
+them, or files that already change together, isn't.
 
 And the fixes: the commits whose messages say they fixed a defect in the
 project's own code (wrong behaviour, a crash, a security hole, a regression,
@@ -104,10 +107,9 @@ where they don't (references/smells.md, Counting fixes, has the account).
 
 --show FILE prints a file's commits in the window instead, newest first: hash,
 date, half, subject and how it reads as a fix; --messages adds what each
-changed and its message, without who signed it, cut at 12 lines, and any line
-it prints is cut at 200 characters. The file is one git tracks or the window
-changed (one deleted, or a name before a rename, meaning the file today); any
-other is an error, as a scope is.
+changed and its message, without who signed it, cut at 12 lines. The file is
+one git tracks or the window changed (one deleted, or a name before a
+rename, meaning the file today); any other is an error, as a scope is.
 
 History is followed across renames, so a file moved or renamed in the window
 keeps the changes it had under its old name. Merge commits are skipped, and so
@@ -151,8 +153,6 @@ matches no tracked file is an error. Reads git and the checklists; writes nothin
 
 Examples:
   heatmap.py src tests
-  heatmap.py -n 300 --exclude-commits 9e1d16e,b7fc306 src lib
-  heatmap.py --since v2.0.0 app
   heatmap.py --page .refactor-pass/2026-11-10.html src
   heatmap.py --show src/app/main.py
   heatmap.py --checklists
@@ -1425,7 +1425,7 @@ def main():
     parser.add_argument("--exclude-commits", default="", metavar="SHAS",
                         help="comma-separated commits to leave out, such as a mass reformat or a vendored "
                              "import, which would make every file they touched look hot: each a hash (7 or more "
-                             "of its characters, in any case), a tag or a branch. One that names no commit is an "
+                             "characters, any case), a tag or a branch. One that names no commit is an "
                              "error, and one outside the window is named")
     parser.add_argument("--ignore", action="append", default=[], metavar="GLOB",
                         help="more file globs to leave out (added to the defaults: %s)"
@@ -1435,10 +1435,10 @@ def main():
                              "(added to the defaults: %s, and folders named %s)"
                              % (", ".join(scoping.TEST_NAMES), ", ".join(scoping.TEST_FOLDERS)))
     parser.add_argument("--not-test", action="append", default=[], metavar="GLOB",
-                        help="globs naming files that only look like tests, matched as --test's are, such as "
-                             "'app/ABTest.php' or 'docs/spec/*': they count like the rest")
+                        help="globs naming files set aside as tests that aren't, matched as --test's are, such "
+                             "as 'app/ABTest.php' or 'docs/spec/*': they count like the rest")
     parser.add_argument("--keep-tests", action="store_true",
-                        help="count test files like the rest, in the table and the pairs")
+                        help="count test files like the rest")
     parser.add_argument("--top", type=scoping.count(0), default=25,
                         help="files to print, and to put on --page (default 25)")
     parser.add_argument("--pairs", type=scoping.count(0), default=15,
@@ -1590,8 +1590,16 @@ def main():
     newer = set(c[0] for c in commits[:(len(commits) + 1) // 2])
     # The fixes trace, of the commits counted: types are read as labels where most subjects carry one.
     typed = typed_share(commits)
+    rust_read = {}  # Rust's test modules (rust_test_modules), read at HEAD when a Rust file is first asked of.
+
+    def modules():
+        if "modules" not in rust_read:
+            rust_read["modules"] = scoping.rust_test_modules(
+                tracked, lambda wanted: scoping.texts_at(repo, "HEAD", wanted), scoping.tracked_links(repo, "HEAD"))
+        return rust_read["modules"]
+
     def is_test(path):
-        return scoping.is_test(path, args.test, args.not_test)
+        return scoping.is_test(path, args.test, args.not_test, modules() if path.endswith(".rs") else ())
 
     tops = package_tops(tracked)
     fixes = {} if args.no_fixes else fix_trace(commits, everything, typed >= LABELLED, is_test,
@@ -1756,7 +1764,8 @@ def main():
     by_path = dict((r["path"], r) for r in rows)
     rows = [r for r in rows if r["path"] in alive]
     in_scope = [p for p in tracked if scoping.in_scope(p, args.scope) and not scoping.ignored(p, patterns)]
-    doubts = scoping.doubtful_tests(tests, in_scope, args.test)
+    doubts = scoping.doubtful_tests(tests, in_scope, args.test,
+                                    modules() if any(p.endswith(".rs") for p in in_scope) else ())
     # Each production file's name, so a test's own file is found even where it isn't in the window.
     stems = set(scoping.flat(scoping.stem(p, False)) for p in in_scope if not is_test(p))
 
@@ -1855,7 +1864,9 @@ def main():
     # Tests that change with several production files besides their own.
     tied = defaultdict(list)
     for (test, path), count in with_tests.items():
-        if not scoping.owns(test, path, stems) and measures([test, path], count):
+        if not scoping.owns(test, path, stems, modules() if test.endswith(".rs") else None,
+                            scoping.is_test(test, args.test, args.not_test)) and \
+                measures([test, path], count):
             tied[test].append({"path": path, "shared": count})
     tied = [{"test": test, "files": sorted(found, key=lambda f: (-f["shared"], f["path"]))}
             for test, found in tied.items() if len(found) > 1]
@@ -1916,8 +1927,18 @@ def main():
     else:
         print("Growth is from nothing: the window starts at the first commit.")
     if not args.keep_tests:
-        print("Test files: %s." % ("%d changed in the window, set aside from the table and the pairs" % len(tests)
-                                   if tests else "none in the scope changed in the window"))
+        declared = [p for p in tests if p.endswith(".rs") and p in modules() and
+                    not scoping.is_test(p, args.test, args.not_test)]
+        print("Test files: %s%s." % ("%d changed in the window, set aside from the table and the pairs" % len(tests)
+                                     if tests else "none in the scope changed in the window",
+                                     scoping.rust_tests_said(declared, modules() if declared else {},
+                                                             "measure.py --list-tests lists every one in the scope, "
+                                                             "with why")))
+        differs = scoping.rust_read_differs(repo) if "modules" in rust_read else 0
+        if differs:
+            print("Rust's test modules are read here at HEAD, and the working tree, which measure.py reads, differs "
+                  "from it in %d .rs, Cargo.toml or symlink file%s, so the two may set aside different files."
+                  % (differs, "" if differs == 1 else "s"))
     if doubts:
         print("Set aside as tests, but maybe not: %s%s. If one isn't a test, --not-test GLOB counts it." % (
             "; ".join("%s (%s)" % d for d in doubts[:5]), "; and %d more" % (len(doubts) - 5)

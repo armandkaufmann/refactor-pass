@@ -101,15 +101,22 @@ tracks. In a glob, * matches across folders too, so 'app/*.py' takes
 app/sub/deep.py; and **/ matches any number of folders, none included, so
 'app/**/*.py' takes app/main.py too. Use the same scope as the heatmap.
 Test files are set aside as the heatmap sets them aside, by name or folder,
-so they stay out of the percentiles, and the output names any set aside in
-doubt; --test and --not-test correct it. So are the tests inside a file,
-Rust's items compiled only for tests (#[cfg(test)] on a mod tests {...},
-a fn, an impl...), which the heatmap counts in the file: the output says
-how many lines and in which files, and --show which lines. A test module
-in a file of its own (mod tests;) is measured unless named as a test.
---keep-tests measures them all.
+and Rust compiled only for tests: a file brought in only by mod declarations
+that need test (#[cfg(test)] mod tests;, or one in a test module or file),
+unless Cargo builds it other than as a test, code include!s it, a symlink
+leads to it or a macro may declare modules in its package; one marked
+#![cfg(test)], whatever it is; or a crate Cargo builds only as a test. So
+they stay out of the percentiles; the output names five of each kind of the
+Rust ones at most, --list-tests every test file with why, and any set aside
+in doubt; --test and --not-test correct it. So are the tests inside a file,
+Rust's items compiled only for tests (#[cfg(test)] on a mod tests {...}, a
+fn, an impl...), which the heatmap counts in the file: the output says how
+many lines and in which files, and --show which lines. --keep-tests measures
+them all.
 Any copy of this skill a project keeps in the repo is left out, unless a
-scope names its folder. Reads the working tree's tracked files only.
+scope names its folder. Reads the working tree's tracked files only, but for
+Rust's test modules, which read a file a sparse checkout leaves out from
+git's index.
 
 Examples:
   measure.py src tests
@@ -1442,34 +1449,13 @@ RUST_ITEM = re.compile(r"(?:pub(?:\s*\([^()]*\))?\s+)?(?:(?:const|async|unsafe|s
 RUST_MODULE_HEAD = re.compile(r"(?<![\w#])(?:pub(?:\s*\([^()]*\))?\s+)?mod\s+(?:r#)?\w+\s*$")
 RUST_OUTER = re.compile(r"#\s*\[")
 RUST_INNER = re.compile(r"#\s*!\s*\[")
-RUST_CFG = re.compile(r"#\s*(?:!\s*)?\[\s*cfg\s*\(")
+RUST_CFG, cfg_needs_test = scoping.RUST_CFG, scoping.cfg_needs_test  # Shared with the heatmap's test modules.
 ITEM_STOPS = re.compile(r"[(){}\[\];<>#]")
 SEMICOLON_AFTER = re.compile(r"\s*;")
 # What comes before a macro's brackets: an invocation's name and its ! (quote! {...}, vec![...]), or a macro_rules!
 # definition's name; and how far back on a bracket's line that, or a module's head before its body's brace, is read.
 RUST_MACRO_BEFORE = re.compile(r"(?:\w!|macro_rules\s*!\s*(?:r#)?\w+)\s*$")
 BEFORE_BRACKET = 200
-
-
-def cfg_needs_test(attribute):
-    """Whether a Rust attribute, as the skeleton has it, is a cfg that holds only where test is set: cfg(test),
-    or test among all()'s predicates; not under not(), nor under any() unless each of its predicates needs
-    test too."""
-    match = RUST_CFG.match(attribute)
-    words = re.findall(r'\w+|"s*"|[(),=]', attribute[match.end():]) if match else []
-    frames = [("all", [])]  # Per bracket open, its operator and whether each of its predicates needs test.
-    for k, word in enumerate(words):
-        if words[k + 1:k + 2] == ["("]:
-            frames.append((word, []))
-        elif word == ")":
-            operator, needs = frames.pop()
-            need = any(needs) if operator == "all" else operator == "any" and bool(needs) and all(needs)
-            if not frames:
-                return need
-            frames[-1][1].append(need)
-        elif re.match(r"\w", word) and words[k - 1:k] != ["="]:  # A name, or a key given a value (feature = "x").
-            frames[-1][1].append(word == "test" and words[k + 1:k + 2] != ["="])
-    return False
 
 
 def before_space(code, i, j):
@@ -1857,23 +1843,68 @@ def weighted(lengths, percents=PERCENTS):
 def not_there(repo, missing):
     """Why files git tracks aren't in the working tree, for the output: those a sparse checkout leaves out (git
     marks them skip-worktree), and those deleted and not committed; a few of each by name."""
-    sparse = set(entry[2:] for entry in (scoping.run(repo, "ls-files", "-t", "-z") or "").split("\0")
-                 if entry.startswith("S "))
-    left_out = [p for p in missing if p in sparse]
+    sparse = left_out(repo)
+    left_out_here = [p for p in missing if p in sparse]
     deleted = [p for p in missing if p not in sparse]
     parts = []
-    if left_out:
+    if left_out_here:
         parts.append("%d file%s a sparse checkout leaves out (%s)" % (
-            len(left_out), "" if len(left_out) == 1 else "s", a_few(left_out)))
+            len(left_out_here), "" if len(left_out_here) == 1 else "s", a_few(left_out_here)))
     if deleted:
         parts.append("%d deleted and not committed (%s)" % (len(deleted), a_few(deleted)))
     return ", and ".join(parts)
+
+
+def left_out(repo):
+    """The files git tracks that a sparse checkout leaves out of the working tree, which git marks skip-worktree."""
+    return set(entry[2:] for entry in (scoping.run(repo, "ls-files", "-t", "-z") or "").split("\0")
+               if entry.startswith("S "))
+
+
+def rust_texts(repo, paths):
+    """The texts Rust's test modules are read in: the working tree's, and the index's of a file a sparse checkout
+    leaves out of it, as rustc would read it there."""
+    texts = working_texts(repo, paths)
+    missing = [p for p in paths if p not in texts]
+    sparse = left_out(repo) if missing else ()
+    texts.update(scoping.texts_at(repo, "", [p for p in missing if p in sparse]))
+    return texts
+
+
+def working_texts(repo, paths):
+    """The texts of the files the working tree holds, of those asked for; one missing, unreadable or binary is
+    left out."""
+    texts = {}
+    for path in paths:
+        try:
+            with open(os.path.join(repo, path), "rb") as f:
+                data = f.read()
+        except OSError:
+            continue
+        if b"\0" not in data[:8000]:
+            texts[path] = data.decode("utf-8", errors="replace")
+    return texts
 
 
 def a_few(paths):
     """The first five paths, and how many more."""
     names = paths[:5] + (["%d more" % (len(paths) - 5)] if len(paths) > 5 else [])
     return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+
+
+def differs_said(repo, rust):
+    """Where Rust was read here, the line saying the working tree differs from HEAD, the heatmap's, in it, if so."""
+    differs = scoping.rust_read_differs(repo) if rust else 0
+    if differs:
+        print("Rust's test modules are read here from the working tree, which differs from HEAD in %d .rs, "
+              "Cargo.toml or symlink file%s; the heatmap reads HEAD, so the two may set aside different files."
+              % (differs, "" if differs == 1 else "s"))
+
+
+def doubts_said(doubts):
+    """The line naming the files set aside as tests that may not be (scoping.doubtful_tests), five at most."""
+    return "Set aside as tests, but maybe not: %s%s. If one isn't a test, --not-test GLOB measures it." % (
+        "; ".join("%s (%s)" % d for d in doubts[:5]), "; and %d more" % (len(doubts) - 5) if len(doubts) > 5 else "")
 
 
 def main():
@@ -1891,15 +1922,20 @@ def main():
                              "(added to the defaults: %s, and folders named %s)"
                              % (", ".join(scoping.TEST_NAMES), ", ".join(scoping.TEST_FOLDERS)))
     parser.add_argument("--not-test", action="append", default=[], metavar="GLOB",
-                        help="globs naming files that only look like tests, matched as --test's are, such as "
-                             "'app/ABTest.php' or 'docs/spec/*': they're measured like the rest")
+                        help="globs naming files set aside as tests that aren't, matched as --test's are, such "
+                             "as 'app/ABTest.php' or 'docs/spec/*': they're measured like the rest")
     parser.add_argument("--keep-tests", action="store_true",
                         help="measure test files, and the tests inside files, like the rest")
     parser.add_argument("--top", type=scoping.count(0), default=25, help="files to print (default 25)")
     parser.add_argument("--show", action="append", default=[], metavar="FILE",
                         help="list this file's functions, with the first and last line of each for git log -L, "
                              "instead of the table of files")
+    parser.add_argument("--list-tests", action="store_true",
+                        help="list the files in the scope set aside as tests, each with why, instead of the table")
     args = parser.parse_args()
+    if args.list_tests and args.show:
+        parser.error("--list-tests lists the test files instead of the table, and --show lists a file's functions: "
+                     "give one or the other")
 
     repo = scoping.toplevel(args.repo)
     tracked = scoping.tracked_files(repo)
@@ -1913,9 +1949,27 @@ def main():
             sys.exit(scoping.unknown_file(path, tracked, repo, "in its working tree"))
     in_scope = [p for p in tracked if scoping.in_scope(p, args.scope) and not scoping.ignored(p, patterns)]
     paths, own = scoping.leave_own_out(in_scope, tracked, args.scope)
-    tests = set() if args.keep_tests else set(p for p in paths if scoping.is_test(p, args.test, args.not_test))
-    doubts = scoping.doubtful_tests(tests, paths, args.test)
+    # Rust's test modules in files of their own, by the declarations that bring them in, which may be outside the
+    # scope: read in every tracked .rs file of the working tree, where the scope or --show has one.
+    rust = not args.keep_tests and any(p.endswith(".rs") for p in paths + shows)
+    modules = scoping.rust_test_modules(tracked, lambda wanted: rust_texts(repo, wanted),
+                                        scoping.tracked_links(repo)) if rust else {}
+    tests = set() if args.keep_tests else set(
+        p for p in paths if scoping.is_test(p, args.test, args.not_test, modules))
+    # Those set aside by their declarations alone, so the output can say which.
+    declared = sorted(p for p in tests if p in modules and not scoping.is_test(p, args.test, args.not_test))
+    doubts = scoping.doubtful_tests(tests, paths, args.test, modules)
     paths = [p for p in paths if p not in tests]
+    if args.list_tests:
+        print("%s, scope: %s" % (os.path.basename(repo), " ".join(args.scope) or "(everything)"))
+        print("Test files set aside: %s" % ("none, as --keep-tests measures them all." if args.keep_tests else
+                                            "%d, each with why:" % len(tests) if tests else "none in the scope."))
+        for path in sorted(tests):
+            print("  %s: %s" % (path, scoping.test_reason(path, args.test, args.not_test, modules)))
+        if doubts:
+            print(doubts_said(doubts))
+        differs_said(repo, rust)
+        return
 
     measured, failed, unreadable, missing = {}, [], [], []
     within = {}  # Per file, the tests inside it that are set aside (functions' set_aside), where it has any.
@@ -1933,7 +1987,7 @@ def main():
             continue
         text = data.decode("utf-8", errors="replace")
         # The tests inside a file are set aside as test files are; a test file, shown, is measured whole.
-        aside = None if args.keep_tests or scoping.is_test(path, args.test, args.not_test) else []
+        aside = None if args.keep_tests or scoping.is_test(path, args.test, args.not_test, modules) else []
         try:
             measured[path] = functions(path, text, aside)
         except Exception:
@@ -1982,23 +2036,23 @@ def main():
           "and %d for a function, is in its band. The 80th and 90th are big; the 70th, worth a closer look."
           % (REFERENCE["file"][0], REFERENCE["function"][0]))
     if not args.keep_tests:
-        print("Test files: %s." % ("%d set aside from the percentiles and the table" % len(tests)
-                                   if tests else "none in the scope"))
+        print("Test files: %s%s." % ("%d set aside from the percentiles and the table" % len(tests)
+                                     if tests else "none in the scope",
+                                     scoping.rust_tests_said(declared, modules,
+                                                             "--list-tests lists every one, with why")))
+        differs_said(repo, rust)
     # The files in the scope with tests inside them, those with the most lines of them first.
     inside = sorted(((sum(part[2] for part in parts), path) for path, parts in within.items() if path in in_paths),
                     key=lambda kv: (-kv[0], kv[1]))
     if inside:
         count = sum(part[3] for _, path in inside for part in within[path])
         print("Tests inside files, set aside as test files are: %d code lines and %d function%s compiled only for "
-              "tests (Rust's #[cfg(test)] items), in %s; a test module in a file of its own (mod tests;) is "
-              "measured unless named as a test." % (
+              "tests (Rust's #[cfg(test)] items), in %s." % (
                   sum(n for n, _ in inside), count, "" if count == 1 else "s",
                   "%s (%d)" % inside[0][::-1] if len(inside) == 1 else "%d files: %s" % (
                       len(inside), a_few(["%s (%d)" % (path, n) for n, path in inside]))))
     if doubts:
-        print("Set aside as tests, but maybe not: %s%s. If one isn't a test, --not-test GLOB measures it." % (
-            "; ".join("%s (%s)" % d for d in doubts[:5]), "; and %d more" % (len(doubts) - 5)
-            if len(doubts) > 5 else ""))
+        print(doubts_said(doubts))
     if own:
         print("This skill's own files, in %s, are left out; a scope naming that folder measures them."
               % " and ".join(f + "/" for f in own))
@@ -2059,6 +2113,9 @@ def main():
                     (language,) + tuple(cuts[language][1]) + (
                         "; they lean on one function, so bands are by the reference points" if leans else "",))
                 if language in cuts else "no %s file in the scope, so no percentiles to compare with" % language))
+            if path in modules and not scoping.is_test(path, args.test, args.not_test) and \
+                    scoping.is_test(path, args.test, args.not_test, modules):
+                print("A test file: %s; measured whole here." % scoping.rust_test_reason(path, modules))
             parts = within.get(path, [])
             if parts:  # What its lines leave out, where, so the lines listed stay the file's own.
                 spans = ["%d-%d" % part[:2] for part in parts]

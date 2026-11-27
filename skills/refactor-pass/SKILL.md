@@ -61,10 +61,18 @@ what it said, and go on without it, from `git log` and the code.
   or `app`, not docs or assets. Read the project's README, a directory
   listing and any agent instructions (`AGENTS.md`, `CLAUDE.md`) to decide.
   Test files, known by name (`Board.spec.ts`, `test_x.py`, `XTest.php`...)
-  or folder, stay out of the table and pairs, and are listed apart when
-  they change with several files. Add `--test GLOB` for other test names,
-  `--not-test GLOB` for a file that only looks like one (the heatmap names
-  any it doubts), and `--ignore GLOB` for generated files.
+  or folder, and Rust compiled only for tests (a file brought in only by mod
+  declarations that need test, as `#[cfg(test)] mod x;` or one in a test
+  module does, unless Cargo builds it other than as a test, code `include!`s
+  it, a symlink leads to it or a macro may declare modules in its package;
+  one marked `#![cfg(test)]`, whatever it is; a crate Cargo builds only as a
+  test), stay out of the table and pairs, and are listed apart when they
+  change with several files; `measure.py --list-tests` says which and why.
+  Where either script says the working tree differs from HEAD, the two may
+  set aside different Rust files: `measure.py --list-tests` gives the
+  working tree's. Add `--test GLOB` for other test names, `--not-test GLOB`
+  for a file set aside that isn't a test (the heatmap names any it doubts),
+  and `--ignore GLOB` for generated files.
 - **Window**: by default the last 200 commits. `--since` sets it instead
   when the user names a starting point ("since v2.0", "since we added
   billing", "the last three months"): a tag, branch or commit, or a date.

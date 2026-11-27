@@ -415,6 +415,12 @@ class TestsInsideFiles(unittest.TestCase):
                            ("mod t {\n    #[cfg(test)]\n    fn f() {\n    }}\n", (2, [], [[2, 3, 2, 1]]))):
             with self.subTest(text=text):
                 self.assertEqual(set_aside(text), want)
+        # A cfg on a parameter, or on a match arm with no block, is that part's: the function keeps its body.
+        for text in ("fn run(#[cfg(test)] hook: u8, n: u8) -> u8 {\n    n\n}\n",
+                     "fn pick(v: u8) -> u8 {\n    match v {\n        #[cfg(test)]\n        0 => 0,\n        _ => {\n"
+                     "            v\n        }\n    }\n}\n"):
+            with self.subTest(text=text):
+                self.assertEqual(set_aside(text)[2], [])
         # union is a keyword only before a union's name: a variable so named starts a statement.
         for text in ("fn join(mut union: Vec<u8>) -> Vec<u8> {\n    #[cfg(test)]\n    union.push(2);\n    union\n}\n",
                      "fn clear(mut union: u16) -> u16 {\n    #[cfg(test)]\n    union = 0;\n    union\n}\n"):

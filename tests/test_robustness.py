@@ -8,6 +8,7 @@ full size and every file of a folder, outside the default run.
 
 import errno
 import os
+import posixpath
 import random
 import re
 import signal
@@ -245,13 +246,14 @@ class Generics(unittest.TestCase):
 # still make a case seem to grow too fast. A case that seems to is timed once more, as a reading slower per
 # character on a large text can also make it seem to; and one whose readings take over TIMEOUT seconds on the clock
 # fails. A case can name the step of measure.py it times, given the text's lines, where the rest of the reading
-# would hide it. Unclosed definitions, nested ones each indented one more (sized by their lines' indents), and #if
-# blocks never closed, each branch of which opens a function's body. Rust's tests inside a file, each set aside, as
-# measure.py's run asks: thousands of test modules, a run of thousands of cfgs on one item or on none, of attributes
-# before a module's inner cfgs, of statics with no ;; thousands of test items on one line, or of inner cfgs,
-# #![cfg(test)], in one module, in none, in functions' bodies or each first in a module of its own; and a # and
-# thousands of spaces on a line that says cfg. A header's line of thousands of Objective-C messages, [[x y] z], none
-# a C23 attribute, or of thousands of [[ before one ;.
+# would hide it; or "modules", Rust's test modules of the files it makes, as {path: text}. Unclosed definitions,
+# nested ones each indented one more (sized by their lines' indents), and #if blocks never closed, each branch of
+# which opens a function's body. Rust's tests inside a file, each set aside, as measure.py's run asks: thousands of
+# test modules, a run of thousands of cfgs on one item or on none, of attributes before a module's inner cfgs, of
+# statics with no ;; thousands of test items on one line, or of inner cfgs, #![cfg(test)], in one module, in none,
+# in functions' bodies or each first in a module of its own; and a # and thousands of spaces on a line that says
+# cfg. A header's line of thousands of Objective-C messages, [[x y] z], none a C23 attribute, or of thousands of [[
+# before one ;.
 GROWING = {
     "unclosed.py": (1100, lambda n: "def f(\n" * n),
     "unclosed.gd": (1100, lambda n: "func a(\n" * n),
@@ -293,7 +295,146 @@ GROWING = {
     "open-aliases.rs": (480, lambda n: "#[cfg(test)]\ntype A<T,\n" * n),
     "quote-runs.cs": (300000, lambda n: "var s = " + '"' * n + "\n" + ('"' * (n - 1) + "x") * 4 + "\n" + '"' * n +
                       ";\n"),
+    # Rust's test modules in files of their own, of a repo's files, each sized so that the steps named in brackets,
+    # made to grow with the square, fail it on both Pythons: thousands of declarations in one file (the tracked files,
+    # or the readings found tests, kept in a list); crate roots no manifest names, each declaring one (the files a
+    # declaration could bring in kept in a list; the files no reading reaches searched from the start); a chain of
+    # modules each bringing in the next through #[path] (the readings done kept in a list; tests found by passes); a
+    # cycle of them (one read again, which never ends); modules nested thousands deep, a declaration in each (each
+    # scope's folder found again per declaration, or by its way up; the cfg from every block open); a file thousands
+    # of crates bring in through #[path], at the head of a chain of them (its declaring files carried down); a
+    # string never closed, of thousands of \" (read again from each); a cfg of thousands of strings (the attribute
+    # joined per string; its words sliced to the end); and declarations in blocks thousands deep (the declarations,
+    # the brackets open or the scopes copied per block).
+    "mod-lines": (2400, lambda n: rust_files(["src/lib.rs"], n), "modules"),
+    "crate-roots": (3000, lambda n: dict([("gen/t%d.rs" % k, "#[cfg(test)]\nmod m%d;\n" % k) for k in range(n)] +
+                                        [("gen/m%d.rs" % k, "") for k in range(n)]), "modules"),
+    "module-chain": (1600, lambda n: rust_chain(n, n + 1), "modules"),
+    "module-cycle": (1000, lambda n: rust_chain(n, 0), "modules"),
+    "nested-modules": (500, lambda n: {"src/lib.rs": "".join("mod m%d {\n#[cfg(test)]\nmod t%d;\n" % (k, k)
+                                                            for k in range(n)) + "}\n" * n}, "modules"),
+    "shared-chain": (2000, lambda n: dict([("c%d/src/lib.rs" % k, "#[cfg(test)]\n#[path = \"../../s/s0.rs\"]\nmod s;\n")
+                                          for k in range(n)] + [("s/s%d.rs" % k, "#[path = \"s%d.rs\"]\nmod next;\n"
+                                                                 % (k + 1)) for k in range(n)]), "modules"),
+    "unclosed-string": (200000, lambda n: {"src/lib.rs": 'mod a;\n"' + '\\"' * n}, "modules"),
+    "cfg-strings": (2500, lambda n: {"src/lib.rs": "#[cfg(any(" + 'feature = "x", ' * n + "))]\nmod a;\n",
+                                     "src/a.rs": ""}, "modules"),
+    "deep-blocks": (6000, lambda n: {"src/lib.rs": "{" * n + "mod a;" * n + "}" * n, "src/a.rs": ""}, "modules"),
+    # Comments after a word ending in mod, a line of slashes and a run of /**/, which a reading of a file's comments
+    # that could split them many ways split in every one (exponential, on a doc comment's URL); and a manifest's [
+    # before thousands of spaces.
+    "comment-runs": (20000, lambda n: {"src/lib.rs": ("// dynamodb\n" + "/" * 48 + "\nmodb " + "/**/" * 32 + "\n") * n,
+                                      "src/a.rs": ""}, "modules"),
+    "manifest-header": (2000000, lambda n: {"Cargo.toml": "[" + " " * n + "\n", "src/lib.rs": "mod a;\n",
+                                            "src/a.rs": ""}, "modules"),
+    # Where a file may declare a module: lines of globs, each a word holding mod, then /*; mod over and over, in no
+    # word; mod, a name and /*, again and again; and lines of // mod x /*. Each was read from every mod to the end.
+    "glob-lines": (150000, lambda n: {"src/lib.rs": '    "node_modules/*",\n' * n}, "modules"),
+    "mod-words": (300000, lambda n: {"src/lib.rs": "mod" * n}, "modules"),
+    "mod-comments": (40000, lambda n: {"src/lib.rs": "mod x /*" * n}, "modules"),
+    "mod-comment-names": (40000, lambda n: {"src/lib.rs": "mod /*" * n}, "modules"),
+    # Thousands of exported macros in files of their own, each mentioning the one before, the first declaring modules:
+    # a chain of forwarders; thousands of definitions nested, each mentioning it: each walked those it's in; and
+    # thousands of exported macros that declare modules, past what's looked for one by one, and as many packages
+    # that name none: each file was searched for every one's name.
+    "forwarder-chain": (1000, lambda n: dict(
+        [("src/lib.rs", EXPORTED % ("m0", "pub mod $x;") + "".join("m%d!(u%d);\n" % (k, k) for k in range(n)))] +
+        [("src/f%d.rs" % k, EXPORTED % ("m%d" % k, "m%d!($x);" % (k - 1))) for k in range(1, n)]), "modules"),
+    "nested-forwarders": (1500, lambda n: {"src/lib.rs": EXPORTED % ("m0", "mod $x;") + "#[macro_export]\n" +
+                                           "macro_rules! m { () => { m0!(a); " * n}, "modules"),
+    "module-macros": (1000, lambda n: dict(
+        [("src/lib.rs", "".join(EXPORTED % ("m%d" % k, "mod $x;") + "m%d!(q%d);\n" % (k, k) for k in range(n)))] +
+        [("z%d/Cargo.toml" % k, "[package]\n") for k in range(n)] +
+        [("z%d/src/lib.rs" % k, "fn f() { println!(\"{}\", 1); }\n") for k in range(n)]), "modules"),
+    # An include! of thousands of strings: they were joined again at each; and thousands of include!s, each of two
+    # strings joined, then one built on OUT_DIR: those to join were copied at each.
+    "include-strings": (3000, lambda n: {"src/lib.rs": "mod zz;\ninclude!(concat!(" + "\"s\", " * n + "));\n"},
+                        "modules"),
+    "out-dir-includes": (2000, lambda n: {"src/lib.rs": "mod zz;\n" + "".join(
+        "include!(concat!(\"gen\", \"%d.rs\"));\ninclude!(concat!(env!(\"OUT_DIR\"), \"/x%d.rs\"));\n" % (k, k)
+        for k in range(n))}, "modules"),
+    "mod-line-comments": (10000, lambda n: {"src/lib.rs": "// mod x /*\n" * n}, "modules"),
+    # Files thousands of folders deep, with no manifest, and a built include!: the path each file's name ends in,
+    # from each of its folders, was taken to look the include up by.
+    "deep-built-include": (4000, lambda n: dict([("/".join("d%d" % k for k in range(n)) + "/x%d.rs" % j, "")
+                                                for j in range(4)] +
+                                               [("/".join("d%d" % k for k in range(n)) + "/lib.rs",
+                                                 "include!(concat!(env!(\"X\"), \"/x0.rs\"));\n")]), "modules"),
+    # Thousands of built include!s in a file hundreds of folders deep, with no manifest: each looked for its file
+    # from every folder above it, and each folder's package was found again; and as many, each from a first folder
+    # of its own: each such folder was looked for in every folder above.
+    "deep-built-includes": (2000, lambda n: {"/".join(["d"] * (n // 10)) + "/lib.rs": "".join(
+        "include!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/src/f%d.rs\"));\n" % k for k in range(n))}, "modules"),
+    "deep-distinct-firsts": (1000, lambda n: {"/".join(["d"] * (n // 10)) + "/lib.rs": "".join(
+        "include!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/f%d/x.rs\"));\n" % k for k in range(n))}, "modules"),
+    # And as many, each of one first part that as many folders elsewhere hold: each looked for them again.
+    "repeated-firsts": (2000, lambda n: dict([("/".join(["a"] * (n // 10)) + "/lib.rs", "".join(
+        "include!(concat!(env!(\"S\"), \"/p/f%d.rs\"));\n" % k for k in range(n)))] +
+        [("x%d/p/g.rs" % k, "") for k in range(n)]), "modules"),
+    # Thousands of comments that say macro: each read again past those after it; thousands of module macros, each's
+    # #[path] of one file's name, each looking through all files so named; thousands of calls in as many packages of
+    # one whose call gives its #[path], each of one string, each taking again all files it names; and a chain of
+    # thousands of packages, each's crate bringing in the next's file, the first's macros declaring modules.
+    "macro-comments": (20000, lambda n: {"src/lib.rs": "/// the macro\n" * n + "mod x;\n"}, "modules"),
+    "path-strings": (1000, lambda n: dict([("src/lib.rs", "".join(
+        "macro_rules! m%d { () => { #[path = \"d%d/x.rs\"] mod x; } }\n" % (k, k) for k in range(n)))] +
+        [("src/d%d/x.rs" % k, "") for k in range(n)]), "modules"),
+    "path-calls": (1000, lambda n: dict(
+        [("a/Cargo.toml", "[package]\n"), ("a/src/lib.rs", "#[macro_export]\nmacro_rules! import { ($p:literal) => "
+          "{ #[path = $p] mod x; } }\n")] + [("p%d/Cargo.toml" % k, "[package]\n") for k in range(n)] +
+        [("p%d/src/lib.rs" % k, "a::import!(\"../../x.rs\");\n") for k in range(n)] +
+        [("q%d/x.rs" % k, "") for k in range(n)]), "modules"),
+    "joined-chain": (1000, lambda n: dict(
+        [("p%d/Cargo.toml" % k, "[package]\n") for k in range(n)] +
+        [("p%d/src/lib.rs" % k, "#[cfg(test)]\nmod t;\n" if k else
+          "macro_rules! m { () => { mod q; } }\n#[path = \"../../p1/src/x.rs\"]\nmod x;\n") for k in range(n)] +
+        [("p%d/src/x.rs" % k, "#[path = \"../../p%d/src/x.rs\"]\nmod x;\n" % (k + 1)) for k in range(1, n - 1)] +
+        [("p%d/src/t.rs" % k, "") for k in range(1, n)]), "modules"),
+    # Round 14's: macro words in comments nested thousands deep, each passed to the end of its own; in a line comment,
+    # each passed to the line's end; doc lines that name a macro, the rest of the text copied at each; links to a
+    # folder thousands deep, the prefixes of each one's way joined again; and a macro whose call gives its #[path],
+    # the strings of its file each ".", each taking all packages again.
+    "macro-nested-comments": (8000, lambda n: {"src/lib.rs": "mod a;\n/* " + "macro /* " * n + " */" * (n + 1) + "\n"},
+                              "modules"),
+    "macro-line-comment": (10000, lambda n: {"src/lib.rs": "mod a;\n// " + "macro // " * n + "\n"}, "modules"),
+    "macro-prose": (10000, lambda n: {"src/lib.rs": "mod a;\n" + "/// a macro that the docs name\n" * n}, "modules"),
+    "deep-links": (400, lambda n: ({"src/lib.rs": "mod a;\n", "src/a.rs": "", "src/" + "d/" * n + "f.rs": ""},
+                                   dict(("links/l%d" % k, "../src/" + "d/" * n) for k in range(1500))), "modules"),
+    "dot-paths": (1000, lambda n: dict([("p%d/Cargo.toml" % k, "[package]\n") for k in range(n)] +
+        [("p%d/src/lib.rs" % k, "#[cfg(test)]\nmod tests;\n") for k in range(n)] + [("p%d/src/tests.rs" % k, "")
+                                                                                   for k in range(n)] +
+        [("m.rs", "macro_rules! m { ($p:literal) => { #[path = $p] mod x; } }\nm!(\"x.rs\");\n"
+                  "const S: [&str; %d] = [%s];\n" % (n, ", ".join(['"."'] * n)))]), "modules"),
+    # Thousands of macro_rules! opened, each inside the last: each looked for the scope it's in below all the others.
+    "nested-macro-rules": (2000, lambda n: {"src/lib.rs": "mod zz;\n" + "macro_rules! m {" * n}, "modules"),
+    # Files no reading reaches, each read in a round of its own, as s_k reaches r_k as a mod.rs, whose module reading
+    # alone could bring in s_k+1: those ready were found again from every file left, each round.
+    "unreached-rounds": (1000, lambda n: dict([("src/lib.rs", "pub fn f() {}\n"), ("src/b0.rs", "pub mod s;\n"),
+                                               ("src/b0/s.rs", "#[path = \"r0.rs\"]\nmod x;\n")] +
+                                              [("src/b0/r%d.rs" % k, "mod s;\n") for k in range(n)] +
+                                              [("src/b0/r%d/s.rs" % k, "#[path = \"../r%d.rs\"]\nmod x;\n" % (k + 1))
+                                               for k in range(n)]), "modules"),
 }
+
+
+EXPORTED = "#[macro_export]\nmacro_rules! %s { ($x:ident) => { %s } }\n"
+
+
+def rust_files(declaring, n):
+    """Rust files, each of those declaring bringing in n test modules of its own."""
+    files = {}
+    for path in declaring:
+        files[path] = "".join("#[cfg(test)]\nmod m%d;\n" % k for k in range(n))
+        files.update((posixpath.join(posixpath.dirname(path), "m%d.rs" % k), "") for k in range(n))
+    return files
+
+
+def rust_chain(n, last):
+    """n Rust files, the first a test module, each bringing in the next through #[path]; the last the one named."""
+    files = dict(("src/k%d.rs" % k, "#[path = \"k%d.rs\"]\nmod next;\n" % (k + 1 if k < n - 1 else last))
+                 for k in range(n))
+    files["src/lib.rs"] = "#[cfg(test)]\n#[path = \"k0.rs\"]\nmod k0;\n"
+    return files
 SCALE, RATIO, LIMIT, TIMEOUT = 8, 24, 5, 60
 TIME = """
 import gc, sys, time
@@ -301,14 +442,24 @@ import measure
 from test_robustness import GROWING, LIMIT, SCALE
 name = sys.argv[1]
 n, make = GROWING[name][:2]
-step = getattr(measure, GROWING[name][2]) if len(GROWING[name]) > 2 else None
+step = GROWING[name][2] if len(GROWING[name]) > 2 else None
+if step == "modules":  # Of {path: text}, as if git tracked them all, or that and links.
+    import scoping
+    read = lambda made: scoping.rust_test_modules(
+        sorted(made[0] if isinstance(made, tuple) else made),
+        lambda paths: dict((p, (made[0] if isinstance(made, tuple) else made)[p]) for p in paths),
+        made[1] if isinstance(made, tuple) else None)
+elif step:
+    read = (lambda found: lambda text: found(text.split("\\n")))(getattr(measure, step))
+else:
+    read = lambda text: measure.functions(name, text, [])
 texts = make(n), make(SCALE * n)
 clock = time.perf_counter if sys.platform == "win32" else time.process_time
 def timed(text):
     gc.collect()
     gc.disable()
     start = clock()
-    step(text.split("\\n")) if step else measure.functions(name, text, [])
+    read(text)
     took = clock() - start
     gc.enable()
     if took > LIMIT:  # Too slow already.
