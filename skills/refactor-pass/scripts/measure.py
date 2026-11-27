@@ -982,7 +982,7 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
         code = []
         i = 0
         close = None  # In a block comment, where the next */ on the line is (-1 for none), until it's passed.
-        classes = {}  # Per [ that opens a regular expression's class on the line, where that expression ends.
+        ends = {}  # What regex_end has read of the line's regular expressions.
         closing = PHP_LEADING_NAME.match(line) if state and state[0] == "\n" else None
         if closing and closing.group(1) == state[1:]:  # A PHP heredoc's end, outside its holes: code after it.
             code.append("s" * (closing.end() - 1) + '"')
@@ -1086,8 +1086,8 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
                 holes = string_holes(language, quotes, state, line, i)
                 code.append(state)
                 i += len(state)
-            elif line[i] == "/" and quotes == "regex" and regex_end(line, i, classes) and regex_may_start(code, out):
-                end = regex_end(line, i, classes)  # A regular expression, which can hold quotes and brackets.
+            elif line[i] == "/" and quotes == "regex" and regex_end(line, i, ends) and regex_may_start(code, out):
+                end = regex_end(line, i, ends)  # A regular expression, which can hold quotes and brackets.
                 code.append("/" + "s" * (end - i - 2) + "/")
                 i = end
             elif line[i] == "'" and char_quote:
@@ -1327,19 +1327,27 @@ def ruby_skeleton(lines):
     return out, began_inside
 
 
-def regex_end(line, i, classes):
+def regex_end(line, i, ends):
     """Where the JavaScript regular expression that may open with the / at line[i] ends, past its closing /; or None
-    if none opens there. classes keeps, per [ found to open a class on the line, where the expression it's in ends,
-    and so for each [ inside that class, as a class read from it reads on from where the outer one does: so a line
-    of thousands of / and [ isn't read again to the end of a class from each /."""
-    j, opened = i + 1, []
+    if none opens there. ends keeps what's been read of the line, so that a line of thousands of / and [, or of \/,
+    isn't read again from each /: per [ found to open a class, where the expression it's in ends, and so for each [
+    inside that class, as a class read from it reads on from where the outer one does; and per / read past as an
+    escape's, \/, where one that opens with it would end, as it reads on from where the expression it's in does."""
+    if i in ends:
+        return ends[i]
+    j, opened, escaped = i + 1, [], []
     while True:
+        run = j
         j = REGEX_RUN.match(line, j).end()
+        k = line.find("/", run, j)
+        while k >= 0:
+            escaped.append((k, j))
+            k = line.find("/", k + 1, j)
         if line[j:j + 1] != "[":  # Its closing /, unless it holds nothing; or else the line's end, or a \ ending it.
             end = j + 1 if line[j:j + 1] == "/" and j > i + 1 else None
             break
-        if j in classes:
-            end = classes[j]
+        if j in ends:
+            end = ends[j]
             break
         found = REGEX_CLASS.match(line, j)
         stop = found.end() if found else len(line)
@@ -1352,7 +1360,10 @@ def regex_end(line, i, classes):
             break
         j = stop
     for k in opened:
-        classes[k] = end
+        ends[k] = end
+    for k, stop in escaped:  # One that opens just before its run's closing / holds nothing.
+        ends[k] = None if stop == k + 1 and line[stop:stop + 1] == "/" else end
+    ends[i] = end
     return end
 
 
