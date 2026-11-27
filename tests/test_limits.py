@@ -24,6 +24,8 @@ CASES = {
     "quoted key": ("a.js", "const routes = {\n  'GET /orders': function (req) {\n    return list(req);\n  },\n};\n"),
     "macro": ("a.c", "FOR_EACH(item, list) {\n    use(item);\n}\n\nint main(void) {\n    return 0;\n}\n"),
     "generic default": ("a.ts", "function h<T = {\n  onStart: () => void,\n}>(x: T) {\n  return x\n}\n"),
+    "inline html": ("a.php", "<?php\nfunction a() {\n    ?>\n    <p>Don't</p>\n    <?php\n    return 1;\n}\n"
+                             "function b() {\n    return 2;\n}\n"),
     "regex after bracket": ("a.js", "function f(s) {\n  if (ok(s)) /}/.test(s)\n  return 1\n}\n"
                                     "function g() {\n  return 2\n}\n"),
     "misindented": ("a.rb", "class App\n  def call(env)\n    raise 'bzzzt' if @called > 0\n  @called += 1\n"
@@ -79,6 +81,11 @@ class KnownLimits(unittest.TestCase):
         self.assertEqual(spans("generic default"), [["h", 1, 5, 5]])
 
     @unittest.expectedFailure
+    def test_a_quote_in_a_php_files_html(self):
+        # PHP's tokenizer reads <p>Don't</p> as HTML, between ?> and <?php; here, its ' opens a string.
+        self.assertEqual(spans("inline html"), [["a", 2, 7, 6], ["b", 8, 10, 3]])
+
+    @unittest.expectedFailure
     def test_a_regular_expression_after_a_closing_bracket(self):
         self.assertEqual(spans("regex after bracket"), [["f", 1, 4, 4], ["g", 5, 7, 3]])
 
@@ -129,6 +136,7 @@ class KnownLimits(unittest.TestCase):
                       "shapes can catch a macro, and miss a function a macro makes",
                       "in a type written after an = (as a generic's default)",
                       "a brace or a quote in a JavaScript regular expression", "follows a closing bracket or a name",
+                      "a PHP file's text outside <?php ... ?> is read as code",
                       "an arrow function that returns JSX with no brackets around it ends at its first line",
                       "a line indented less than its body ends it there",
                       "only the last branch is read",
