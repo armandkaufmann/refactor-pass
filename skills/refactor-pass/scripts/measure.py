@@ -130,7 +130,7 @@ import bisect
 import os
 import re
 import sys
-from collections import Counter, defaultdict
+from collections import Counter, defaultdict, deque
 
 # The scope, the files left out and the tests, read the same way as heatmap.py reads them. No
 # __pycache__ is written, so a run leaves the skill's folder as it was.
@@ -1220,7 +1220,7 @@ def ruby_skeleton(lines):
     __END__. Each literal's text becomes s, and its delimiters "."""
     out, began_inside = [], []
     stack = []  # What's open: ["literal", closer, opener, nesting, interpolates] or ["code", braces] in #{...}.
-    waiting, heredocs = [], []  # Heredocs opened on this line, and those whose text the next lines are.
+    waiting, heredocs = [], deque()  # Heredocs opened on this line, and those whose text the next lines are.
     comment = ended = False
     for line in lines:
         if ended or comment:
@@ -1234,7 +1234,7 @@ def ruby_skeleton(lines):
             began_inside.append(True)
             closer, indented = heredocs[0]
             if (line.strip() if indented else line.rstrip()) == closer:
-                heredocs.pop(0)
+                heredocs.popleft()
             continue
         if not stack and re.match(r"=begin\b", line):
             comment = True
