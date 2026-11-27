@@ -445,6 +445,11 @@ GROWING = {
     # the & that may come after PHP's function.
     "operator-then-spaces.cpp": (17000, lambda n: "int f() {\n}\nbool operator x" + " " * n + "y\n"),
     "function-amp-spaces.php": (60000, lambda n: "<?php\nfunction" + " " * n + "&" + " " * n + "\n"),
+    # A line of Ruby of thousands of operators, each read for a def before it from the line's start; of thousands of
+    # % and of ?, each read for the word before it in a copy of all the line before it.
+    "operators.rb": (9000, lambda n: "x = " + "a + " * n + "\n"),
+    "percents.rb": (4000, lambda n: "x = " + "a % " * n + "\n"),
+    "questions.rb": (6500, lambda n: "x = " + "?" * n + "\n"),
     # Thousands of PHP heredocs opened, none closed by any line, each looked for its closing line.
     "unclosed-heredocs.php": (1000, lambda n: "<?php\n" + "$x = <<<A\n" * n),
 }
