@@ -461,6 +461,11 @@ GROWING = {
     "heredoc-name.php": (150000, lambda n: "<?php\n$x = <<<" + "\u00e9" * n + ";\n"),
     "nowdoc-name.php": (30000, lambda n: "<?php\n$x = <<<'" + "\u4e2d" * n + " x\n"),
     "conflict-marker.php": (150000, lambda n: "<?php\n<<<<<<< " + "\u4e2d" * n + " (x)\n"),
+    # A JavaScript line of thousands of \/ after a division, each / read for a regular expression to the line's end:
+    # alone, in a template's hole and after a regular expression.
+    "escaped-slashes.js": (5000, lambda n: "x = y / " + "\\/" * n + "\n"),
+    "escaped-slashes-hole.js": (4000, lambda n: "x = `${y / " + "\\/" * n + "}`\n"),
+    "escaped-slashes-after.js": (5000, lambda n: "if (x) /a/ / " + "\\/" * n + "\n"),
     # Thousands of PHP heredocs opened, none closed by any line, each looked for its closing line.
     "unclosed-heredocs.php": (1000, lambda n: "<?php\n" + "$x = <<<A\n" * n),
 }
