@@ -900,10 +900,10 @@ QUOTES, HASHES = re.compile(r'"+'), re.compile(r"#+")
 # /), a quote, a raw string's start ($ @ #, or b c r R u U L at the start of a word) or a regular expression's;
 # and what a raw string can't open just after, a word's character, a $ or an @. In Rust, an @ before a raw string
 # is a macro's token or a binding's (@r"...", as inline snapshots write), so the string opens there. In PHP, not a <
-# either, which can open a heredoc.
+# or a ? either, which can open a heredoc, or open or close PHP's code.
 PLAIN = re.compile(r"(?:[^/#\"'`$@bcrRuUL]|(?<=[\w$@])[bcrRuUL])+")
 PLAIN_RUST = re.compile(r"(?:[^/#\"'`$@bcrRuUL]|(?<=[\w$])[bcrRuUL])+")
-PLAIN_PHP = re.compile(r"(?:[^/#\"'`$@bcrRuUL<]|(?<=[\w$@])[bcrRuUL])+")
+PLAIN_PHP = re.compile(r"(?:[^/#\"'`$@bcrRuUL<?]|(?<=[\w$@])[bcrRuUL])+")
 GLUED, GLUED_RUST = re.compile(r"[\w$@]"), re.compile(r"[\w$]")
 # PHP's heredoc and nowdoc: <<<ID, <<<"ID" or <<<'ID' at the end of a line, whose text is the lines after it up to
 # the first that starts with ID, after any spaces or tabs and before no character a name can hold, as PHP 7.3 and
@@ -912,6 +912,27 @@ GLUED, GLUED_RUST = re.compile(r"[\w$@]"), re.compile(r"[\w$]")
 PHP_NAME = r"(?![0-9])[0-9A-Za-z_\x80-\U0010ffff]+"  # One class: a character past ASCII can't match two ways.
 PHP_HEREDOC = re.compile(r"<<<[ \t]*(?:(%s)|'(%s)'|\"(%s)\")\r?$" % (PHP_NAME, PHP_NAME, PHP_NAME))
 PHP_LEADING_NAME = re.compile(r"[ \t]*([0-9A-Za-z_\x80-\U0010ffff]+)")
+# PHP's code opens with <?php, in any case, before a space or the line's end, or with <?=, and closes with ?>, which
+# ends a line comment too; around it is HTML, where no heredoc opens. A bare <? opens it only where PHP's
+# short_open_tag is on, which its recommended settings turn off: it isn't read as an opening, so a heredoc in code
+# after one is read as code, as before.
+PHP_OPEN = re.compile(r"<\?(?:=|php(?=\s|$))", re.I)
+
+
+def php_code_after(line, i, code):
+    """Whether PHP's code goes on at the end of a line whose line comment starts at line[i], code being whether it
+    did there: a ?> in the comment ends it and the code, and an opening tag after that starts the code again."""
+    while True:
+        if code:
+            at = line.find("?>", i)
+            if at < 0:
+                return True
+            i, code = at + 2, False
+        else:
+            found = PHP_OPEN.search(line, i)
+            if not found:
+                return False
+            i, code = found.end(), True
 
 
 def php_heredoc(lines, k, i, starts):
@@ -954,6 +975,7 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
         (PLAIN_PHP, GLUED) if language == "PHP" else (PLAIN, GLUED)
     heredoc = None  # In a PHP heredoc's text: the line that closes it, and the column after its name there.
     starts = {}  # PHP's lines by the name each starts with, for php_heredoc.
+    in_php = False  # In PHP's code, which a file starts outside of, not in HTML around it.
     for n, line in enumerate(lines):
         began_inside.append(state is not None or bool(templates) or raw is not None or heredoc is not None)
         code = []
@@ -1026,6 +1048,7 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
                 i += 2
             elif any(line.startswith(m, i) for m in markers if m != "/*") and not (
                     attributes and line.startswith("#[", i)):
+                in_php = php_code_after(line, i, in_php) if language == "PHP" else in_php
                 break
             elif opens_raw and not glued.match(line[i - 1:i]) and opens_raw[0].match(line, i):
                 opened = opens_raw[0].match(line, i)
@@ -1039,7 +1062,12 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
                 run = HASHES.match(line, i).end()
                 code.append(line[i:run])
                 i = run
-            elif language == "PHP" and line.startswith("<<<", i):  # A heredoc or a nowdoc, or else a << as PHP
+            elif language == "PHP" and (line.startswith("?>", i) or PHP_OPEN.match(line, i)):
+                opening = PHP_OPEN.match(line, i)  # PHP's code opens or closes, the tag's text kept as code.
+                in_php = bool(opening)
+                code.append(opening.group() if opening else "?>")
+                i = opening.end() if opening else i + 2
+            elif language == "PHP" and in_php and line.startswith("<<<", i):  # A heredoc or a nowdoc, or a << as PHP
                 heredoc = php_heredoc(lines, n, i, starts)  # reads one where none opens, so <<<<f opens none.
                 code.append('"' + "s" * (len(line) - i - 1) if heredoc else "<<")
                 i = len(line) if heredoc else i + 2
