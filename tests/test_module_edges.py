@@ -717,13 +717,17 @@ class WhatTheMutantsChanged(unittest.TestCase):
 
     def test_a_word_and_a_macro_body(self):
         # mod in a longer word declares nothing (tk10); a macro_rules! body's brackets open no block, so the mod in
-        # one, in a module whose #[path] names b's folder, is b's (rm39). Each rustc's.
+        # one, in a module whose #[path] names b's folder, is b's, and one in the lib, a package's in a folder below
+        # (rm39). Each rustc's.
         self.check([({"src/lib.rs": "#![allow(non_upper_case_globals)]\nconst modx: u8 = 1;\npub const A: [u8; 2] = "
                                     "[modx; 2];\n#[cfg(test)]\nmod x;\n", "src/x.rs": ""},
                      {"src/x.rs": ["src/lib.rs"]}),
                     ({"a/Cargo.toml": self.MAN, "a/src/lib.rs": "#[path = \"../../b/src\"]\nmod o {\n    macro_rules! "
                       "m { () => { mod y; } }\n    m!();\n}\n", "b/Cargo.toml": self.MAN, "b/src/y.rs": "",
-                      "b/src/lib.rs": "#[cfg(test)]\nmod y;\n"}, {})])
+                      "b/src/lib.rs": "#[cfg(test)]\nmod y;\n"}, {}),
+                    ({"Cargo.toml": self.MAN, "src/lib.rs": "macro_rules! m { () => { mod sub; } }\nm!();\n",
+                      "src/sub/Cargo.toml": self.MAN, "src/sub/mod.rs": "",
+                      "src/sub/src/lib.rs": "#[cfg(test)]\n#[path = \"../mod.rs\"]\nmod m;\n"}, {})])
 
 
 class WithNoManifest(unittest.TestCase):
