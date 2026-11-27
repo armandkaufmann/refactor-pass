@@ -246,7 +246,8 @@ class Generics(unittest.TestCase):
 # still make a case seem to grow too fast. A case that seems to is timed once more, as a reading slower per
 # character on a large text can also make it seem to; and one whose readings take over TIMEOUT seconds on the clock
 # fails. A case can name the step of measure.py it times, given the text's lines, where the rest of the reading
-# would hide it; or "modules", Rust's test modules of the files it makes, as {path: text}. Unclosed definitions,
+# would hide it; "modules", Rust's test modules of the files it makes, as {path: text}; or "message", the heatmap's
+# reading for fixes of a commit whose subject is the text's first line and whose body the rest. Unclosed definitions,
 # nested ones each indented one more (sized by their lines' indents), and #if blocks never closed, each branch of
 # which opens a function's body. Rust's tests inside a file, each set aside, as measure.py's run asks: thousands of
 # test modules, a run of thousands of cfgs on one item or on none, of attributes before a module's inner cfgs, of
@@ -421,6 +422,10 @@ GROWING = {
     # A run of thousands of # in Swift, which no quote follows, read for a raw string from each #; and after a name.
     "hashes.swift": (500000, lambda n: "func f() {\n    return\n}\nlet s = " + "#" * n + "\n"),
     "glued-hashes.swift": (500000, lambda n: "func f() {\n    return\n}\nlet s = x" + "#" * n + "\n"),
+    # A commit's subject that says fix, or a line of its body fixes, then thousands of spaces, read for the issue it
+    # may close by a split of the spaces around the : that may follow, in every way.
+    "fix-then-spaces": (70000, lambda n: "fix" + " " * n + "x", "message"),
+    "fixes-then-spaces": (150000, lambda n: "a change\n\nfixes" + " " * n + "x", "message"),
 }
 
 
@@ -456,6 +461,12 @@ if step == "modules":  # Of {path: text}, as if git tracked them all, or that an
         sorted(made[0] if isinstance(made, tuple) else made),
         lambda paths: dict((p, (made[0] if isinstance(made, tuple) else made)[p]) for p in paths),
         made[1] if isinstance(made, tuple) else None)
+elif step == "message":
+    import heatmap
+    def read(text):
+        subject, _, body = text.partition("\\n")
+        commits = [("0" * 40, 0, subject, [("a.py", None, 1, 0)], "A <a@example.com>", body, [])]
+        heatmap.fix_summary(commits, heatmap.fix_trace(commits, commits, False), 0.0)
 elif step:
     read = (lambda found: lambda text: found(text.split("\\n")))(getattr(measure, step))
 else:
