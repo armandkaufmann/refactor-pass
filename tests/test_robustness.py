@@ -436,6 +436,7 @@ GROWING = {
     "wrapped-then-spaces.js": (100000, lambda n: "const a = memo(function" + " " * n + ")\n"),
     "key-then-spaces.js": (36000, lambda n: "x" + " " * n + "y {\n  a: () => 1,\n}\n"),
     "type-word.ts": (40000, lambda n: "function f(): {\n  " + "a" * n + ";\n} {\n}\n"),
+    "type-dollars.ts": (8000, lambda n: "function f(): {\n  " + "$" * n + ";\n} {\n}\n"),
     # A line of thousands of / and [ in JavaScript, each / read for a regular expression to the end of the class its [
     # opens: none closed, all closed by one ] at the end, and then text after it.
     "regex-classes.js": (4000, lambda n: "x = " + "/[" * n + "\n"),
@@ -453,8 +454,8 @@ GROWING = {
     # Thousands of spaces in a JavaScript template's hole before a /, each a piece of the line's code, which was joined
     # again and stripped at each piece read back; thousands of = after a definition's name, before each of which the
     # line was copied for a ); and a commit's subject of thousands of tags, the rest of it copied after each.
-    "hole-spaces.js": (8000, lambda n: "x = `${" + " " * n + "/a/}`\n"),
-    "equals.kt": (17500, lambda n: "fun f" + " =" * n + "\n"),
+    "hole-spaces.js": (24000, lambda n: "x = `${" + " " * n + "/a/}`\n"),
+    "equals.kt": (52000, lambda n: "fun f" + " =" * n + "\n"),
     "tags": (16000, lambda n: "[a]" * n, "message"),
     # A PHP heredoc's name of thousands of letters past ASCII, bare or quoted, that doesn't end its line, and a git
     # conflict marker's: each letter could be read two ways, a time that doubled with each.

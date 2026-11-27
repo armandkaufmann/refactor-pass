@@ -138,6 +138,14 @@ class KnownLimits(unittest.TestCase):
             with self.subTest(limit=words):
                 self.assertIn(words, flat)
 
+    def test_the_help_says_how_strings_are_read(self):
+        measure = support.load("measure")
+        flat = " ".join(measure.__doc__.split())
+        strings = flat.split("strings are read as it writes them", 1)[1].split("A function runs to the end", 1)[0]
+        for words in ("Ruby's regular expressions, % literals and heredocs", "PHP's heredocs and nowdocs"):
+            with self.subTest(words=words):
+                self.assertIn(words, strings)
+
 
 if __name__ == "__main__":
     unittest.main()
