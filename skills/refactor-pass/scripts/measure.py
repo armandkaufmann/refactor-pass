@@ -338,16 +338,16 @@ def cpp_header(code):
 # (or its type parameters). What follows the parameters then says whether it's a function (js_function).
 # catch can be a method's name too, written with no space before its bracket, unlike the statement's; async
 # followed by a space starts an anonymous arrow function, such as a callback's.
-JS_FUNCTION = re.compile(r"^\s*(?:export\s+)?(?:default\s+)?(?:declare\s+)?(?:async\s+)?(function)(?![\w$])\s*\*?\s*"
-                         r"([\w$]+)")
+JS_FUNCTION = re.compile(r"^\s*(?:export\s+)?(?:default\s+)?(?:declare\s+)?(?:async\s+)?(function)(?![\w$])\s*"
+                         r"(?:\*\s*)?([\w$]+)")
 JS_METHOD = re.compile(r"^\s*(?:(?:public|private|protected|static|async|readonly|override|abstract|get|set|declare|"
-                       r"accessor)\s+)*\*?\s*(?!(?:if|for|while|switch|function|return|with|else|do|typeof|void|"
+                       r"accessor)\s+)*(?:\*\s*)?(?!(?:if|for|while|switch|function|return|with|else|do|typeof|void|"
                        r"await|yield|new|case|import|super|instanceof)(?![\w$])|catch(?![\w$(])|async\s)"
                        r"(#?[\w$]+|\[[^\]]*\])\??\s*(?=[(<])")
 # Directly in a class's body, where no statement can be, any word names a method, as an iterator's return() and
 # throw() do; and in an object literal when no space comes before its bracket, unlike a statement's.
 JS_ANY_METHOD = re.compile(r"^\s*(?:(?:public|private|protected|static|async|readonly|override|abstract|get|set|"
-                           r"declare|accessor)\s+)*\*?\s*([\w$]+)\??\s*(?=[(<])")
+                           r"declare|accessor)\s+)*(?:\*\s*)?([\w$]+)\??\s*(?=[(<])")
 # A name given a value: a variable or a class's property, typed or not; or an object literal's key.
 JS_ASSIGNED = re.compile(r"^\s*(?:export\s+)?(?:(?:const|let|var|public|private|protected|static|readonly|declare|"
                          r"override|accessor)\s+)*(#?[\w$]+)\s*(?:!\s*)?(?::(?:[^=]|=>)+)?=(?![=>])\s*")
@@ -364,7 +364,7 @@ JS_TYPED = re.compile(r"^\s*(?:export\s+)?(?:(?:const|let|var|public|private|pro
 # The keyword is a whole word: functional and functionName are names.
 JS_EXPRESSION = re.compile(r"(?:async\s+)?function(?![\w$])\s*\*?\s*[\w$]*\s*")
 JS_ONE_PARAMETER = re.compile(r"(?:async\s+)?[\w$]+\s*=>")
-JS_WRAPPED = re.compile(r"[\w.$]+\s*(?:<[^<>()]*>)?\(\s*(?=function(?![\w$])\s*\*?\s*[\w$]+\s*[(<])")
+JS_WRAPPED = re.compile(r"[\w.$]+\s*(?:<[^<>()]*>)?\(\s*(?=function(?![\w$])\s*(?:\*\s*)?[\w$]+\s*[(<])")
 # A type that goes on past the end of its line (read from its last twelve characters): one that ends the
 # line with an operator, an open bracket or an arrow, or that the next line goes on with a union, an
 # intersection, a chain or a conditional's ? or :.
@@ -373,7 +373,7 @@ TYPE_GOES_ON_NEXT = re.compile(r"\s*[|&.?:]")
 # A statement that declares a type, whose braces hold its members.
 JS_TYPE_STATEMENT = re.compile(r"(?:export\s+)?(?:declare\s+)?(?:type|interface)\b")
 # A line that is only an object literal's key and its :, as before the { of an object nested in another.
-JS_KEY_ONLY = re.compile(r"\s*(?:[\w$]+|\[[^\]]*\]|\"s*\"|'s*')\s*\??\s*:$")
+JS_KEY_ONLY = re.compile(r"\s*(?:[\w$]+|\[[^\]]*\]|\"s*\"|'s*')\s*(?:\?\s*)?:$")
 # How far a parameter list or a return type may run: a component's destructured props, with their types, can
 # take dozens of lines.
 SIGNATURE_LINES = 200
@@ -472,7 +472,7 @@ def js_tail(code, k, col, want):
             depth += counts[i][0] - counts[i][1]
             last = line.rstrip()
             previous = last[-1:] or previous
-            word = re.search(r"[\w$]*$", last).group(0)
+            word = re.search(r"(?<![\w$])[\w$]*$", last).group(0)
             continue
         gap = True
         for j in range(col if i == k else 0, len(line)):
