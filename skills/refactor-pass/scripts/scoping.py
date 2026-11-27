@@ -414,8 +414,9 @@ RUST_TOKEN = re.compile(r"""(//[^\n]*|/\*)|([bc]?r\#*")|([bc]?"(?:\\.|[^"\\])*(?
 COMMENTS = re.compile(r"/\*(?:[^*]|\*(?!/))*\*/|//[^\n]*")
 # What a file must hold to be read so, each searched for on its own, the word first, so that every search takes time
 # in step with the text: mod, not in a word, then a name and a ; or a comment, or a comment, or a $name (mod$m;
-# too); an inner cfg, and include!, past comments in their heads (but nested ones).
-HEAD_GAP = r"(?:\s|/\*.*?\*/|//[^\n]*\n)*"
+# too); an inner cfg, and include!, past comments in their heads (but nested ones), each to its first */, as GAP reads
+# them, so a run of them is read one way only.
+HEAD_GAP = GAP
 RUST_READ = (re.compile(r"mod(?<![\w$]mod)(?:\s+(?:r#)?\w+\s*[;/]|\s*/|\s*\$)"),
              re.compile(r"#%s!%s\[%scfg" % (HEAD_GAP, HEAD_GAP, HEAD_GAP), re.S),
              re.compile(r"include%s!" % HEAD_GAP, re.S))
