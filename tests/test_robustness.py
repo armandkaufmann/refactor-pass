@@ -472,6 +472,19 @@ GROWING = {
                        "}\n"),
     "object-ifs.js": (30000, lambda n: "x = " + "a" * (n // 2) + " + {\n" + "  if(x){}\n" * (n // 40) + "}\n"),
     "object-values.js": (35000, lambda n: "x = " + "a" * (n // 2) + " + {\n" + "  k: 1,\n" * (n // 40) + "}\n"),
+    # Lines of the C family that can be split in every way between a template's <...>, annotations, modifiers and a
+    # type's words: thousands of > after template <, of [a] or [], of > and ?, with no ( or before one.
+    "template-words.cpp": (70000, lambda n: "template<" + "a> " * n + "\n"),
+    "template-types.cpp": (24000, lambda n: "template <typename T> " + "A<B<C>> " * n + "\n"),
+    "template-marks.c": (100000, lambda n: "template <" + "?>" * n + "\n"),
+    "template-marks.java": (100000, lambda n: "template <" + "?>" * n + "\n"),
+    "attributes.cs": (50000, lambda n: "[a] " * n + "\n"),
+    "brackets.c": (100000, lambda n: "[]" * n + "\n"),
+    "brackets-after-quote.cs": (100000, lambda n: "'" + "[]" * n + "\n"),
+    "template-then-if.cpp": (550, lambda n: "template<" + "a> " * n + "if (\n"),
+    "attributes-then-call.cs": (480, lambda n: "[a] " * n + "= f(\n"),
+    "modifiers-then-call.java": (1800, lambda n: "public " * n + "= f(\n"),
+    "brackets-then-call.c": (7000, lambda n: "[]" * n + " = f(\n"),
     # Thousands of PHP heredocs opened, none closed by any line, each looked for its closing line.
     "unclosed-heredocs.php": (1000, lambda n: "<?php\n" + "$x = <<<A\n" * n),
 }
