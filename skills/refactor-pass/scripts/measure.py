@@ -565,11 +565,18 @@ def js_in_object(code, i, col=0, depth=0):
     opened after one of = ( , [ { ?, after return or export default, or after a ternary's : that starts
     its line. Not in an interface, a type, a class's body, a block or a parameter list, where a name typed
     as a function is a type. Braces opened after a key's : are an object literal's only if that key is in
-    one."""
+    one. Worked out once per brace, however many lines it holds, as its line can be long."""
     opener = js_opener(code, i, col)
     if opener is None or opener[2] != "{":
         return False
-    k, at, _ = opener
+    known = brackets_of(code).setdefault("objects", {})
+    if (opener, depth) not in known:
+        known[opener, depth] = js_object_brace(code, opener[0], opener[1], depth)
+    return known[opener, depth]
+
+
+def js_object_brace(code, k, at, depth):
+    """Whether the brace at code[k][at] opens an object literal, as js_in_object asks."""
     before = code[k][:at].rstrip() or next((line.rstrip() for line in reversed(code[max(0, k - 20):k])
                                            if line.strip()), "")
     if re.search(r"\b(?:interface|class|enum|namespace|declare)\b|^\s*(?:export\s+)?type\b", before):
@@ -716,12 +723,16 @@ def js_after_try(code, i):
 
 
 def js_in_class(code, i):
-    """Whether line i starts directly in a class's body: in braces that a class's declaration opens."""
+    """Whether line i starts directly in a class's body: in braces that a class's declaration opens. Worked out
+    once per brace, as for js_in_object."""
     opener = js_opener(code, i, 0)
     if opener is None or opener[2] != "{":
         return False
-    line = code[opener[0]]
-    return bool(re.search(r"\bclass\b", js_statement(code, opener[0], len(line) - len(line.lstrip()))))
+    known = brackets_of(code).setdefault("classes", {})
+    if opener not in known:
+        line = code[opener[0]]
+        known[opener] = bool(re.search(r"\bclass\b", js_statement(code, opener[0], len(line) - len(line.lstrip()))))
+    return known[opener]
 
 
 # Per language: its extensions, how a definition's line looks (the name is
