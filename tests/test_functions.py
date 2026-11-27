@@ -585,6 +585,29 @@ class Heredocs(unittest.TestCase):
                        "    return 1;\n}\n" % ("<" * run)
                 self.assertEqual([f[:3] for f in found("a.php", text)], [["a", 2, last], ["b", 8, 10]])
 
+    def test_only_in_phps_code(self):
+        # Not in HTML, where a line can end with <<<Name: before <?php, or after a ?> in code or ending a line
+        # comment, up to the next <?php or <?=, in any case. A ?> in a block comment or a string ends nothing, and
+        # <?phpx opens nothing, nor <? alone, as where PHP's short_open_tag is off.
+        b = "function b() {\n    return 2;\n}\n"
+        for text, a, after in (
+                ("function a() {\n    ?>\n    <p>Go back <<< Home\n    <?php\n    return 1;\n}\n\n" + b +
+                 "?>\nHome, sweet home.\n", 7, 9),
+                ("function a() { // note ?>\n<b>it<<<X\n<?php\n    return 1;\n}\n" + b + "?>\nX marks\n", 6, 7),
+                ("function a() { # note ?>\n<b>it<<<X\n<?php\n    return 1;\n}\n" + b + "?>\nX marks\n", 6, 7),
+                ("function a() {\n    ?>\n    <p><<<Home\n    <?= 1 ?>\n    <p><<<Home\n    <?PHP\n    $t = <<<Home\n"
+                 "{\nHome;\n    return 1;\n}\n" + b + "?>\nHome, sweet home.\n", 12, 13),
+                ("function a() { // x ?> y <?php $t = 1;\n    $u = <<<X\n{\nX;\n    return 1;\n}\n" + b, 7, 8),
+                ("function a() { /* ?> */\n    $u = <<<X\n{\nX;\n    return 1;\n}\n" + b, 7, 8),
+                ("function a() { $s = '?>';\n    $u = <<<X\n{\nX;\n    return 1;\n}\n" + b, 7, 8),
+                ("function a() {\n    ?>\n    <?phpx <<<X\n    <? <<<X\n    <?php\n    return 1;\n}\n" + b + "?>\nX\n",
+                 8, 9)):
+            with self.subTest(text=text):
+                self.assertEqual([f[:3] for f in found("a.php", "<?php\n" + text)], [["a", 2, a], ["b", after,
+                                                                                                    after + 2]])
+        text = "<p>Back <<<X\n<?php\nfunction a() {\n    $t = <<<X\n{\nX;\n    return 1;\n}\n" + b
+        self.assertEqual([f[:3] for f in found("a.php", text)], [["a", 3, 8], ["b", 9, 11]])
+
     def test_in_a_class_and_a_default(self):
         text = "<?php\nclass K {\n    public function a() {\n        $t = <<<EOT\nif (x) {\nEOT;\n" \
                "        return $t;\n    }\n    public function b() {\n        return 1;\n    }\n}\n"
