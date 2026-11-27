@@ -909,9 +909,9 @@ GLUED, GLUED_RUST = re.compile(r"[\w$@]"), re.compile(r"[\w$]")
 # the first that starts with ID, after any spaces or tabs and before no character a name can hold, as PHP 7.3 and
 # later end one: indented or not, and with code after it on its line (ID;, ID), ...). A name is letters, digits,
 # _ and any character past ASCII, not starting with a digit.
-PHP_NAME = r"(?![0-9])(?:\w|[^\x00-\x7f])+"
+PHP_NAME = r"(?![0-9])[0-9A-Za-z_\x80-\U0010ffff]+"  # One class: a character past ASCII can't match two ways.
 PHP_HEREDOC = re.compile(r"<<<[ \t]*(?:(%s)|'(%s)'|\"(%s)\")\r?$" % (PHP_NAME, PHP_NAME, PHP_NAME))
-PHP_LEADING_NAME = re.compile(r"[ \t]*((?:\w|[^\x00-\x7f])+)")
+PHP_LEADING_NAME = re.compile(r"[ \t]*([0-9A-Za-z_\x80-\U0010ffff]+)")
 
 
 def php_heredoc(lines, k, i, starts):
@@ -1039,10 +1039,10 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
                 run = HASHES.match(line, i).end()
                 code.append(line[i:run])
                 i = run
-            elif language == "PHP" and line.startswith("<<<", i):  # A heredoc or a nowdoc, or else a <.
-                heredoc = php_heredoc(lines, n, i, starts)
-                code.append('"' + "s" * (len(line) - i - 1) if heredoc else "<")
-                i = len(line) if heredoc else i + 1
+            elif language == "PHP" and line.startswith("<<<", i):  # A heredoc or a nowdoc, or else a << as PHP
+                heredoc = php_heredoc(lines, n, i, starts)  # reads one where none opens, so <<<<f opens none.
+                code.append('"' + "s" * (len(line) - i - 1) if heredoc else "<<")
+                i = len(line) if heredoc else i + 2
             elif line.startswith('"""', i) or line.startswith("'''", i):
                 state = QUOTES.match(line, i).group() if language == "C#" and line[i] == '"' else line[i:i + 3]
                 holes = string_holes(language, quotes, state, line, i)
