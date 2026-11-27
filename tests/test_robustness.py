@@ -414,6 +414,10 @@ GROWING = {
                                               [("src/b0/r%d.rs" % k, "mod s;\n") for k in range(n)] +
                                               [("src/b0/r%d/s.rs" % k, "#[path = \"../r%d.rs\"]\nmod x;\n" % (k + 1))
                                                for k in range(n)]), "modules"),
+    # A JavaScript name and thousands of spaces after it, which a name given a value, or a type, split every way
+    # around the ! or ? that may follow it.
+    "name-then-spaces.js": (75000, lambda n: "function f() {\n  return 1;\n}\nconst name" + " " * n +
+                            "\nconst b = 2;\n"),
 }
 
 
