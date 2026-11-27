@@ -807,8 +807,8 @@ GOES_ON_NEXT = re.compile(r"\s*(?:\|\||&&|\?\?|\?(?!\.)|:|\.(?!\.)|[+-](?![+-])|
 REGEX_AFTER = re.compile(r"(?<![\w$.])(?:return|case|typeof|void|delete|throw|new|await|yield|in|of|do|else)$")
 # A JavaScript regular expression: from / to /, past escapes and the / in a class such as [/] (regex_end). Its
 # characters up to a /, a class's [ or a \ the line ends with; and a class.
-REGEX_RUN = re.compile(r"(?:\\.|[^/\\\[])*")
-REGEX_CLASS = re.compile(r"\[(?:\\.|[^\]\\])*\]")
+REGEX_RUN = re.compile(r"(?:[^/\\\[]+|\\.)*")  # In runs, as PLAIN; and a class's, past its ], at once.
+REGEX_CLASS = re.compile(r"\[(?=((?:[^\]\\]+|\\.)*))\1\]")
 # A Python statement that is only a string, as a docstring is: documentation, so not a code line.
 DOCSTRING = re.compile(r"""\s*[rRuUbBfF]{0,2}("{3}|'{3}|"|')""")
 
@@ -917,21 +917,21 @@ QUOTES, HASHES = re.compile(r'"+'), re.compile(r"#+")
 # and what a raw string can't open just after, a word's character, a $ or an @. In Rust, an @ before a raw string
 # is a macro's token or a binding's (@r"...", as inline snapshots write), so the string opens there. In PHP, not a <
 # or a ? either, which can open a heredoc, or open or close PHP's code.
-PLAIN = re.compile(r"(?:[^/#\"'`$@bcrRuUL]|(?<=[\w$@])[bcrRuUL])+")
-PLAIN_RUST = re.compile(r"(?:[^/#\"'`$@bcrRuUL]|(?<=[\w$])[bcrRuUL])+")
-PLAIN_PHP = re.compile(r"(?:[^/#\"'`$@bcrRuUL<?]|(?<=[\w$@])[bcrRuUL])+")
+PLAIN = re.compile(r"(?:[^/#\"'`$@bcrRuUL]+|(?<=[\w$@])[bcrRuUL])+")  # Runs, so a long one isn't read a character at a
+PLAIN_RUST = re.compile(r"(?:[^/#\"'`$@bcrRuUL]+|(?<=[\w$])[bcrRuUL])+")  # time, each kept for going back to.
+PLAIN_PHP = re.compile(r"(?:[^/#\"'`$@bcrRuUL<?]+|(?<=[\w$@])[bcrRuUL])+")
 GLUED, GLUED_RUST = re.compile(r"[\w$@]"), re.compile(r"[\w$]")
 # PHP's heredoc and nowdoc: <<<ID, <<<"ID" or <<<'ID' at the end of a line, whose text is the lines after it up to
 # the first that starts with ID, after any spaces or tabs and before no character a name can hold, as PHP 7.3 and
 # later end one: indented or not, and with code after it on its line (ID;, ID), ...). A name is letters, digits,
 # _ and any character past ASCII, not starting with a digit. A heredoc's holes, {$...} and ${...}, are code, over
-# lines too, where a line that starts with ID ends nothing; a nowdoc ('ID') has none. Its text, up to a hole, past
-# its escapes (\{$x} is no hole).
+# lines too, where a line that starts with ID ends nothing; a nowdoc ('ID') has none. Its text runs to a hole, past
+# its escapes (\{$x} is no hole): what may stop it is searched for, not each character read in turn.
 PHP_NAME = r"(?![0-9])[0-9A-Za-z_\x80-\U0010ffff]+"  # One class: a character past ASCII can't match two ways.
 PHP_HEREDOC = re.compile(r"<<<[ \t]*(?:(%s)|'(%s)'|\"(%s)\")\r?$" % (PHP_NAME, PHP_NAME, PHP_NAME))
 PHP_LEADING_NAME = re.compile(r"[ \t]*([0-9A-Za-z_\x80-\U0010ffff]+)")
 PHP_HOLES = ("{$", "${")
-PHP_TEXT = re.compile(r"(?:\\.?|[^\\{$]|\{(?!\$)|\$(?!\{))+")
+PHP_TEXT_STOP = re.compile(r"\\|\{\$|\$\{")
 # PHP's code opens with <?php, in any case, before a space or the line's end, or with <?=, and closes with ?>, which
 # ends a line comment too; around it is HTML, where no heredoc opens. A bare <? opens it only where PHP's
 # short_open_tag is on, which its recommended settings turn off: it isn't read as an opening, so a heredoc in code
@@ -1050,8 +1050,10 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
                 else:
                     i, state = end + 2, None
             elif state and state[0] == "\n":  # A PHP heredoc's text, up to a hole; a nowdoc's, to the line's end.
-                text = PHP_TEXT.match(line, i) if holes else None
-                end = text.end() if text else len(line) if not holes else i + 1
+                stop = PHP_TEXT_STOP.search(line, i) if holes else None
+                while stop and stop.group() == "\\":
+                    stop = PHP_TEXT_STOP.search(line, stop.end() + 1)
+                end = max(i + 1, stop.start()) if stop else len(line)
                 code.append("s" * (end - i))
                 i = end
             elif state:
