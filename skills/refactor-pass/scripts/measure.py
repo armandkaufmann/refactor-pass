@@ -1090,11 +1090,14 @@ RUBY_HEREDOC = re.compile(r"<<([~-])?(?:([\"'`])([^\"'`\n]+)\2|([A-Za-z_]\w*))")
 RUBY_PERCENT = re.compile(r"%([qQwWiIrsx]?)([^\w\s])")
 RUBY_GLOBAL = re.compile(r"\$(?:[!@&`'+~=/\\,;.<>_*$?:\"]|-\w|\d+)")
 RUBY_OPERATOR = r"\[\]=?|<=>|===?|=~|!=|!~|<<|>>|<=|>=|\*\*|[+\-~!]@?|[*/%<>^&|`]"
-RUBY_DEF_NAME = re.compile(r"(?<![\w$@.:])def\s+(?:(?:self|@@?\w+|[A-Za-z_][\w:]*)\s*\.\s*)?$")
+# Where an operator's name can follow def: after def and its spaces, or after a receiver and its . (def self.[]).
+RUBY_DEF = re.compile(r"(?<![\w$@.:])def\s+")
+RUBY_RECEIVER = re.compile(r"(?:self|@@?\w+|[A-Za-z_][\w:]*)\s*\.\s*")
 RUBY_SYMBOL_OPERATOR = re.compile(r":(?:%s)" % RUBY_OPERATOR)
-# The words after which a value can start, so that a /, a % or a ? opens a literal.
+# The words after which a value can start, so that a /, a % or a ? opens a literal; none is over 6 letters.
 RUBY_VALUE_AFTER = re.compile(r"(?<![\w$@.:])(?:if|unless|elsif|while|until|and|or|not|when|in|return|then|do|"
                               r"else|case|yield|raise|next|break|puts|print|p|begin)$")
+RUBY_CHARACTER = re.compile(r"\?(?:\\.|[^\s\w])(?!\w)")
 RUBY_PAIRS = {"(": ")", "[": "]", "{": "}", "<": ">"}
 RUBY_NAME_CHARACTER = re.compile(r"\w|[^\x00-\x7f]")
 # Ruby's code that starts nothing: not a comment, an operator's name, a symbol, a quote, a global, a heredoc,
@@ -1102,18 +1105,39 @@ RUBY_NAME_CHARACTER = re.compile(r"\w|[^\x00-\x7f]")
 RUBY_PLAIN = re.compile(r"[^#\[\]<=>!~+\-*/%^&|`:\"'$?{}]+")
 
 
+def ruby_def_names(line):
+    """The columns of a line of Ruby where an operator's name can start, after def: worked out once per line, not
+    again from the line's start for each operator."""
+    names = set()
+    for found in RUBY_DEF.finditer(line):
+        receiver = RUBY_RECEIVER.match(line, found.end())
+        names.update([found.end()] + ([receiver.end()] if receiver else []))
+    return names
+
+
+def ruby_before(line, i):
+    """What comes before line[i] in Ruby, past spaces: the column after it (0 if nothing does), and whether it ends
+    with a word such as if or return (RUBY_VALUE_AFTER). Read in place, so a long line isn't copied, or searched
+    from its start, for each character asked about."""
+    end = i
+    while end > 0 and line[end - 1].isspace():
+        end -= 1
+    return end, bool(end and RUBY_VALUE_AFTER.search(line, max(0, end - 6), end))
+
+
 def ruby_value_may_start(line, i):
     """Whether a value can start at line[i] in Ruby, so that a /, % or ? there opens a literal rather than
     being an operator: at the start of the line, after an operator, an opening bracket, a comma or a word
     such as if or return; or after a method's name and a space, as in split /,/, when no space follows."""
-    before = line[:i].rstrip()
-    if not before:
+    end, word = ruby_before(line, i)
+    if not end:
         return True
-    ends_name = before[-1] in "?!" and bool(RUBY_NAME_CHARACTER.match(before[-2:-1]))  # empty?, save!
-    if (before[-1] in "(,=!&|?:;{[+-*/%<>~^" and not ends_name) or RUBY_VALUE_AFTER.search(before):
+    last = line[end - 1]
+    ends_name = last in "?!" and bool(RUBY_NAME_CHARACTER.match(line[max(0, end - 2):end - 1]))  # empty?, save!
+    if (last in "(,=!&|?:;{[+-*/%<>~^" and not ends_name) or word:
         return True
     after = line[i + 1:i + 2]
-    return (before[-1].isalnum() or before[-1] in "_?!") and i > 0 and line[i - 1].isspace() and \
+    return (last.isalnum() or last in "_?!") and i > 0 and line[i - 1].isspace() and \
         bool(after) and not after.isspace() and after != "="
 
 
@@ -1153,6 +1177,7 @@ def ruby_skeleton(lines):
         began_inside.append(bool(stack))
         code = []
         i, n = 0, len(line)
+        names = None  # Where an operator's name can follow def on the line (ruby_def_names), when first asked.
         while i < n:
             c = line[i]
             top = stack[-1] if stack else None
@@ -1191,8 +1216,9 @@ def ruby_skeleton(lines):
             if c == "#":
                 break  # A comment, to the end of the line.
             # What comes before c is read in place, never copied, so a long line stays quick.
-            if c in "[]<=>!~+-*/%^&|`" and RUBY_DEF_NAME.search(line, 0, i):
-                name = re.match(RUBY_OPERATOR, line[i:])
+            if c in "[]<=>!~+-*/%^&|`":
+                names = ruby_def_names(line) if names is None else names
+                name = re.match(RUBY_OPERATOR, line[i:]) if i in names else None
                 if name:
                     code.append(mark(name.group(0)))
                     i += name.end()
@@ -1237,13 +1263,12 @@ def ruby_skeleton(lines):
                 continue
             # A ? straight after a name's character ends the name, as in next? and nil?; else after a
             # bracket, an = or a word such as return, it can open a character, as ?a.
-            if c == "?" and not RUBY_NAME_CHARACTER.match(line[i - 1:i]) and (
-                    not line[:i].rstrip() or line[:i].rstrip()[-1] in "(,=[{" or
-                    RUBY_VALUE_AFTER.search(line[:i].rstrip())):
-                character = re.match(r"\?(?:\\.|[^\s\w])(?!\w)", line[i:])
+            if c == "?" and not RUBY_NAME_CHARACTER.match(line[i - 1:i]):
+                end, word = ruby_before(line, i)
+                character = RUBY_CHARACTER.match(line, i) if not end or line[end - 1] in "(,=[{" or word else None
                 if character:
                     code.append(mark("s" * len(character.group(0))))
-                    i += character.end()
+                    i = character.end()
                     continue
             if nested and c == "{":
                 top[1] += 1
