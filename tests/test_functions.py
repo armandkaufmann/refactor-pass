@@ -538,6 +538,14 @@ class Strings(unittest.TestCase):
         self.assertEqual(found("a.kt", 'val x = """"a" b"""\nfun f() {\n}\n'), [["f", 2, 3, 2]])
 
 
+    def test_ruby_operator_names_after_undef_and_alias(self):
+        # Each a method's name, as after def, not a literal's opening, as Ruby's parser has them: undef's, each of its
+        # list, and alias's two.
+        for line in ("undef `", "undef x, `", "undef `, :`", "alias ` run", "alias run `", "alias / div", "undef /"):
+            with self.subTest(line=line):
+                text = "class A\n  %s\nend\n\ndef g\n  \"a\"\nend\n" % line
+                self.assertEqual([f[:3] for f in found("a.rb", text)], [["g", 5, 7]])
+
     def test_rust_raw_strings_after_an_at(self):
         # An @ before a raw string is a macro's token or a binding's, as inline snapshots write: @r#"..."#, @r"...".
         for string in ('@r#"say("(")"#', '@r"C:\\"', '@br"(\\"'):
