@@ -81,6 +81,9 @@ It points at code to read; it doesn't judge it. What it gets wrong:
     or lose the function;
   - an arrow function that returns JSX with no brackets around it ends at
     its first line;
+  - a PHP file's text outside <?php ... ?> is read as code, so a quote or
+    a brace in its HTML can lose a function or put its end in the wrong
+    place (a heredoc opens in PHP's code only);
   - where a function ends by indentation, a line indented less than its
     body ends it there, as a misindented end does in Ruby;
   - between #if and #else, when each branch opens a function's body its
