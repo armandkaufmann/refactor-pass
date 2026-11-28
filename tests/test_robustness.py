@@ -262,10 +262,12 @@ LONG_LINES += [(name, before + ("a%s " % letter) * 330000 + after) for letter in
     ("a.c", "int x = ", ";\n"), ("a.rs", "fn f() { let x = ", "}\n"), ("a.php", "<?php\n$x = ", ";\n"))]
 # And Rust files read for their test modules: a string of a megabyte, and an attribute's # and [ a megabyte of spaces,
 # or of a comment's, apart; and in a file with no mod, read only if rust_heads finds an inner cfg, a # and its ! a
-# megabyte of spaces apart, and a megabyte of #!, each of which no comment follows, so it starts no head.
+# megabyte of spaces apart, and a megabyte of #!, each of which no comment follows, so it starts no head; nor does a
+# # or an include before a *, a #! before one, a #![ before one, or before a word that is not cfg.
 LONG_RUST = ['mod a;\nconst S: &str = "' + "a" * 1000000 + '";\n', "mod a;\n#" + " " * 1000000 + "[a]\nfn f() {}\n",
              "mod a;\n#/*" + " " * 1000000 + "*/[a]\nfn f() {}\n", "#" + " " * 1000000 + "![cfg(test)]\nfn f() {}\n",
-             "#!" * 512000 + "\n"]
+             "#!" * 512000 + "\n", "#*" * 500000, "#!*" * 333333, "#![*" * 250000, "#![cf" * 200000,
+             "include*" * 400000]
 
 
 class Memory(unittest.TestCase):
