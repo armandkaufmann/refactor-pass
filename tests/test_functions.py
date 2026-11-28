@@ -329,6 +329,46 @@ class TypeArguments(unittest.TestCase):
                 self.assertEqual(self.names(name, text), [want])
 
 
+class Caps(unittest.TestCase):
+    """How far a definition's line is read, where a line that isn't one can be split between its parts in every way:
+    in the C family, sixteen annotations, a template's first seventeen > and eight modifiers, one more of which loses
+    the definition (a limit, as v1.6.0 had none); and JavaScript's object literals nine deep, as v1.6.0 read them."""
+
+    def names(self, name, text):
+        return [f[0] for f in found(name, text)]
+
+    def test_annotations(self):
+        for count, names in ((16, ["f"]), (17, [])):
+            with self.subTest(count=count):
+                text = "class K {\n  %s void f() {\n    g();\n  }\n}\n" % " ".join("@A%d" % k for k in range(count))
+                self.assertEqual(self.names("K.java", text), names)
+
+    def test_a_templates_closings(self):
+        # Its default's type arguments' > before its own, the first sixteen read.
+        for count, names in ((16, ["f"]), (17, [])):
+            with self.subTest(count=count):
+                text = "template <class T> struct A {};\ntemplate <class T = %sint%s, class B = int> void f() {\n" \
+                       "  g();\n}\n" % ("A<" * count, ">" * count)
+                self.assertEqual(self.names("a.cpp", text), names)
+
+    def test_modifiers(self):
+        # A modifier a type's word can't be, extern "C", after seven or eight others.
+        for count, names in ((7, ["f"]), (8, [])):
+            with self.subTest(count=count):
+                self.assertEqual(self.names("a.cpp", "inline " * count + 'extern "C" int f() {\n  g();\n}\n'), names)
+
+    def test_object_keys(self):
+        # f0 to f8, each in an object one deeper than the last, f8's nine deep, and m in a tenth: past the cap, though
+        # node reads m as a function too.
+        text = "x = {\n"
+        for k, name in enumerate(["f%d" % k for k in range(9)] + ["m"]):
+            pad = "  " * (k + 1)
+            text += pad + name + ": function () {\n" + pad + "  return 1;\n" + pad + "},\n"
+            text += pad + "abcdefghi"[k] + ": {\n" if k < 9 else ""
+        text += "".join("  " * k + "},\n" for k in range(9, 0, -1)) + "};\n"
+        self.assertEqual(self.names("a.js", text), ["f%d" % k for k in range(9)])
+
+
 def set_aside(text):
     """measure.functions' answer for a Rust file with its tests set aside, as measure.py's run asks: its code
     lines, its functions as [name, first, last, code lines], and each part set aside as [first, last, code lines,
@@ -541,10 +581,29 @@ class Strings(unittest.TestCase):
     def test_ruby_operator_names_after_undef_and_alias(self):
         # Each a method's name, as after def, not a literal's opening, as Ruby's parser has them: undef's, each of its
         # list, and alias's two.
-        for line in ("undef `", "undef x, `", "undef `, :`", "alias ` run", "alias run `", "alias / div", "undef /"):
+        # And none after a word that ends in undef or alias, or a method of that name, nor more than alias's two; and
+        # each kind of name in a list, a symbol, one ending in ?, an operator's, one past ASCII, one before a space.
+        for line in ("undef `", "undef x, `", "undef `, :`", "alias ` run", "alias run `", "alias / div", "undef /",
+                     "my_alias `ls`", "aliases `ls`", "x.alias `ls`", "alias a b if `x`", "undef :x, `", "undef a?, `",
+                     "undef +, `", "undef \u00e9, `", "undef x , `", "undef a, b, `"):
             with self.subTest(line=line):
                 text = "class A\n  %s\nend\n\ndef g\n  \"a\"\nend\n" % line
                 self.assertEqual([f[:3] for f in found("a.rb", text)], [["g", 5, 7]])
+
+    def test_ruby_def_after_a_word_that_ends_in_it(self):
+        # mydef is a method's name, and what follows it its argument: no def opens there.
+        text = "class A\n  def f\n    mydef `ls`\n  end\n\n  def g\n    1\n  end\nend\n"
+        self.assertEqual([f[:3] for f in found("a.rb", text)], [["f", 2, 4], ["g", 6, 8]])
+
+    def test_ruby_heredocs_end_in_the_order_they_open(self):
+        text = "def f\n  x = [<<A, <<B]\n  a\nA\n  b }\nB\n  x\nend\n\ndef g\n  1\nend\n"
+        self.assertEqual([f[:3] for f in found("a.rb", text)], [["f", 1, 8], ["g", 10, 12]])
+
+    def test_a_regular_expression_on_each_line(self):
+        # Each line's read of its own, though the same column of the next holds a / too.
+        text = "function a() {\n  let r = /abcdefgh/;\n  let s = /x/, t = {};\n  return s;\n}\nfunction b() {\n" \
+               "  return 1;\n}\n"
+        self.assertEqual([f[:3] for f in found("a.js", text)], [["a", 1, 5], ["b", 6, 8]])
 
     def test_rust_raw_strings_after_an_at(self):
         # An @ before a raw string is a macro's token or a binding's, as inline snapshots write: @r#"..."#, @r"...".
@@ -565,7 +624,8 @@ HEREDOCS = ["$t = <<<EOT\nan open { brace\nEOT;", "$t = <<<'EOT'\nan open { brac
             "$t = f(<<<A\n{ a\nA, <<<'B'\n} ' b\n  B);", "$t = <<<A\n{ a\nA . <<<B\n( b\nB;",
             "$t = <<<EOT\nEOTS {\nXEOT {\nx EOT; {\nEOT_ {\nEOT1 {\nEOTé {\nEOT;",
             "$t = <<<EOT\n{$x} ${y} {$a['}']} {$o->f(\"{\")} {$a[\"{\"]} {\nEOT;", "$t = <<<EOT\nEOT;",
-            "$t = b<<<EOT\n{\nEOT;", "$t = <<<ÉTÉ\n{\nÉTÉ;",
+            "$t = b<<<EOT\n{\nEOT;", "$t = <<<ÉTÉ\n{\nÉTÉ;", "$t = <<<A\U0001d400\n}\nA\U0001d400;",
+            "$t = <<<A\x80\n}\nA\x80;", "$t = <<<EOT\n\x0cEOT\n}\nEOT;",
             # And <<< in a string or a comment, opening none; and one that no line closes, which PHP doesn't compile,
             # read as code, losing no function.
             "$t = \"<<<EOT\n{\";\nif ($t) {\n    EOT;\n}", "// <<<EOT\nif ($t) {\n    EOT;\n}",
@@ -609,7 +669,9 @@ class Heredocs(unittest.TestCase):
                 ("function a() { /* ?> */\n    $u = <<<X\n{\nX;\n    return 1;\n}\n" + b, 7, 8),
                 ("function a() { $s = '?>';\n    $u = <<<X\n{\nX;\n    return 1;\n}\n" + b, 7, 8),
                 ("function a() {\n    ?>\n    <?phpx <<<X\n    <? <<<X\n    <?php\n    return 1;\n}\n" + b + "?>\nX\n",
-                 8, 9)):
+                 8, 9),
+                ("function a() {\n    ?>\n<?= <<<X\n}\nX ?>\n<?php\n    return 1;\n}\n" + b, 9, 10),
+                ("function a() { // x ?> y <?php ?> z\n<p><<<X\n<?php\n    return 1;\n}\n" + b + "?>\nX\n", 6, 7)):
             with self.subTest(text=text):
                 self.assertEqual([f[:3] for f in found("a.php", "<?php\n" + text)], [["a", 2, a], ["b", after,
                                                                                                     after + 2]])
@@ -625,11 +687,20 @@ class Heredocs(unittest.TestCase):
                         ("$t = <<<EOT\n{$f('\nEOT\n')} {\nEOT;", 9),
                         ("$t = <<<EOT\n{$f(\"\nEOT\n\")} {\nEOT;", 9), ("$t = <<<EOT\n{$f( // }\nEOT\n)} {\nEOT;", 9),
                         ("$t = <<<EOT\n{$a[f(function () {\nEOT\n})]} {\nEOT;", 9),
-                        ("$t = <<<EOT\n\\{$x} {\\$x} \\${x} {\n  EOT;", 7),
+                        ("$t = <<<EOT\n\\{$x} {\\$x} \\${x} {\n  EOT;", 7), ("$t = <<<EOT\n\\{$x {\nEOT;", 7),
+                        ("$t = <<<EOT\nx ${f(\nEOT\n)} {\nEOT;", 9), ("$t = <<<EOT\nx {$f(\nEOT\n)} {\nEOT;", 9),
+                        ("$t = <<<EOT\n\\\\{$x[\nEOT\n]}\nEOT;", 9),
                         ("$t = <<<'EOT'\n{$f(\nEOT;\n    $u = ')}';", 8)):
             with self.subTest(text=text):
                 text = "<?php\nfunction a() {\n    %s\n    return $t;\n}\n%s" % (text, b)
                 self.assertEqual([f[:3] for f in found("a.php", text)], [["a", 2, a], ["b", a + 1, a + 3]])
+
+    def test_code_after_its_end(self):
+        # A ${ after the heredoc's end is code's, no hole: the function's if is nested once.
+        text = "<?php\nfunction a() {\n    $t = <<<EOT\n    x\n    EOT; ${\n        \"v\" . f(function () {\n" \
+               "            if (1) {\n                return 1;\n            }\n        })\n    } = 1;\n" \
+               "    return $t;\n}\n"
+        self.assertEqual(support.load("measure").functions("a.php", text)[1], [("a", 2, 13, 12, 1)])
 
     def test_in_a_class_and_a_default(self):
         text = "<?php\nclass K {\n    public function a() {\n        $t = <<<EOT\nif (x) {\nEOT;\n" \
