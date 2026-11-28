@@ -66,6 +66,24 @@ class RustHeads(unittest.TestCase):
                 self.assertEqual(rust_heads(text), any(search.search(text) for search in SEARCHES))
 
 
+# Texts, and whether each holds a mod declaration as RUST_READ looks for one: mod, not in a word, then a name and a ; or
+# a comment, or a comment, or a $name, past spaces of any kind; not mod in a word, before an inline module's brace, nor
+# without a name.
+DECLARES = [("mod a;", True), ("pub mod a;", True), ("mod r#a;", True), ("mod a // c\n;", True),
+            ("mod a /* c */;", True), ("mod/* c */a;", True), ("mod $m;", True), ("mod\ta\t;", True),
+            ("x::mod a;", True), ("mod $", True), ("amod a;", False), ("$mod a;", False), ("mod a {", False),
+            ("modx;", False), ("mod", False), ("mod a", False), ("mod  a;", True), ("god a;", False), ("mod ;", False)]
+
+
+class RustRead(unittest.TestCase):
+
+    def test_each_text(self):
+        read = support.load("scoping").RUST_READ
+        for text, declares in DECLARES:
+            with self.subTest(text=text):
+                self.assertEqual(bool(read.search(text)), declares)
+
+
 class WhatTheTokensMake(unittest.TestCase):
     """An attribute's head past comments of each kind, as a comment that holds a *, a run of them or a !; a first line
     that is a shebang, not an attribute; an attribute over CRLF lines; and a string that a \\ and a line's end go on."""
@@ -80,17 +98,34 @@ class WhatTheTokensMake(unittest.TestCase):
                 ("#/* ! * x */[cfg(test)]\nmod t;\n", {"src/t.rs": ["src/lib.rs"]}),
                 ("#// !\n[cfg(test)]\nmod t;\n", {"src/t.rs": ["src/lib.rs"]}),
                 ("#\r\n[cfg(test)]\r\nmod t;\r\n", {"src/t.rs": ["src/lib.rs"]}),
+                ("#[//\ncfg(test)]\nmod t;\n", {"src/t.rs": ["src/lib.rs"]}),
+                ('pub const S: &str = "\\\\";\n#[cfg(test)]\nmod t;\n', {"src/t.rs": ["src/lib.rs"]}),
+                ('pub const S: &str = "a\\";#[cfg(test)] mod t;";\n', {}),
+                ('pub const S: &str = "a\\n\\";#[cfg(test)] mod t;";\n', {}),
+                ("#//\n/**/[cfg(test)]\nmod t;\n", {"src/t.rs": ["src/lib.rs"]}),
                 ("#!/* a **/ x /* b */[cfg(test)]\npub mod t;\n", {}), ("#!//[cfg(test)] x\npub mod t;\n", {}),
                 ('pub const S: &str = "\\\n;#[cfg(test)] mod t;";\n', {}),
                 ('pub const S: &str = "\\t;#[cfg(test)] mod t;";\n', {})):
             with self.subTest(lib=lib):
                 self.assertEqual(modules(dict(t, **{"src/lib.rs": lib})), found)
 
+    def test_outer_attributes_whose_comments_hold_a_bang(self):
+        # The comments taken out of the head before its ! is looked for, each whole: one holding a /, a *, a run of
+        # them or a !, at its start or its end, and two in a row.
+        for head in ("#/* a / ! */", "#/* ! */", "#/** ! **/", "#/* * / ! */", "#/*!*/", "#/* a ** ! */",
+                     "#/* a ***/ /* ! */", "#/*/ ! */", "#// a!\n/* ! */", "#/* ! **b*/"):
+            with self.subTest(head=head):
+                files = {"src/lib.rs": head + "[cfg(test)]\nmod t;\n", "src/t.rs": "pub fn f() {}\n"}
+                self.assertEqual(modules(files), {"src/t.rs": ["src/lib.rs"]})
+
     def test_marked_files(self):
-        # Each found by rust_heads, then read: an inner cfg past spaces of each kind or comments.
+        # Each found by rust_heads, then read: an inner cfg past spaces of each kind or comments, a line comment and a
+        # block comment after it, two block comments, an empty line comment in the brackets, a run of * in a comment.
         for head in ("# ![cfg(test)]", "#\t![cfg(test)]", "#\x0c![cfg(test)]", "#\n![cfg(test)]", "#/**/![cfg(test)]",
                      "#//\n![cfg(test)]", "#/*/!*/![cfg(test)]", "#/* * */![cfg(test)]", "#![cfg (test)]",
-                     "#/* a */ // b\n![cfg(test)]", "#![allow(dead_code)]\n#![cfg(test)]"):
+                     "#/* a */ // b\n![cfg(test)]", "#![allow(dead_code)]\n#![cfg(test)]", "#//\n!/**/[cfg(test)]",
+                     "#/**/!/**/[cfg(test)]", "#![//\ncfg(test)]", "#/* a **/![cfg(test)]", "#/* ** a */![cfg(test)]",
+                     "#![/***/cfg(test)]", "#/*a*b*/![cfg(test)]"):
             with self.subTest(head=head):
                 files = {"src/lib.rs": "pub mod m;\n", "src/m.rs": head + "\npub fn f() {}\n"}
                 self.assertEqual(modules(files), {"src/m.rs": "marked"})

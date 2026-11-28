@@ -341,16 +341,48 @@ class Annotated(unittest.TestCase):
                 ("K.java", java % "@A()", ["f"]), ("K.java", java % '@SuppressWarnings("x")', ["f"]),
                 ("K.java", java % "@A(@B(1))", ["f"]), ("K.java", java % "@A(@B())", ["f"]),
                 ("K.java", java % "@A(b = @B(1), c = 2)", ["f"]),
-                ("K.java", java % "@A(b = @B(1), c = @C(2))", ["f"]),
+                ("K.java", java % "@A(b = @B(1), c = @C(2))", ["f"]), ("K.java", java % "@org.junit.Test", ["f"]),
+                ("K.java", java % "@A ", ["f"]), ("K.java", java % "@A(1) ", ["f"]),
+                ("K.java", java % '@A("x") @B("y")', ["f"]), ("K.java", java % '@A(b = "x", c = @B("y"))', ["f"]),
+                ("K.kt", 'class K {\n  @A("x") @B("y") fun f() {\n    g()\n  }\n}\n', ["f"]),
                 ("K.kt", 'class K {\n  @Suppress("x") fun f() {\n    g()\n  }\n}\n', ["f"]),
                 ("K.kt", "class K {\n  @A(B(1)) fun f() {\n    g()\n  }\n}\n", ["f"]),
+                ("K.kt", 'class K {\n  @Suppress("x")  fun f() {\n    g()\n  }\n}\n', ["f"]),
+                ("K.kt", "class K {\n  @A(1)fun f() {\n    g()\n  }\n}\n", ["f"]),
+                ("K.kt", 'class K {\n  @kotlin.Suppress("x") fun f() {\n    g()\n  }\n}\n', ["f"]),
+                ("K.kt", "class K {\n  inline  fun f() {\n    g()\n  }\n}\n", ["f"]),
                 ("K.cs", cs % "[A(1)]", ["F"]), ("K.cs", cs % "[A(typeof(int))]", ["F"]),
-                ("K.cs", cs % "[A(1), B]", ["F"]),
+                ("K.cs", cs % "[A(1), B]", ["F"]), ("K.cs", cs % '[Obsolete("x")]', ["F"]),
+                ("K.cs", cs % '[A("x"), B]', ["F"]), ("K.cs", cs % '[A(typeof(int), "x")] [B]', ["F"]),
+                ("K.cs", cs % '[A("x"), B("y")]', ["F"]), ("K.cs", cs % '[A, B("x")]', ["F"]),
+                ("K.cs", cs % '[A] [B("x")]', ["F"]),
+                ("K.cs", 'class K {\n  [Obsolete("x")]void F() {\n    G();\n  }\n}\n', ["F"]),
                 ("a.swift", "@available(macOS 10.15, *) func f() {\n  g()\n}\nfunc g() {}\n", ["f", "g"]),
+                ("a.swift", "@discardableResult func f() {\n  g()\n}\n", ["f"]),
+                ("a.swift", "@objc  func f() {\n  g()\n}\n", ["f"]),
+                ("a.swift", '@available(*, deprecated, message: "x") @objc func f() {\n  g()\n}\n', ["f"]),
                 ("a.swift", "struct S: Equatable {\n  @_implements(Equatable, ==(_:_:)) static func eq(_ a: S, "
                             "_ b: S) -> Bool {\n    return true\n  }\n}\n", ["eq"])):
             with self.subTest(text=text.split("\n")[1 if text.startswith(("class", "struct")) else 0]):
                 self.assertEqual([f[0] for f in found(name, text)], names)
+
+
+    def test_modifiers(self):
+        # Each of Kotlin's before fun, and each of JavaScript's before a name given a function.
+        for word in ("public private protected internal override open abstract final suspend inline operator infix "
+                     "tailrec external actual expect").split():
+            with self.subTest(kotlin=word):
+                text = "class K {\n  %s fun f() {\n    g()\n  }\n}\n" % word
+                self.assertEqual([f[0] for f in found("K.kt", text)], ["f"])
+        for word in "const let var public private protected static readonly declare override accessor".split():
+            with self.subTest(typescript=word):
+                text = "class K {\n  %s f = function () {\n    return 1;\n  };\n}\n" % word
+                self.assertEqual([f[0] for f in found("a.ts", text)], ["f"])
+        # And a name of a $, its = with no space after it, or two.
+        for line, name in (("const $f = function () {", "$f"), ("const f =function () {", "f"),
+                           ("const f =  function () {", "f")):
+            with self.subTest(line=line):
+                self.assertEqual([f[0] for f in found("a.js", line + "\n  return 1;\n};\n")], [name])
 
 
 class Caps(unittest.TestCase):
@@ -647,6 +679,10 @@ class Strings(unittest.TestCase):
             with self.subTest(name=name):
                 text = "def %s\n  1\nend\n\ndef g\n  2\nend\n" % name
                 self.assertEqual([f[:3] for f in found("a.rb", text)], [[name, 1, 3], ["g", 5, 7]])
+
+    def test_ruby_names_ending_in_a_mark(self):
+        text = "def save!\n  1\nend\n\ndef name=(v)\n  2\nend\n\ndef ok?\n  3\nend\n"
+        self.assertEqual([f[:3] for f in found("a.rb", text)], [["save!", 1, 3], ["name=", 5, 7], ["ok?", 9, 11]])
 
     def test_ruby_operator_methods(self):
         # Their names read where they end, so what follows is read as code: a default with a brace in a string, a
