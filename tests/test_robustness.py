@@ -527,6 +527,17 @@ GROWING = {
     # an include! read as one comment or many, in every way.
     "head-comments": (50000, lambda n: {"src/lib.rs": "#" + "/**/ " * n + "x\n"}, "modules"),
     "include-comments": (50000, lambda n: {"src/lib.rs": "include" + "/**/ " * n + "x\n"}, "modules"),
+    # And thousands of comment lines, each holding a # or an include, which the search read on from each to the end of
+    # the comments; as doc comments' hidden lines do, /// #.
+    "comment-hashes": (10000, lambda n: {"src/lib.rs": "// #\n" * n}, "modules"),
+    "comment-includes": (10000, lambda n: {"src/lib.rs": "// include\n" * n}, "modules"),
+    "hidden-doc-lines": (6000, lambda n: {"src/lib.rs": "/// Example:\n" + "/// #\n/// let x = 1;\n" * n}, "modules"),
+    # And thousands of # or include, each before a /* never closed or closed at the end, or a # before a // on a line,
+    # each read on to the end.
+    "head-openers": (20000, lambda n: {"src/lib.rs": "#/*" * n}, "modules"),
+    "closed-head-openers": (20000, lambda n: {"src/lib.rs": "#/*" * n + "*/"}, "modules"),
+    "include-openers": (15000, lambda n: {"src/lib.rs": "include/*" * n}, "modules"),
+    "head-line-comments": (20000, lambda n: {"src/lib.rs": "# //" * n + "\n"}, "modules"),
     # A C# method's where clause of thousands of spaces before a ;, each read again for the => that may follow; and a
     # Swift raw string opened by thousands of #, whose escape was made again at each character in it.
     "where-spaces.cs": (120000, lambda n: "class A {\n  int F() where" + " " * n + "x;\n}\n"),
