@@ -1123,7 +1123,7 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
                 code.append("/" + "s" * (end - i - 2) + "/")
                 i = end
             elif line[i] == "'" and char_quote:
-                literal = CHARACTER.match(line[i:])  # A character, or else a Rust lifetime.
+                literal = CHARACTER.match(line, i)  # A character, or else a Rust lifetime.
                 code.append("s" if literal else " ")
                 i += len(literal.group(0)) if literal else 1
             elif line[i] in "\"'`":
