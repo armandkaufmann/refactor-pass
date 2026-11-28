@@ -241,12 +241,18 @@ class Generics(unittest.TestCase):
 # step of for going back to, a hundred bytes or more per character: plain characters, a regular expression's
 # characters and its class's, and a heredoc's text of a run of { that open no hole. And plain words, in C, Rust and
 # PHP's code, whose b, a letter that may start a string's prefix, ended each run of them. And a JavaScript key given a
-# megabyte of values, all of which after its : were read for a type before an =.
+# megabyte of values, all of which after its : were read for a type before an =; an annotation's arguments of a
+# megabyte, in Kotlin, Swift, Java and C#; and a Ruby method's name of a megabyte.
 LONG_LINES = [("a.c", "template <" + "?>" * 500000 + "\n"), ("a.js", "x = (/" + "a" * 1000000 + "/)\n"),
               ("a.js", "x = (/[" + "a" * 1000000 + "]/)\n"), ("a.php", "<?php\n$t = <<<A\n" + "a{" * 500000 + "\nA;\n"),
               ("a.c", "int x = " + "ab " * 330000 + ";\n"), ("a.rs", "fn f() { let x = " + "ab " * 330000 + "}\n"),
               ("a.php", "<?php\n$x = " + "ab " * 330000 + ";\n"),
-              ("a.js", "x = {\n  data: [" + "1," * 500000 + "]\n}\n")]
+              ("a.js", "x = {\n  data: [" + "1," * 500000 + "]\n}\n"),
+              ("a.kt", "@A(" + "a" * 1000000 + ")\nfun f() {\n    g()\n}\n"),
+              ("a.swift", "@A(" + "a" * 1000000 + ")\nfunc f() {\n    g()\n}\n"),
+              ("a.java", "class C {\n  @A(" + "a" * 1000000 + ")\n  void f() {\n    g();\n  }\n}\n"),
+              ("a.cs", "class C {\n  [A(" + "a" * 1000000 + ")]\n  void F() {\n    G();\n  }\n}\n"),
+              ("a.rb", "def " + "\u00e9" * 1000000 + "\n  1\nend\n")]
 # And Rust files read for their test modules: a string of a megabyte, and an attribute's # and [ a megabyte of spaces,
 # or of a comment's, apart.
 LONG_RUST = ['mod a;\nconst S: &str = "' + "a" * 1000000 + '";\n', "mod a;\n#" + " " * 1000000 + "[a]\nfn f() {}\n",
