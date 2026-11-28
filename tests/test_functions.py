@@ -378,9 +378,11 @@ class Annotated(unittest.TestCase):
             with self.subTest(typescript=word):
                 text = "class K {\n  %s f = function () {\n    return 1;\n  };\n}\n" % word
                 self.assertEqual([f[0] for f in found("a.ts", text)], ["f"])
-        # And a name of a $, its = with no space after it, or two.
+        # And a name of a $, its = with no space after it, or two; a modifier and two spaces, and names that start
+        # with a modifier's word.
         for line, name in (("const $f = function () {", "$f"), ("const f =function () {", "f"),
-                           ("const f =  function () {", "f")):
+                           ("const f =  function () {", "f"), ("const  f = function () {", "f"),
+                           ("constant = function () {", "constant"), ("letter = function () {", "letter")):
             with self.subTest(line=line):
                 self.assertEqual([f[0] for f in found("a.js", line + "\n  return 1;\n};\n")], [name])
 
