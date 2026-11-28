@@ -83,9 +83,10 @@ It points at code to read; it doesn't judge it. What it gets wrong:
     its first line;
   - a PHP file's text outside <?php ... ?> is read as code, so a quote, a
     brace or a comment's start (#, //, /*) in its HTML can lose a function
-    or put its end in the wrong place; and a quote or a comment's start
-    there hides the code after a <?php that follows it, so that a heredoc
-    it opens is read as code (one opens in PHP's code only);
+    or put its end in the wrong place; a quote or a /* there hides a <?php
+    after it, on its line or a later one, and a # or a // the code after a
+    <?php on its own line, so that a heredoc there is read as code (one
+    opens in PHP's code only);
   - where a function ends by indentation, a line indented less than its
     body ends it there, as a misindented end does in Ruby;
   - between #if and #else, when each branch opens a function's body its
