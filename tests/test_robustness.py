@@ -540,6 +540,10 @@ GROWING = {
     # time per character that made the larger take over LIMIT seconds.
     "question-marks.php": (250000, lambda n: "<?php\n$q = f(" + "?," * n + ");\n$x = 1 " + "?" * n + ";\n"),
     "less-thans.php": (1000000, lambda n: "<" * n + "\n<?php\n$x = 1 " + "<" * n + ";\n"),
+    # A line of tens of thousands of ', a C table of characters and C++'s digit separators, each read for a character
+    # in a copy of the rest of the line.
+    "characters.c": (50000, lambda n: "static const char t[] = {" + "'a'," * n + "};\n"),
+    "digit-separators.cpp": (60000, lambda n: "int x = " + "1'0" * n + ";\n"),
 }
 
 
