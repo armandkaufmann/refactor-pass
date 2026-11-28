@@ -1165,6 +1165,7 @@ RUBY_OPERATOR = r"\[\]=?|<=>|===?|=~|!=|!~|<<|>>|<=|>=|\*\*|[+\-~!]@?|[*/%<>^&|`
 RUBY_DEF = re.compile(r"(?<![\w$@.:])def\s+")
 RUBY_RECEIVER = re.compile(r"(?:self|@@?\w+|[A-Za-z_][\w:]*)\s*\.\s*")
 RUBY_UNDEF = re.compile(r"(?<![\w$@.:])(undef|alias)\s+")
+RUBY_OPERATOR_NAME = re.compile(RUBY_OPERATOR)
 RUBY_NAME = re.compile(r":?(?:%s|[A-Za-z_\x80-\U0010ffff][0-9A-Za-z_\x80-\U0010ffff]*[?!=]?)" % RUBY_OPERATOR)
 RUBY_NAMES_GO_ON = (re.compile(r"\s*,\s*"), re.compile(r"\s+"))  # Between undef's names, and alias's.
 RUBY_SYMBOL_OPERATOR = re.compile(r":(?:%s)" % RUBY_OPERATOR)
@@ -1302,10 +1303,10 @@ def ruby_skeleton(lines):
             # What comes before c is read in place, never copied, so a long line stays quick.
             if c in "[]<=>!~+-*/%^&|`":
                 names = ruby_def_names(line) if names is None else names
-                name = re.match(RUBY_OPERATOR, line[i:]) if i in names else None
+                name = RUBY_OPERATOR_NAME.match(line, i) if i in names else None
                 if name:
                     code.append(mark(name.group(0)))
-                    i += name.end()
+                    i = name.end()
                     continue
             symbol = RUBY_SYMBOL_OPERATOR.match(line, i) if c == ":" and line[i - 1:i] != ":" else None
             if symbol and not line.startswith("::", i):
