@@ -915,13 +915,13 @@ QUOTES, HASHES = re.compile(r'"+'), re.compile(r"#+")
 # What may start something outside a string or a comment, in any language: a comment's start (# or /), a quote, a
 # raw string's start ($ @ #, or b c r R u U L at the start of a word) or a regular expression's; a letter after a
 # word's character, a $ or an @ starts none. In Rust, an @ before a raw string is a macro's token or a binding's
-# (@r"...", as inline snapshots write), so the string opens there. In PHP, a < or a ? too, which can open a heredoc,
-# or open or close PHP's code. What comes before it starts nothing and is copied at once. It's searched for, rather
-# than what's before it matched by a repeat, of which Python's re keeps a step for going back to at each choice, a
-# hundred bytes or more: a line of words made one at each b after a letter.
+# (@r"...", as inline snapshots write), so the string opens there. In PHP, a ? before a >, which closes PHP's code,
+# and a < before << or ?, which can open a heredoc or PHP's code, too. What comes before it starts nothing and is
+# copied at once. It's searched for, rather than what's before it matched by a repeat, of which Python's re keeps a
+# step for going back to at each choice, a hundred bytes or more: a line of words made one at each b after a letter.
 MAY_START = re.compile(r"[/#\"'`$@bcrRuUL](?<![\w$@][bcrRuUL])")
 MAY_START_RUST = re.compile(r"[/#\"'`$@bcrRuUL](?<![\w$][bcrRuUL])")
-MAY_START_PHP = re.compile(r"[/#\"'`$@bcrRuUL<?](?<![\w$@][bcrRuUL])")
+MAY_START_PHP = re.compile(r"[/#\"'`$@bcrRuUL<?](?<![\w$@][bcrRuUL])(?:(?<!\?)|(?=>))(?:(?<!<)|(?=<<|\?))")
 GLUED, GLUED_RUST = re.compile(r"[\w$@]"), re.compile(r"[\w$]")
 # PHP's heredoc and nowdoc: <<<ID, <<<"ID" or <<<'ID' at the end of a line, whose text is the lines after it up to
 # the first that starts with ID, after any spaces or tabs and before no character a name can hold, as PHP 7.3 and
@@ -933,6 +933,7 @@ PHP_NAME = r"(?![0-9])[0-9A-Za-z_\x80-\U0010ffff]+"  # One class: a character pa
 PHP_HEREDOC = re.compile(r"<<<[ \t]*(?:(%s)|'(%s)'|\"(%s)\")\r?$" % (PHP_NAME, PHP_NAME, PHP_NAME))
 PHP_LEADING_NAME = re.compile(r"[ \t]*([0-9A-Za-z_\x80-\U0010ffff]+)")
 PHP_HOLES = ("{$", "${")
+LESS_THANS = re.compile(r"<+")
 PHP_TEXT_STOP = re.compile(r"\\|\{\$|\$\{")
 # PHP's code opens with <?php, in any case, before a space or the line's end, or with <?=, and closes with ?>, which
 # ends a line comment too; around it is HTML, where no heredoc opens. A bare <? opens it only where PHP's
@@ -1102,10 +1103,14 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
                 in_php = bool(opening)
                 code.append(opening.group() if opening else "?>")
                 i = opening.end() if opening else i + 2
-            elif language == "PHP" and in_php and line.startswith("<<<", i):  # A heredoc or a nowdoc, or a << as PHP
-                opened = php_heredoc(lines, n, i, starts)  # reads one where none opens, so <<<<f opens none.
-                code.append('"' + "s" * (len(line) - i - 1) if opened else "<<")
-                i = len(line) if opened else i + 2
+            elif language == "PHP" and line.startswith("<<<", i):
+                # A run of <, which PHP's code reads as <<s from its start: a heredoc or a nowdoc opens only at its
+                # last three, in the code, so <<<<f opens none; the <s before them are copied at once.
+                run = LESS_THANS.match(line, i).end() - i
+                opened = php_heredoc(lines, n, i, starts) if in_php and run == 3 else None
+                kept = len(line) - i if opened else run - 2 if run % 2 == 0 else max(2, run - 3)
+                code.append('"' + "s" * (kept - 1) if opened else "<" * kept)
+                i += kept
                 if opened:  # Its text is on the lines after, its state its name after a newline, which no line holds.
                     state, holes = "\n" + opened[0], None if opened[1] else PHP_HOLES
             elif line.startswith('"""', i) or line.startswith("'''", i):
