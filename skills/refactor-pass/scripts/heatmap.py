@@ -643,8 +643,8 @@ RELANDS = re.compile(r'\s*(?:[A-Za-z]+(?:\([^)]*\))?!?:\s*)?(?:reapply\b|revert\
                      r'revert\b)', re.I)
 # Issue references, whose words name the tracker, not the change: "Fixed #12 --" closes an issue of any kind,
 # where "fix: #12" is a fix by its type. An issue is a number (#12, gh-12, org/repo#12), as #include isn't. An owner's
-# name and a repo's are 100 characters at most, as on GitHub, so that the words after each of thousands of fix- aren't
-# all read again for a /.
+# name and a repo's are read to 100 characters, a GitHub repo's most (an owner's is 39), so that the words after each
+# of thousands of fix- aren't all read again for a /.
 CLOSER = re.compile(r"\b(?:fix(?:e[sd])?|close[sd]?|resolve[sd]?)\s*(?::\s*)?"
                     r"(?:#|gh-|[\w.-]{1,100}/[\w.-]{1,100}#)\d+\b", re.I)
 REFERENCE = re.compile(r"\b(?:issues?|pr|pull|ticket)\s*#?\d+\b", re.I)
