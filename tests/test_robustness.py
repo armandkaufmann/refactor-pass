@@ -7,6 +7,7 @@ full size and every file of a folder, outside the default run.
 """
 
 import errno
+import gc
 import os
 import posixpath
 import random
@@ -242,7 +243,9 @@ class Generics(unittest.TestCase):
 # characters and its class's, and a heredoc's text of a run of { that open no hole. And plain words, in C, Rust and
 # PHP's code, whose b, a letter that may start a string's prefix, ended each run of them. And a JavaScript key given a
 # megabyte of values, all of which after its : were read for a type before an =; an annotation's arguments of a
-# megabyte, in Kotlin, Swift, Java and C#; and a Ruby method's name of a megabyte.
+# megabyte, in Kotlin, Swift, Java and C#; and a Ruby method's name of a megabyte. Each is held under 10 MB, which
+# its reading takes 1 to 3 of, so that a reading of the line's characters one at a time, which keeps one or two
+# pieces of the line for each, 25 MB or so, fails too.
 LONG_LINES = [("a.c", "template <" + "?>" * 500000 + "\n"), ("a.js", "x = (/" + "a" * 1000000 + "/)\n"),
               ("a.js", "x = (/[" + "a" * 1000000 + "]/)\n"), ("a.php", "<?php\n$t = <<<A\n" + "a{" * 500000 + "\nA;\n"),
               ("a.c", "int x = " + "ab " * 330000 + ";\n"), ("a.rs", "fn f() { let x = " + "ab " * 330000 + "}\n"),
@@ -253,10 +256,15 @@ LONG_LINES = [("a.c", "template <" + "?>" * 500000 + "\n"), ("a.js", "x = (/" + 
               ("a.java", "class C {\n  @A(" + "a" * 1000000 + ")\n  void f() {\n    g();\n  }\n}\n"),
               ("a.cs", "class C {\n  [A(" + "a" * 1000000 + ")]\n  void F() {\n    G();\n  }\n}\n"),
               ("a.rb", "def " + "\u00e9" * 1000000 + "\n  1\nend\n")]
+# And words of a letter, then one that may start a string's prefix elsewhere, a line for each such letter in each
+# language's search: one the search took for a start would make each of them a piece of its own.
+LONG_LINES += [(name, before + ("a%s " % letter) * 330000 + after) for letter in "bcrRuUL" for name, before, after in (
+    ("a.c", "int x = ", ";\n"), ("a.rs", "fn f() { let x = ", "}\n"), ("a.php", "<?php\n$x = ", ";\n"))]
 # And Rust files read for their test modules: a string of a megabyte, and an attribute's # and [ a megabyte of spaces,
-# or of a comment's, apart.
+# or of a comment's, apart; and in a file with no mod, read only if rust_heads finds an inner cfg, a # and its ! a
+# megabyte of spaces apart.
 LONG_RUST = ['mod a;\nconst S: &str = "' + "a" * 1000000 + '";\n', "mod a;\n#" + " " * 1000000 + "[a]\nfn f() {}\n",
-             "mod a;\n#/*" + " " * 1000000 + "*/[a]\nfn f() {}\n"]
+             "mod a;\n#/*" + " " * 1000000 + "*/[a]\nfn f() {}\n", "#" + " " * 1000000 + "![cfg(test)]\nfn f() {}\n"]
 
 
 class Memory(unittest.TestCase):
@@ -274,7 +282,7 @@ class Memory(unittest.TestCase):
         for name, text in LONG_LINES:
             with self.subTest(name=name, start=text[:12]):
                 peak = self.peak(lambda: measure.functions(name, text, []))
-                self.assertLess(peak, 30 * 1000 * 1000, "%s: %d MB" % (name, peak // 1000000))
+                self.assertLess(peak, 10 * 1000 * 1000, "%s: %d MB" % (name, peak // 1000000))
 
     def test_long_rust_files(self):
         scoping = support.load("scoping")
@@ -282,7 +290,45 @@ class Memory(unittest.TestCase):
             with self.subTest(start=text[:12]):
                 files = {"src/lib.rs": text, "src/a.rs": ""}
                 peak = self.peak(lambda: scoping.rust_test_modules(sorted(files), lambda paths: files))
-                self.assertLess(peak, 30 * 1000 * 1000, "%d MB" % (peak // 1000000))
+                self.assertLess(peak, 10 * 1000 * 1000, "%d MB" % (peak // 1000000))
+
+
+# Lines of a megabyte that a reading slower by a constant factor leaves in step with their size, which no growth case
+# can see and a fast machine hides under LIMIT: each is read against a line of plain letters as long, the same way in
+# the same process, and must take under SLOWER times as long. PHP's ? and its placeholders, a < among words, a < before
+# << and a run of <, in its code and in its HTML; and words of letters that may start a string's prefix, in C, Rust and
+# PHP. This head reads them 1 to 9 times as long as the plain line; a reading of their characters one at a time, or of
+# each as one that may start something, 35 to 200 times.
+SLOWER = 20
+STEADY = [("a.php", "<?php\n$x = 1 ", "?", ";\n"), ("a.php", "<?php\n$q = f(", "?,", ");\n"),
+          ("a.php", "<?php\n$x = ", "< ", ";\n"), ("a.php", "<?php\n$x = ", "a<< ", ";\n"),
+          ("a.php", "<?php\n$x = 1 ", "<", ";\n"), ("a.php", "<p>", "<", "\n<?php\n$x = 1;\n"),
+          ("a.c", "int x = ", "ab ", ";\n"), ("a.c", "int x = ", "aR ", ";\n"),
+          ("a.rs", "fn f() { let x = ", "ab ", "}\n"), ("a.php", "<?php\n$x = ", "ab ", ";\n")]
+
+
+class AgainstPlainLetters(unittest.TestCase):
+
+    def test_lines_read_as_fast_as_plain_letters_nearly(self):
+        measure = support.load("measure")
+        clock = time.perf_counter if sys.platform == "win32" else time.process_time
+
+        def fastest(name, text):
+            times = []
+            for _ in range(3):
+                gc.collect()
+                gc.disable()
+                start = clock()
+                measure.functions(name, text, [])
+                times.append(clock() - start)
+                gc.enable()
+            return min(times)
+        for name, before, piece, after in STEADY:
+            n = 1000000 // len(piece)
+            with self.subTest(name=name, line=before + piece * 3):
+                took = fastest(name, before + piece * n + after)
+                plain = fastest(name, before + "a" * (n * len(piece)) + after)
+                self.assertLess(took, SLOWER * plain, "%.3f s against %.3f s" % (took, plain))
 
 
 # Files whose reading once took a time that grew with the square of their size, or faster. Each is made at a size
@@ -568,11 +614,13 @@ GROWING = {
     "heredocs-on-a-line.rb": (30000, lambda n: "x = [" + "<<A, " * n + "]\n" + "A\n" * n, "ruby_skeleton"),
     # Thousands of PHP heredocs opened, none closed by any line, each looked for its closing line.
     "unclosed-heredocs.php": (1000, lambda n: "<?php\n" + "$x = <<<A\n" * n),
-    # PHP's ? and <, which open or close nothing but before a > (?>), or before << or ? (<<<, <?php): hundreds of
-    # thousands of placeholders and of ? in its code, and of < in its HTML and in its code, each read on its own, at a
-    # time per character that made the larger take over LIMIT seconds.
-    "question-marks.php": (250000, lambda n: "<?php\n$q = f(" + "?," * n + ");\n$x = 1 " + "?" * n + ";\n"),
+    # PHP's <, which opens nothing but before << or ? (<<<, <?php): a million of it in its HTML and in its code, each
+    # read on its own, at a time per character that made the larger take over LIMIT seconds; and runs of an odd number,
+    # each read in pairs from its start, which a reading of a pair at a time took a time that grew with the square of.
+    # (PHP's ? and its placeholders, which grew in step, are held by AgainstPlainLetters.)
     "less-thans.php": (1000000, lambda n: "<" * n + "\n<?php\n$x = 1 " + "<" * n + ";\n"),
+    "odd-less-thans.php": (400000, lambda n: "<p>" + "<" * (2 * n + 1) + "\n<?php\n$x = 1 " + "<" * (2 * n + 1) +
+                           ";\n"),
     # A line of tens of thousands of ', a C table of characters and C++'s digit separators, each read for a character
     # in a copy of the rest of the line.
     "characters.c": (50000, lambda n: "static const char t[] = {" + "'a'," * n + "};\n"),
