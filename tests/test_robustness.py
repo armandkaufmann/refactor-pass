@@ -644,7 +644,21 @@ print("%.3f %.3f" % (min(small for small, _ in runs), min(large for _, large in 
 """
 
 
+def in_step(small, large):
+    """Whether a case's larger reading took under LIMIT seconds, and under RATIO times its smaller's."""
+    return large < LIMIT and large < RATIO * small
+
+
 class Growing(unittest.TestCase):
+
+    def test_a_reading_too_quick_to_time(self):
+        # A smaller reading under half a millisecond prints as 0.000, and counts as one: a larger under RATIO times
+        # that is in step with its size, one over isn't.
+        self.assertTrue(in_step(0.0, 0.023))
+        self.assertFalse(in_step(0.0, 0.025))
+        self.assertTrue(in_step(0.004, 0.09))
+        self.assertFalse(in_step(0.004, 0.1))
+        self.assertFalse(in_step(0.3, 5.1))
 
     def test_files_of_many_definitions(self):
         code = "import sys; sys.path[:0] = [%r, %r]\n" % (support.SCRIPTS, support.HERE) + TIME
@@ -657,10 +671,10 @@ class Growing(unittest.TestCase):
                         self.fail("%s took over %d seconds" % (name, TIMEOUT))
                     self.assertEqual(result.code, 0, result)
                     small, large = (float(t) for t in result.out.split())
-                    if large < LIMIT and large < RATIO * small:
+                    if in_step(small, large):
                         break
                 self.assertLess(large, LIMIT, name)
-                self.assertLess(large, RATIO * small, "%s: %.3f seconds at its size, %.3f at %d times it" % (
+                self.assertTrue(in_step(small, large), "%s: %.3f seconds at its size, %.3f at %d times it" % (
                     name, small, large, SCALE))
 
 
