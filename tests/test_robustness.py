@@ -7,7 +7,6 @@ full size and every file of a folder, outside the default run.
 """
 
 import errno
-import gc
 import os
 import posixpath
 import random
@@ -16,7 +15,6 @@ import signal
 import subprocess
 import sys
 import time
-import tracemalloc
 import unittest
 
 try:
@@ -271,40 +269,54 @@ LONG_RUST = ['mod a;\nconst S: &str = "' + "a" * 1000000 + '";\n', "mod a;\n#" +
              "#!" * 512000 + "\n", "#*" * 500000, "#!*" * 333333, "#![*" * 250000, "#![cf" * 200000,
              "include*" * 400000, "#/" * 500000, "#!/" * 333333, "#![/" * 250000, "include/" * 125000,
              "#[/*" * 250000]
+# Each line is read in a process of its own, as Growing reads its cases, so that a reading that took a time that grew
+# with the square of a line's length fails at TIMEOUT seconds rather than stalling the run.
+PEAK = """
+import sys, tracemalloc
+import measure, scoping
+from test_robustness import LONG_LINES, LONG_RUST
+k = int(sys.argv[2])
+tracemalloc.start()
+if sys.argv[1] == "lines":
+    measure.functions(LONG_LINES[k][0], LONG_LINES[k][1], [])
+else:
+    files = {"src/lib.rs": LONG_RUST[k], "src/a.rs": ""}
+    scoping.rust_test_modules(sorted(files), lambda paths: files)
+print(tracemalloc.get_traced_memory()[1])
+"""
 
 
 class Memory(unittest.TestCase):
 
-    def peak(self, read):
-        tracemalloc.start()
+    def peak(self, which, k):
+        code = "import sys; sys.path[:0] = [%r, %r]\n" % (support.SCRIPTS, support.HERE) + PEAK
         try:
-            read()
-            return tracemalloc.get_traced_memory()[1]
-        finally:
-            tracemalloc.stop()
+            result = support.run_python(code, which, k, timeout=TIMEOUT)
+        except subprocess.TimeoutExpired:
+            self.fail("its reading took over %d seconds" % TIMEOUT)
+        self.assertEqual(result.code, 0, result)
+        return int(result.out)
 
     def test_long_lines(self):
-        measure = support.load("measure")
-        for name, text in LONG_LINES:
+        for k, (name, text) in enumerate(LONG_LINES):
             with self.subTest(name=name, start=text[:12]):
-                peak = self.peak(lambda: measure.functions(name, text, []))
+                peak = self.peak("lines", k)
                 self.assertLess(peak, MEMORY, "%s: %.1f MB" % (name, peak / 1e6))
 
     def test_long_rust_files(self):
-        scoping = support.load("scoping")
-        for text in LONG_RUST:
+        for k, text in enumerate(LONG_RUST):
             with self.subTest(start=text[:12]):
-                files = {"src/lib.rs": text, "src/a.rs": ""}
-                peak = self.peak(lambda: scoping.rust_test_modules(sorted(files), lambda paths: files))
+                peak = self.peak("rust", k)
                 self.assertLess(peak, MEMORY, "%.1f MB" % (peak / 1e6))
 
 
 # Lines of a megabyte that a reading slower by a constant factor leaves in step with their size, which no growth case
 # can see and a fast machine hides under LIMIT: each is read against a line of plain letters as long, the same way in
-# the same process, and must take under SLOWER times as long. PHP's ? and its placeholders, a < among words, a < before
-# << and a run of <, in its code and in its HTML; and words of letters that may start a string's prefix, in C, Rust and
-# PHP. This head reads them 1 to 9 times as long as the plain line; a reading of their characters one at a time, or of
-# each as one that may start something, 35 to 200 times.
+# the same process, one of their own, and must take under SLOWER times as long; the two, under TIMEOUT seconds.
+# PHP's ? and its placeholders, a < among words, a < before << and a run of <, in its code and in its HTML; and words
+# of letters that may start a string's prefix, in C, Rust and PHP. This head reads them 1 to 9 times as long as the
+# plain line; a reading of their characters one at a time, or of each as one that may start something, 35 to 200
+# times.
 SLOWER = 20
 STEADY = [("a.php", "<?php\n$x = 1 ", "?", ";\n"), ("a.php", "<?php\n$q = f(", "?,", ");\n"),
           ("a.php", "<?php\n$x = ", "< ", ";\n"), ("a.php", "<?php\n$x = ", "a<< ", ";\n"),
@@ -313,27 +325,40 @@ STEADY = [("a.php", "<?php\n$x = 1 ", "?", ";\n"), ("a.php", "<?php\n$q = f(", "
           ("a.rs", "fn f() { let x = ", "ab ", "}\n"), ("a.php", "<?php\n$x = ", "ab ", ";\n")]
 
 
+STEADY_TIME = """
+import gc, sys, time
+import measure
+from test_robustness import STEADY
+name, before, piece, after = STEADY[int(sys.argv[1])]
+n = 1000000 // len(piece)
+clock = time.perf_counter if sys.platform == "win32" else time.process_time
+def fastest(text):
+    times = []
+    for _ in range(3):
+        gc.collect()
+        gc.disable()
+        start = clock()
+        measure.functions(name, text, [])
+        times.append(clock() - start)
+        gc.enable()
+    return min(times)
+took = fastest(before + piece * n + after)
+print("%.6f %.6f" % (took, fastest(before + "a" * (n * len(piece)) + after)))
+"""
+
+
 class AgainstPlainLetters(unittest.TestCase):
 
     def test_lines_read_as_fast_as_plain_letters_nearly(self):
-        measure = support.load("measure")
-        clock = time.perf_counter if sys.platform == "win32" else time.process_time
-
-        def fastest(name, text):
-            times = []
-            for _ in range(3):
-                gc.collect()
-                gc.disable()
-                start = clock()
-                measure.functions(name, text, [])
-                times.append(clock() - start)
-                gc.enable()
-            return min(times)
-        for name, before, piece, after in STEADY:
-            n = 1000000 // len(piece)
+        code = "import sys; sys.path[:0] = [%r, %r]\n" % (support.SCRIPTS, support.HERE) + STEADY_TIME
+        for k, (name, before, piece, after) in enumerate(STEADY):
             with self.subTest(name=name, line=before + piece * 3):
-                took = fastest(name, before + piece * n + after)
-                plain = fastest(name, before + "a" * (n * len(piece)) + after)
+                try:
+                    result = support.run_python(code, k, timeout=TIMEOUT)
+                except subprocess.TimeoutExpired:
+                    self.fail("%s took over %d seconds" % (name, TIMEOUT))
+                self.assertEqual(result.code, 0, result)
+                took, plain = (float(t) for t in result.out.split())
                 self.assertLess(took, SLOWER * plain, "%.3f s against %.3f s" % (took, plain))
 
 
