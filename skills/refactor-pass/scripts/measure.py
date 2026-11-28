@@ -207,8 +207,11 @@ def not_a_name(language):
 ANGLED = r"<(?:[^<>;{}=()]|\([^;{}()]*\)|<(?:[^<>;{}=()]|\([^;{}()]*\))*>)*>"
 TYPE_ARGUMENTS = r"(?:" + ANGLED + r")?"
 TYPE_WORD = r"(?:(?:[\w>\[\],.?*&:]|" + ANGLED + r"|<(?!" + ANGLED[1:] + r"))+|\([\w<>\[\],.?\s]+\))"
-# Before it all, Java's annotations (@Test, @SuppressWarnings("x")) and C#'s attributes ([InlineData(1)]).
-ANNOTATIONS = r"(?:@[\w.]+(?:\((?:[^()]|\([^()]*\))*\))?\s+|\[(?:[^\[\]()]|\((?:[^()]|\([^()]*\))*\))*\]\s*){0,16}"
+# Before it all, Java's annotations (@Test, @SuppressWarnings("x")) and C#'s attributes ([InlineData(1)]): their
+# arguments in brackets, which may hold brackets of their own (ARGUMENTS), matched in runs up to a bracket, not each
+# character a choice that Python's re keeps a step of for going back to, a hundred bytes or more.
+ARGUMENTS = r"\([^()]*(?:\([^()]*\)[^()]*)*\)"
+ANNOTATIONS = r"(?:@[\w.]+(?:" + ARGUMENTS + r")?\s+|\[[^\[\]()]*(?:" + ARGUMENTS + r"[^\[\]()]*)*\]\s*){0,16}"
 # C++'s template <...> before a definition on its line, whatever its parameters hold (= false, enable_if(...)): up
 # to its first > after which the rest is a definition, of the first seventeen.
 TEMPLATE = r"(?:template\s*<[^;{}>]*(?:>[^;{}>]*){0,16}?>\s*)?"
@@ -755,7 +758,7 @@ LANGUAGES = [
     # A def after a word, as private def, with a receiver (self., @@cache.) and an operator's name ([], <<). A
     # name can hold any character past ASCII (def ❤).
     ("Ruby", ".rb", r"^\s*(?:[a-z_]\w*\s+)*def\s+(?:(?:self|@@?\w+|[A-Za-z_][\w:]*)\s*\.\s*)?"
-     r"((?:[^\W\d]|[^\x00-\x7f])(?:\w|[^\x00-\x7f])*[?!=]?|"
+     r"((?:[^\W\d]|[^\x00-\x7f])[\w\x80-\U0010ffff]*[?!=]?|"
      r"\[\]=?|<=>|===?|=~|!=|!~|<<|>>|<=|>=|\*\*|[+\-~!]@?|[*/%<>^&|`])", "end", "#", "ruby"),
     ("JavaScript", ".js .jsx .mjs .cjs", js_function, "brackets", "// /*", "regex"),
     ("TypeScript", ".ts .tsx .mts .cts", js_function, "brackets", "// /*", "regex"),
@@ -769,7 +772,7 @@ LANGUAGES = [
     # After annotations (@Test) and modifiers, not a fun interface, which is an interface; maybe with a receiver
     # (Map<K, V>.f) and a name in backquotes (`returns 200`).
     ("Kotlin", ".kt .kts", r"^\s*(?:(?:public|private|protected|internal|override|open|abstract|final|suspend|"
-     r"inline|operator|infix|tailrec|external|actual|expect)\s+|@[\w.:]+(?:\((?:[^()]|\([^()]*\))*\))?\s*)*"
+     r"inline|operator|infix|tailrec|external|actual|expect)\s+|@[\w.:]+(?:" + ARGUMENTS + r")?\s*)*"
      r"fun\s+(?!interface\b)(?:<[^>]*>\s*)?(?:[\w.]+(?:<[^()=]*>)?\??\.)?(\w+|`[^`]+`)", "brackets", "// /*",
      "char"),
     # Swift's declaration modifiers, some with a word in brackets (private(set), nonisolated(unsafe)), and its
@@ -777,7 +780,7 @@ LANGUAGES = [
     ("Swift", ".swift", r"^\s*(?:(?:(?:open|public|package|internal|fileprivate|private|static|class|override|final|"
      r"required|convenience|mutating|nonmutating|consuming|borrowing|__consuming|nonisolated|isolated|"
      r"distributed|dynamic|optional|prefix|postfix|infix|lazy|weak|unowned)(?:\(\w+\))?|"
-     r"@\w+(?:\((?:[^()]|\([^()]*\))*\))?)\s+)*"
+     r"@\w+(?:" + ARGUMENTS + r")?)\s+)*"
      r"(?:func\s+(\w+|`[^`]+`|[^\s\w(`]+(?=\s*[(<]))|(init)[?!]?\s*[(<]|(deinit)\b|(subscript)\s*[(<])",
      "brackets", "// /*", ""),
     ("Java", ".java", JAVA_SHAPES, "brackets", "// /*", "char"),
