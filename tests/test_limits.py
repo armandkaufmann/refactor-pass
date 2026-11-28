@@ -24,12 +24,16 @@ CASES = {
     "quoted key": ("a.js", "const routes = {\n  'GET /orders': function (req) {\n    return list(req);\n  },\n};\n"),
     "macro": ("a.c", "FOR_EACH(item, list) {\n    use(item);\n}\n\nint main(void) {\n    return 0;\n}\n"),
     "generic default": ("a.ts", "function h<T = {\n  onStart: () => void,\n}>(x: T) {\n  return x\n}\n"),
-    "heredoc brace": ("a.php", "<?php\nfunction page() {\n    return <<<HTML\n<div>}</div>\nHTML;\n}\n\n"
-                               "function next() {\n    return 1;\n}\n"),
+    "inline html": ("a.php", "<?php\nfunction a() {\n    ?>\n    <p>Don't</p>\n    <?php\n    return 1;\n}\n"
+                             "function b() {\n    return 2;\n}\n"),
+    "comment in html": ("a.php", "<?php\nfunction a() {\n    ?>\n    <p>#1 <?php $t = <<<EOT\n}\nEOT;\n"
+                                 "    return $t;\n}\nfunction b() {\n    return 2;\n}\n"),
+    "block comment in html": ("a.php", "<?php\nfunction a() {\n    ?>\n    <p>/* not a comment</p>\n    <?php\n"
+                                       "    return 1;\n}\nfunction b() {\n    return 2;\n}\n"),
+    "line comment in html": ("a.php", "<?php\nfunction a() {\n    ?>\n    <p>#1</p>\n    <?php $t = <<<EOT\n}\nEOT;\n"
+                                      "    return $t;\n}\nfunction b() {\n    return 2;\n}\n"),
     "regex after bracket": ("a.js", "function f(s) {\n  if (ok(s)) /}/.test(s)\n  return 1\n}\n"
                                     "function g() {\n  return 2\n}\n"),
-    "heredoc comment": ("a.php", "<?php\nfunction f() {\n    $sql = <<<SQL\nSELECT 1\n# not a comment\nSQL;\n"
-                                 "    return $sql;\n}\n"),
     "misindented": ("a.rb", "class App\n  def call(env)\n    raise 'bzzzt' if @called > 0\n  @called += 1\n"
                             "    [200, {}, ['OK']]\n  end\nend\n"),
     "alternatives": ("a.c", "#ifdef _WIN32\nint umain(void) {\n#else\nint main(void) {\n#endif\n  return 0;\n}\n"),
@@ -83,18 +87,28 @@ class KnownLimits(unittest.TestCase):
         self.assertEqual(spans("generic default"), [["h", 1, 5, 5]])
 
     @unittest.expectedFailure
-    def test_a_brace_in_a_heredoc(self):
-        self.assertEqual(spans("heredoc brace"), [["page", 2, 6, 5], ["next", 8, 10, 3]])
+    def test_a_quote_in_a_php_files_html(self):
+        # PHP's tokenizer reads <p>Don't</p> as HTML, between ?> and <?php; here, its ' opens a string.
+        self.assertEqual(spans("inline html"), [["a", 2, 7, 6], ["b", 8, 10, 3]])
+
+    @unittest.expectedFailure
+    def test_a_comments_start_in_a_php_files_html(self):
+        # PHP's tokenizer reads <p>#1 as HTML and the heredoc after <?php as one; here, # starts a comment to the line's
+        # end, the heredoc's opening in it.
+        self.assertEqual(spans("comment in html"), [["a", 2, 8, 7], ["b", 9, 11, 3]])
+
+    @unittest.expectedFailure
+    def test_a_block_comments_start_in_a_php_files_html(self):
+        # A /* in the HTML hides the <?php on a later line, as a quote does.
+        self.assertEqual(spans("block comment in html"), [["a", 2, 7, 6], ["b", 8, 10, 3]])
+
+    def test_a_line_comments_start_in_a_php_files_html_hides_no_later_line(self):
+        # A # in the HTML ends with its line: the <?php on the next is read, and the heredoc after it.
+        self.assertEqual(spans("line comment in html"), [["a", 2, 9, 8], ["b", 10, 12, 3]])
 
     @unittest.expectedFailure
     def test_a_regular_expression_after_a_closing_bracket(self):
         self.assertEqual(spans("regex after bracket"), [["f", 1, 4, 4], ["g", 5, 7, 3]])
-
-    @unittest.expectedFailure
-    def test_a_line_in_a_heredoc_that_looks_like_a_comment(self):
-        # Each line of the string is code, as a multi-line string's lines are; one that starts like a
-        # comment is taken for one.
-        self.assertEqual(spans("heredoc comment"), [["f", 2, 8, 7]])
 
     @unittest.expectedFailure
     def test_a_line_indented_less_than_the_body(self):
@@ -141,8 +155,12 @@ class KnownLimits(unittest.TestCase):
                       "anonymous functions and lambdas aren't functions of their own",
                       "a function that doesn't start a line",
                       "shapes can catch a macro, and miss a function a macro makes",
-                      "in a type written after an = (as a generic's default)", "a brace or a quote in a PHP heredoc",
-                      "follows a closing bracket or a name", "a line inside a PHP heredoc can count as code or not",
+                      "in a type written after an = (as a generic's default)",
+                      "a brace or a quote in a JavaScript regular expression", "follows a closing bracket or a name",
+                      "a PHP file's text outside <?php ... ?> is read as code",
+                      "a quote, a brace or a comment's start (#, //, /*) in its HTML",
+                      "a quote or a /* there hides a <?php after it, on its line or a later one",
+                      "and a # or a // the code after a <?php on its own line",
                       "an arrow function that returns JSX with no brackets around it ends at its first line",
                       "a line indented less than its body ends it there",
                       "only the last branch is read",
@@ -151,6 +169,14 @@ class KnownLimits(unittest.TestCase):
                       "nesting by indentation counts a continuation line"):
             with self.subTest(limit=words):
                 self.assertIn(words, flat)
+
+    def test_the_help_says_how_strings_are_read(self):
+        measure = support.load("measure")
+        flat = " ".join(measure.__doc__.split())
+        strings = flat.split("strings are read as it writes them", 1)[1].split("A function runs to the end", 1)[0]
+        for words in ("Ruby's regular expressions, % literals and heredocs", "PHP's heredocs and nowdocs"):
+            with self.subTest(words=words):
+                self.assertIn(words, strings)
 
 
 if __name__ == "__main__":

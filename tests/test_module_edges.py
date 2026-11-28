@@ -285,13 +285,18 @@ class WhatAnIncludeHolds(unittest.TestCase):
 
     def test_an_include_alone_in_its_file(self):
         # Past a comment between include and its !, in a file that holds nothing else; an inner cfg past a comment,
-        # a marked file; and a #[path] past one between its # and [, which rustc reads.
-        for include in ('include /* generated */ !("table.rs");\n', 'include // generated\n!("table.rs");\n'):
+        # a marked file; and a #[path] past one between its # and [, which rustc reads. And past eight comments in a
+        # row, or nine.
+        many = ("/**/" * 8, "// c\n" * 9)
+        for include in ('include /* generated */ !("table.rs");\n', 'include // generated\n!("table.rs");\n') + tuple(
+                "include" + comments + '!("table.rs");\n' for comments in many):
             with self.subTest(include=include):
                 files = {"src/lib.rs": "mod a;\n#[cfg(test)]\n#[path = \"table.rs\"]\nmod table_tests;\n",
                          "src/a.rs": include, "src/table.rs": "pub fn t() {}\n"}
                 self.assertEqual(modules(files), {})
-        for marked in ("#! /* c */ [cfg(test)]\n", "#![ /* c */ cfg(test)]\n"):
+        for marked in ("#! /* c */ [cfg(test)]\n", "#![ /* c */ cfg(test)]\n") + tuple(
+                head % comments for comments in many for head in ("#%s![cfg(test)]\n", "#!%s[cfg(test)]\n",
+                                                                  "#![%scfg(test)]\n")):
             with self.subTest(marked=marked):
                 self.assertEqual(modules({"src/lib.rs": "pub mod m;\n", "src/m.rs": marked + "pub fn f() {}\n"}),
                                  {"src/m.rs": "marked"})

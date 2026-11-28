@@ -58,12 +58,13 @@ when it holds a class, a namespace, a template or a name qualified by
 its class. A signature may run over
 several lines, and a body may sit on its signature's line. Each
 language's strings are read as it writes them (Ruby's regular
-expressions, % literals and heredocs, C#'s @"...", Rust's r#"..."#, C++'s
-R"(...)"), with the code in an interpolation's hole (Swift's \\(...),
-Kotlin's ${...}, C#'s $"{...}"), and C's, C++'s, C#'s and Swift's #if as
-their preprocessor does. A function runs to the end of its body, found by
-indentation (Python, GDScript, Ruby) or by matching brackets (the rest).
-Files in other languages get lines only, and the output says which.
+expressions, % literals and heredocs, PHP's heredocs and nowdocs, C#'s
+@"...", Rust's r#"..."#, C++'s R"(...)"), with the code in an
+interpolation's hole (Swift's \\(...), Kotlin's ${...}, C#'s $"{...}"),
+and C's, C++'s, C#'s and Swift's #if as their preprocessor does. A
+function runs to the end of its body, found by indentation (Python,
+GDScript, Ruby) or by matching brackets (the rest). Files in other
+languages get lines only, and the output says which.
 
 It points at code to read; it doesn't judge it. What it gets wrong:
   - a nested function counts in its own length and in its parent's;
@@ -74,14 +75,18 @@ It points at code to read; it doesn't judge it. What it gets wrong:
   - shapes can catch a macro, and miss a function a macro makes; and in
     TypeScript a member typed as a function, in a type written after an =
     (as a generic's default), counts as a function;
-  - a brace or a quote in a PHP heredoc, or in a JavaScript regular
-    expression that follows a closing bracket or a name (not after an
-    operator, an arrow or a word such as return or typeof), can put a
-    function's end in the wrong place or lose the function;
+  - a brace or a quote in a JavaScript regular expression that follows a
+    closing bracket or a name (not after an operator, an arrow or a word
+    such as return or typeof), can put a function's end in the wrong place
+    or lose the function;
   - an arrow function that returns JSX with no brackets around it ends at
     its first line;
-  - a line inside a PHP heredoc can count as code or not, depending on how
-    it starts;
+  - a PHP file's text outside <?php ... ?> is read as code, so a quote, a
+    brace or a comment's start (#, //, /*) in its HTML can lose a function
+    or put its end in the wrong place; a quote or a /* there hides a <?php
+    after it, on its line or a later one, and a # or a // the code after a
+    <?php on its own line, so that a heredoc there is read as code (one
+    opens in PHP's code only);
   - where a function ends by indentation, a line indented less than its
     body ends it there, as a misindented end does in Ruby;
   - between #if and #else, when each branch opens a function's body its
@@ -124,10 +129,11 @@ Examples:
 """
 
 import argparse
+import bisect
 import os
 import re
 import sys
-from collections import Counter, defaultdict
+from collections import Counter, defaultdict, deque
 
 # The scope, the files left out and the tests, read the same way as heatmap.py reads them. No
 # __pycache__ is written, so a run leaves the skill's folder as it was.
@@ -135,9 +141,12 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import scoping  # noqa: E402
 
+# A modifier is a word, which a type's word can be too, as a template's > and an attribute's [...] can be: a line that
+# isn't a definition is split between them in every way, so each is read no more times than a definition holds,
+# eight modifiers, sixteen annotations and a template's first seventeen >, and the time stays in step with the line.
 MODIFIERS = r"(?:(?:public|private|protected|internal|static|final|abstract|synchronized|native|virtual|override|" \
             r"sealed|async|extern|inline|unsafe|partial|new|const|constexpr|explicit|friend|default|open|" \
-            r"extern\s+\"s*\")\s+)*"
+            r"extern\s+\"s*\")\s+){0,8}"
 # Per language of the C family: the words a statement starts with, so that a line starting with one holds no
 # definition (not one that's also a method's modifier, as Java's synchronized; C#'s new starts more lines of
 # expressions, as new Options(...) { ... }, than of definitions); and the words it reserves, which never name
@@ -201,10 +210,14 @@ def not_a_name(language):
 ANGLED = r"<(?:[^<>;{}=()]|\([^;{}()]*\)|<(?:[^<>;{}=()]|\([^;{}()]*\))*>)*>"
 TYPE_ARGUMENTS = r"(?:" + ANGLED + r")?"
 TYPE_WORD = r"(?:(?:[\w>\[\],.?*&:]|" + ANGLED + r"|<(?!" + ANGLED[1:] + r"))+|\([\w<>\[\],.?\s]+\))"
-# Before it all, Java's annotations (@Test, @SuppressWarnings("x")) and C#'s attributes ([InlineData(1)]).
-ANNOTATIONS = r"(?:@[\w.]+(?:\((?:[^()]|\([^()]*\))*\))?\s+|\[(?:[^\[\]()]|\((?:[^()]|\([^()]*\))*\))*\]\s*)*"
-# C++'s template <...> before a definition on its line, whatever its parameters hold (= false, enable_if(...)).
-TEMPLATE = r"(?:template\s*<[^;{}]*?>\s*)?"
+# Before it all, Java's annotations (@Test, @SuppressWarnings("x")) and C#'s attributes ([InlineData(1)]): their
+# arguments in brackets, which may hold brackets of their own (ARGUMENTS), matched in runs up to a bracket, not each
+# character a choice that Python's re keeps a step of for going back to, a hundred bytes or more.
+ARGUMENTS = r"\([^()]*(?:\([^()]*\)[^()]*)*\)"
+ANNOTATIONS = r"(?:@[\w.]+(?:" + ARGUMENTS + r")?\s+|\[[^\[\]()]*(?:" + ARGUMENTS + r"[^\[\]()]*)*\]\s*){0,16}"
+# C++'s template <...> before a definition on its line, whatever its parameters hold (= false, enable_if(...)): up
+# to its first > after which the rest is a definition, of the first seventeen.
+TEMPLATE = r"(?:template\s*<[^;{}>]*(?:>[^;{}>]*){0,16}?>\s*)?"
 # After the name and its (: no ; before a body's {, which may hold the whole body, as in int f() { return 1; }.
 SIGNATURE_REST = r"[^;{]*(?:\{.*)?$"
 
@@ -227,7 +240,7 @@ CONSTRUCTOR = r"|^\s*" + ANNOTATIONS + r"([A-Z]\w*)\s*\(" + SIGNATURE_REST
 # and an operator, whose name is operator and what follows it (operator ==, implicit operator Money).
 CS_SHAPES = (r"^\s*" + ANNOTATIONS + MODIFIERS + r"(?:" + TYPE_WORD + r"\s+)*(operator\s*(?:[^\w\s(]+|true\b|"
              r"false\b|[\w.]+" + TYPE_ARGUMENTS + r"\??))\s*\((?:" + SIGNATURE_REST + r"|[^;]*\)\s*=>)|" +
-             c_head("C#") + SIGNATURE_REST + CONSTRUCTOR + "|" + c_head("C#") + r"[^;]*\)(?:\s*where\s[^;]*?)?\s*=>")
+             c_head("C#") + SIGNATURE_REST + CONSTRUCTOR + "|" + c_head("C#") + r"[^;]*\)(?:\s*where\s[^;]*?=>|\s*=>)")
 JAVA_SHAPES = c_head("Java") + SIGNATURE_REST + CONSTRUCTOR
 
 
@@ -244,7 +257,7 @@ def c_shapes(language):
 # as a constructor or destructor defined outside its class, or a function whose type is on the line above;
 # with no = after it, unlike an assignment (std::tie(a, b) = ...), nor a , ending its line, as an argument's.
 CPP_SHAPES = (r"^\s*" + TEMPLATE + MODIFIERS + r"(?:" + TYPE_WORD + r"\s+)*[*&]*(?:\w+" + TYPE_ARGUMENTS + r"::)*"
-              r"(operator\s*(?:\(\)|[^\w\s(][^\s(]*|[A-Za-z_][\w\s:<>*&]*?))\s*\(" + SIGNATURE_REST + "|" +
+              r"(operator\s*(?:\(\)|[^\w\s(][^\s(]*|[A-Za-z_](?:\s*[\w:<>*&])*))\s*\(" + SIGNATURE_REST + "|" +
               c_shapes("C++") + r"|^\s*" + TEMPLATE + r"(?:(?:explicit|inline|constexpr|virtual)\s+)*" +
               not_a_type("C++") + not_a_name("C++") + r"(?![A-Z][A-Z0-9_]*\s*\()(~?[A-Za-z_]\w*)\s*\(" +
               SIGNATURE_REST + r"|^\s*" + TEMPLATE + not_a_type("C++") + r"((?!\d)\w+" + TYPE_ARGUMENTS +
@@ -336,19 +349,20 @@ def cpp_header(code):
 # (or its type parameters). What follows the parameters then says whether it's a function (js_function).
 # catch can be a method's name too, written with no space before its bracket, unlike the statement's; async
 # followed by a space starts an anonymous arrow function, such as a callback's.
-JS_FUNCTION = re.compile(r"^\s*(?:export\s+)?(?:default\s+)?(?:declare\s+)?(?:async\s+)?(function)(?![\w$])\s*\*?\s*"
-                         r"([\w$]+)")
+JS_FUNCTION = re.compile(r"^\s*(?:export\s+)?(?:default\s+)?(?:declare\s+)?(?:async\s+)?(function)(?![\w$])\s*"
+                         r"(?:\*\s*)?([\w$]+)")
 JS_METHOD = re.compile(r"^\s*(?:(?:public|private|protected|static|async|readonly|override|abstract|get|set|declare|"
-                       r"accessor)\s+)*\*?\s*(?!(?:if|for|while|switch|function|return|with|else|do|typeof|void|"
+                       r"accessor)\s+)*(?:\*\s*)?(?!(?:if|for|while|switch|function|return|with|else|do|typeof|void|"
                        r"await|yield|new|case|import|super|instanceof)(?![\w$])|catch(?![\w$(])|async\s)"
                        r"(#?[\w$]+|\[[^\]]*\])\??\s*(?=[(<])")
 # Directly in a class's body, where no statement can be, any word names a method, as an iterator's return() and
 # throw() do; and in an object literal when no space comes before its bracket, unlike a statement's.
 JS_ANY_METHOD = re.compile(r"^\s*(?:(?:public|private|protected|static|async|readonly|override|abstract|get|set|"
-                           r"declare|accessor)\s+)*\*?\s*([\w$]+)\??\s*(?=[(<])")
-# A name given a value: a variable or a class's property, typed or not; or an object literal's key.
+                           r"declare|accessor)\s+)*(?:\*\s*)?([\w$]+)\??\s*(?=[(<])")
+# A name given a value: a variable or a class's property, typed or not; or an object literal's key. Its type's
+# characters up to an = or an arrow's are matched at once, not each a choice that Python's re keeps a step of.
 JS_ASSIGNED = re.compile(r"^\s*(?:export\s+)?(?:(?:const|let|var|public|private|protected|static|readonly|declare|"
-                         r"override|accessor)\s+)*(#?[\w$]+)\s*!?\s*(?::(?:[^=]|=>)+)?=(?![=>])\s*")
+                         r"override|accessor)\s+)*(#?[\w$]+)\s*(?:!\s*)?(?::(?=[^=]|=>)[^=]*(?:=>[^=]*)*)?=(?![=>])\s*")
 JS_KEY = re.compile(r"^\s*([\w$]+|\[[^\]]*\])\s*:\s*")
 # A function given to a member in an assignment, named by the last name (exports, for module.exports = ...);
 # and an anonymous one exported as the default, named default.
@@ -356,13 +370,13 @@ JS_MEMBER = re.compile(r"^\s*(?:[\w$]+\.)+(#?[\w$]+)\s*=(?![=>])\s*")
 JS_DEFAULT = re.compile(r"^\s*export\s+default\s+")
 # A declaration typed over several lines, whose = comes after its type (js_after_type).
 JS_TYPED = re.compile(r"^\s*(?:export\s+)?(?:(?:const|let|var|public|private|protected|static|readonly|declare|"
-                      r"override|accessor)\s+)+(#?[\w$]+)\s*[?!]?\s*:\s*")
+                      r"override|accessor)\s+)+(#?[\w$]+)\s*(?:[?!]\s*)?:\s*")
 # What's assigned: a function written out (its keyword, then an optional * and name), an arrow with one
 # bare parameter, or a named function wrapped in a call, such as React.memo(function Card(...) {...}).
 # The keyword is a whole word: functional and functionName are names.
 JS_EXPRESSION = re.compile(r"(?:async\s+)?function(?![\w$])\s*\*?\s*[\w$]*\s*")
 JS_ONE_PARAMETER = re.compile(r"(?:async\s+)?[\w$]+\s*=>")
-JS_WRAPPED = re.compile(r"[\w.$]+\s*(?:<[^<>()]*>)?\(\s*(?=function(?![\w$])\s*\*?\s*[\w$]+\s*[(<])")
+JS_WRAPPED = re.compile(r"[\w.$]+\s*(?:<[^<>()]*>)?\(\s*(?=function(?![\w$])\s*(?:\*\s*)?[\w$]+\s*[(<])")
 # A type that goes on past the end of its line (read from its last twelve characters): one that ends the
 # line with an operator, an open bracket or an arrow, or that the next line goes on with a union, an
 # intersection, a chain or a conditional's ? or :.
@@ -371,7 +385,7 @@ TYPE_GOES_ON_NEXT = re.compile(r"\s*[|&.?:]")
 # A statement that declares a type, whose braces hold its members.
 JS_TYPE_STATEMENT = re.compile(r"(?:export\s+)?(?:declare\s+)?(?:type|interface)\b")
 # A line that is only an object literal's key and its :, as before the { of an object nested in another.
-JS_KEY_ONLY = re.compile(r"\s*(?:[\w$]+|\[[^\]]*\]|\"s*\"|'s*')\s*\??\s*:$")
+JS_KEY_ONLY = re.compile(r"\s*(?:[\w$]+|\[[^\]]*\]|\"s*\"|'s*')\s*(?:\?\s*)?:$")
 # How far a parameter list or a return type may run: a component's destructured props, with their types, can
 # take dozens of lines.
 SIGNATURE_LINES = 200
@@ -470,7 +484,7 @@ def js_tail(code, k, col, want):
             depth += counts[i][0] - counts[i][1]
             last = line.rstrip()
             previous = last[-1:] or previous
-            word = re.search(r"[\w$]*$", last).group(0)
+            word = re.search(r"(?<![\w$])[\w$]*$", last).group(0)
             continue
         gap = True
         for j in range(col if i == k else 0, len(line)):
@@ -565,11 +579,18 @@ def js_in_object(code, i, col=0, depth=0):
     opened after one of = ( , [ { ?, after return or export default, or after a ternary's : that starts
     its line. Not in an interface, a type, a class's body, a block or a parameter list, where a name typed
     as a function is a type. Braces opened after a key's : are an object literal's only if that key is in
-    one."""
+    one. Worked out once per brace, however many lines it holds, as its line can be long."""
     opener = js_opener(code, i, col)
     if opener is None or opener[2] != "{":
         return False
-    k, at, _ = opener
+    known = brackets_of(code).setdefault("objects", {})
+    if (opener, depth) not in known:
+        known[opener, depth] = js_object_brace(code, opener[0], opener[1], depth)
+    return known[opener, depth]
+
+
+def js_object_brace(code, k, at, depth):
+    """Whether the brace at code[k][at] opens an object literal, as js_in_object asks."""
     before = code[k][:at].rstrip() or next((line.rstrip() for line in reversed(code[max(0, k - 20):k])
                                            if line.strip()), "")
     if re.search(r"\b(?:interface|class|enum|namespace|declare)\b|^\s*(?:export\s+)?type\b", before):
@@ -716,12 +737,16 @@ def js_after_try(code, i):
 
 
 def js_in_class(code, i):
-    """Whether line i starts directly in a class's body: in braces that a class's declaration opens."""
+    """Whether line i starts directly in a class's body: in braces that a class's declaration opens. Worked out
+    once per brace, as for js_in_object."""
     opener = js_opener(code, i, 0)
     if opener is None or opener[2] != "{":
         return False
-    line = code[opener[0]]
-    return bool(re.search(r"\bclass\b", js_statement(code, opener[0], len(line) - len(line.lstrip()))))
+    known = brackets_of(code).setdefault("classes", {})
+    if opener not in known:
+        line = code[opener[0]]
+        known[opener] = bool(re.search(r"\bclass\b", js_statement(code, opener[0], len(line) - len(line.lstrip()))))
+    return known[opener]
 
 
 # Per language: its extensions, how a definition's line looks (the name is
@@ -736,12 +761,12 @@ LANGUAGES = [
     # A def after a word, as private def, with a receiver (self., @@cache.) and an operator's name ([], <<). A
     # name can hold any character past ASCII (def ❤).
     ("Ruby", ".rb", r"^\s*(?:[a-z_]\w*\s+)*def\s+(?:(?:self|@@?\w+|[A-Za-z_][\w:]*)\s*\.\s*)?"
-     r"((?:[^\W\d]|[^\x00-\x7f])(?:\w|[^\x00-\x7f])*[?!=]?|"
+     r"((?:[^\W\d]|[^\x00-\x7f])[\w\x80-\U0010ffff]*[?!=]?|"
      r"\[\]=?|<=>|===?|=~|!=|!~|<<|>>|<=|>=|\*\*|[+\-~!]@?|[*/%<>^&|`])", "end", "#", "ruby"),
     ("JavaScript", ".js .jsx .mjs .cjs", js_function, "brackets", "// /*", "regex"),
     ("TypeScript", ".ts .tsx .mts .cts", js_function, "brackets", "// /*", "regex"),
     ("Vue", ".vue .svelte", js_function, "brackets", "// /*", "regex"),
-    ("PHP", ".php", r"^\s*(?:(?:abstract|final|public|private|protected|static)\s+)*function\s+&?\s*(\w+)",
+    ("PHP", ".php", r"^\s*(?:(?:abstract|final|public|private|protected|static)\s+)*function\s+(?:&\s*)?(\w+)",
      "brackets", "// /* #", "spans"),
     ("Go", ".go", r"^func\s+(?:\([^)]*\)\s*)?(\w+)", "brackets", "// /*", "char"),
     # pub(crate) and pub(in path), and a raw name such as r#match, named match.
@@ -750,7 +775,7 @@ LANGUAGES = [
     # After annotations (@Test) and modifiers, not a fun interface, which is an interface; maybe with a receiver
     # (Map<K, V>.f) and a name in backquotes (`returns 200`).
     ("Kotlin", ".kt .kts", r"^\s*(?:(?:public|private|protected|internal|override|open|abstract|final|suspend|"
-     r"inline|operator|infix|tailrec|external|actual|expect)\s+|@[\w.:]+(?:\((?:[^()]|\([^()]*\))*\))?\s*)*"
+     r"inline|operator|infix|tailrec|external|actual|expect)\s+|@[\w.:]+(?:" + ARGUMENTS + r")?\s*)*"
      r"fun\s+(?!interface\b)(?:<[^>]*>\s*)?(?:[\w.]+(?:<[^()=]*>)?\??\.)?(\w+|`[^`]+`)", "brackets", "// /*",
      "char"),
     # Swift's declaration modifiers, some with a word in brackets (private(set), nonisolated(unsafe)), and its
@@ -758,7 +783,7 @@ LANGUAGES = [
     ("Swift", ".swift", r"^\s*(?:(?:(?:open|public|package|internal|fileprivate|private|static|class|override|final|"
      r"required|convenience|mutating|nonmutating|consuming|borrowing|__consuming|nonisolated|isolated|"
      r"distributed|dynamic|optional|prefix|postfix|infix|lazy|weak|unowned)(?:\(\w+\))?|"
-     r"@\w+(?:\((?:[^()]|\([^()]*\))*\))?)\s+)*"
+     r"@\w+(?:" + ARGUMENTS + r")?)\s+)*"
      r"(?:func\s+(\w+|`[^`]+`|[^\s\w(`]+(?=\s*[(<]))|(init)[?!]?\s*[(<]|(deinit)\b|(subscript)\s*[(<])",
      "brackets", "// /*", ""),
     ("Java", ".java", JAVA_SHAPES, "brackets", "// /*", "char"),
@@ -787,8 +812,10 @@ GOES_ON_NEXT = re.compile(r"\s*(?:\|\||&&|\?\?|\?(?!\.)|:|\.(?!\.)|[+-](?![+-])|
 # The words after which a / opens a regular expression, since only an expression can follow them; as whole
 # words, not a member's name such as x.in.
 REGEX_AFTER = re.compile(r"(?<![\w$.])(?:return|case|typeof|void|delete|throw|new|await|yield|in|of|do|else)$")
-# A JavaScript regular expression: from / to /, past escapes and the / in a class such as [/].
-REGEX = re.compile(r"/(?:\\.|\[(?:\\.|[^\]\\])*\]|[^/\\\[])+/")
+# A JavaScript regular expression: from / to /, past escapes and the / in a class such as [/] (regex_end). Its
+# characters up to a /, a class's [ or a \ the line ends with; and a class.
+REGEX_RUN = re.compile(r"(?:[^/\\\[]+|\\.)*")  # In runs; and a class's, past its ], at once.
+REGEX_CLASS = re.compile(r"\[(?=((?:[^\]\\]+|\\.)*))\1\]")
 # A Python statement that is only a string, as a docstring is: documentation, so not a code line.
 DOCSTRING = re.compile(r"""\s*[rRuUbBfF]{0,2}("{3}|'{3}|"|')""")
 
@@ -890,15 +917,69 @@ def string_holes(language, quotes, quote, line, at):
     return None
 
 
-# A run of quotes, as opens C#'s raw string.
-QUOTES = re.compile(r'"+')
-# Characters that start nothing outside a string or a comment, in any language: not a comment's start (# or
-# /), a quote, a raw string's start ($ @ #, or b c r R u U L at the start of a word) or a regular expression's;
-# and what a raw string can't open just after, a word's character, a $ or an @. In Rust, an @ before a raw string
-# is a macro's token or a binding's (@r"...", as inline snapshots write), so the string opens there.
-PLAIN = re.compile(r"(?:[^/#\"'`$@bcrRuUL]|(?<=[\w$@])[bcrRuUL])+")
-PLAIN_RUST = re.compile(r"(?:[^/#\"'`$@bcrRuUL]|(?<=[\w$])[bcrRuUL])+")
+# A run of quotes, as opens C#'s raw string; and of #s, as opens Swift's.
+QUOTES, HASHES = re.compile(r'"+'), re.compile(r"#+")
+# What may start something outside a string or a comment, in any language: a comment's start (# or /), a quote, a
+# raw string's start ($ @ #, or b c r R u U L at the start of a word) or a regular expression's; a letter after a
+# word's character, a $ or an @ starts none. In Rust, an @ before a raw string is a macro's token or a binding's
+# (@r"...", as inline snapshots write), so the string opens there. In PHP, a ? before a >, which closes PHP's code,
+# and a < before << or ?, which can open a heredoc or PHP's code, too. What comes before it starts nothing and is
+# copied at once. It's searched for, rather than what's before it matched by a repeat, of which Python's re keeps a
+# step for going back to at each choice, a hundred bytes or more: a line of words made one at each b after a letter.
+MAY_START = re.compile(r"[/#\"'`$@bcrRuUL](?<![\w$@][bcrRuUL])")
+MAY_START_RUST = re.compile(r"[/#\"'`$@bcrRuUL](?<![\w$][bcrRuUL])")
+MAY_START_PHP = re.compile(r"[/#\"'`$@bcrRuUL<?](?<![\w$@][bcrRuUL])(?:(?<!\?)|(?=>))(?:(?<!<)|(?=<<|\?))")
 GLUED, GLUED_RUST = re.compile(r"[\w$@]"), re.compile(r"[\w$]")
+# PHP's heredoc and nowdoc: <<<ID, <<<"ID" or <<<'ID' at the end of a line, whose text is the lines after it up to
+# the first that starts with ID, after any spaces or tabs and before no character a name can hold, as PHP 7.3 and
+# later end one: indented or not, and with code after it on its line (ID;, ID), ...). A name is letters, digits,
+# _ and any character past ASCII, not starting with a digit. A heredoc's holes, {$...} and ${...}, are code, over
+# lines too, where a line that starts with ID ends nothing; a nowdoc ('ID') has none. Its text runs to a hole, past
+# its escapes (\{$x} is no hole): what may stop it is searched for, not each character read in turn.
+PHP_NAME = r"(?![0-9])[0-9A-Za-z_\x80-\U0010ffff]+"  # One class: a character past ASCII can't match two ways.
+PHP_HEREDOC = re.compile(r"<<<[ \t]*(?:(%s)|'(%s)'|\"(%s)\")\r?$" % (PHP_NAME, PHP_NAME, PHP_NAME))
+PHP_LEADING_NAME = re.compile(r"[ \t]*([0-9A-Za-z_\x80-\U0010ffff]+)")
+PHP_HOLES = ("{$", "${")
+LESS_THANS = re.compile(r"<+")
+PHP_TEXT_STOP = re.compile(r"\\|\{\$|\$\{")
+# PHP's code opens with <?php, in any case, before a space or the line's end, or with <?=, and closes with ?>, which
+# ends a line comment too; around it is HTML, where no heredoc opens. A bare <? opens it only where PHP's
+# short_open_tag is on, which its recommended settings turn off: it isn't read as an opening, so a heredoc in code
+# after one is read as code, as before.
+PHP_OPEN = re.compile(r"<\?(?:=|php(?=\s|$))", re.I)
+
+
+def php_code_after(line, i, code):
+    """Whether PHP's code goes on at the end of a line whose line comment starts at line[i], code being whether it
+    did there: a ?> in the comment ends it and the code, and an opening tag after that starts the code again."""
+    while True:
+        if code:
+            at = line.find("?>", i)
+            if at < 0:
+                return True
+            i, code = at + 2, False
+        else:
+            found = PHP_OPEN.search(line, i)
+            if not found:
+                return False
+            i, code = found.end(), True
+
+
+def php_heredoc(lines, k, i, starts):
+    """The name of the PHP heredoc or nowdoc that opens at lines[k][i], and whether it's a nowdoc; or None if none
+    opens there, or no line after it starts with its name, as then PHP doesn't compile it and its text is read as
+    code, losing no function. starts holds the lines by the name each starts with, read once per file, when first
+    asked."""
+    opened = PHP_HEREDOC.match(lines[k], i)
+    if not opened:
+        return None
+    if not starts:
+        for j, line in enumerate(lines):
+            found = PHP_LEADING_NAME.match(line)
+            starts.setdefault(found.group(1) if found else None, []).append(j)
+    name = next(name for name in opened.groups() if name)
+    closing = starts.get(name, [])
+    return (name, bool(opened.group(2))) if bisect.bisect_right(closing, k) < len(closing) else None
 
 
 def skeleton(lines, comments, quotes, attributes=False, language=None):
@@ -913,6 +994,7 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
     nested = 0  # In a block comment, how many comments inside it are open, where they nest.
     nests = language in NESTING_COMMENTS
     raw = None  # Inside a string with no escapes: its closing text.
+    raw_escape = None  # In Swift's, its escape: \# for "#, made once, not again for each character in it.
     # An interpolation's hole in a string is code, up to the bracket that matches its own, and can hold strings
     # of its own: JavaScript's template literal's ${...}, Kotlin's "${...}", Swift's "\(...)", C#'s $"{...}".
     # Per hole still open: how many of its brackets are open inside it, its brackets, and the string it's in
@@ -920,30 +1002,43 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
     templates = []
     holes = None  # In a string with holes: what opens one (string_holes).
     opens_raw = RAW_STRING.get(language)
-    plain_text, glued = (PLAIN_RUST, GLUED_RUST) if language == "Rust" else (PLAIN, GLUED)
-    for line in lines:
+    may_start, glued = (MAY_START_RUST, GLUED_RUST) if language == "Rust" else \
+        (MAY_START_PHP, GLUED) if language == "PHP" else (MAY_START, GLUED)
+    starts = {}  # PHP's lines by the name each starts with, for php_heredoc.
+    in_php = False  # In PHP's code, which a file starts outside of, not in HTML around it.
+    for n, line in enumerate(lines):
         began_inside.append(state is not None or bool(templates) or raw is not None)
         code = []
         i = 0
         close = None  # In a block comment, where the next */ on the line is (-1 for none), until it's passed.
+        ends = {}  # What regex_end has read of the line's regular expressions.
+        closing = PHP_LEADING_NAME.match(line) if state and state[0] == "\n" else None
+        if closing and closing.group(1) == state[1:]:  # A PHP heredoc's end, outside its holes: code after it.
+            code.append("s" * (closing.end() - 1) + '"')
+            i, state, holes = closing.end(), None, None
         while i < len(line):
-            plain = plain_text.match(line, i) if state is None and raw is None and not templates else None
-            if plain:  # Characters that start nothing, copied at once.
-                code.append(plain.group())
-                i = plain.end()
+            plain = i  # Where the characters that start nothing, from i, end.
+            if state is None and raw is None and not templates:
+                next_start = may_start.search(line, i)
+                plain = next_start.start() if next_start else len(line)
+            if plain > i:  # They're copied at once.
+                code.append(line[i:plain])
+                i = plain
             elif holes == "{" and (line.startswith("{{", i) or line.startswith("}}", i)):
                 code.append("ss")  # C#'s brace written twice is a brace.
                 i += 2
             elif holes and line.startswith(holes, i):
-                code.append("s" * len(holes))  # The hole's own brackets aren't the code's.
-                templates.append([0, holes[-1], ")" if holes[-1] == "(" else "}", state, holes, raw])
-                i, state, holes, raw = i + len(holes), None, None, None
+                opener = next(h for h in holes if line.startswith(h, i)) if holes == PHP_HOLES else holes
+                bracket = "{" if opener == "{$" else opener[-1]  # PHP's {$x}, whose $ is the code's.
+                code.append("s" * len(opener))  # The hole's own brackets aren't the code's.
+                templates.append([0, bracket, ")" if bracket == "(" else "}", state, holes, raw])
+                i, state, holes, raw = i + len(opener), None, None, None
             elif raw is not None:
                 if raw == '"' and language == "C#" and line.startswith('""', i):  # A verbatim string's quote.
                     code.append("ss")
                     i += 2
-                elif language == "Swift" and line.startswith("\\" + raw.strip('"'), i):  # An escape, as \#".
-                    escape = len(raw.strip('"')) + 2
+                elif language == "Swift" and line.startswith(raw_escape, i):  # An escape, as \#".
+                    escape = len(raw_escape) + 1
                     code.append("s" * escape)
                     i += escape
                 elif line.startswith(raw, i):
@@ -967,6 +1062,13 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
                     i, nested = end + 2, nested - 1
                 else:
                     i, state = end + 2, None
+            elif state and state[0] == "\n":  # A PHP heredoc's text, up to a hole; a nowdoc's, to the line's end.
+                stop = PHP_TEXT_STOP.search(line, i) if holes else None
+                while stop and stop.group() == "\\":
+                    stop = PHP_TEXT_STOP.search(line, stop.end() + 1)
+                end = max(i + 1, stop.start()) if stop else len(line)
+                code.append("s" * (end - i))
+                i = end
             elif state:
                 if line[i] == "\\" and not (language in NO_ESCAPES and state.startswith(NO_ESCAPES[language])):
                     code.append("s" * len(line[i:i + 2]))  # The string's, as its other characters are.
@@ -988,24 +1090,47 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
                 i += 2
             elif any(line.startswith(m, i) for m in markers if m != "/*") and not (
                     attributes and line.startswith("#[", i)):
+                in_php = php_code_after(line, i, in_php) if language == "PHP" else in_php
                 break
             elif opens_raw and not glued.match(line[i - 1:i]) and opens_raw[0].match(line, i):
                 opened = opens_raw[0].match(line, i)
                 raw = opens_raw[1](opened)
+                raw_escape = "\\" + raw.strip('"')
                 holes = "{" if language == "C#" and "$" in opened.group() else None
                 code.append('"')
                 i = opened.end()
+            elif language == "Swift" and line[i] == "#" and not glued.match(line[i - 1:i]):
+                # A run of #s that opens no raw string at its first opens none at a # after it either, as they end
+                # where it does: it's read once, not again from each.
+                run = HASHES.match(line, i).end()
+                code.append(line[i:run])
+                i = run
+            elif language == "PHP" and (line.startswith("?>", i) or PHP_OPEN.match(line, i)):
+                opening = PHP_OPEN.match(line, i)  # PHP's code opens or closes, the tag's text kept as code.
+                in_php = bool(opening)
+                code.append(opening.group() if opening else "?>")
+                i = opening.end() if opening else i + 2
+            elif language == "PHP" and line.startswith("<<<", i):
+                # A run of <, which PHP's code reads as <<s from its start: a heredoc or a nowdoc opens only at its
+                # last three, in the code, so <<<<f opens none; the <s before them are copied at once.
+                run = LESS_THANS.match(line, i).end() - i
+                opened = php_heredoc(lines, n, i, starts) if in_php and run == 3 else None
+                kept = len(line) - i if opened else run - 2 if run % 2 == 0 else max(2, run - 3)
+                code.append('"' + "s" * (kept - 1) if opened else "<" * kept)
+                i += kept
+                if opened:  # Its text is on the lines after, its state its name after a newline, which no line holds.
+                    state, holes = "\n" + opened[0], None if opened[1] else PHP_HOLES
             elif line.startswith('"""', i) or line.startswith("'''", i):
                 state = QUOTES.match(line, i).group() if language == "C#" and line[i] == '"' else line[i:i + 3]
                 holes = string_holes(language, quotes, state, line, i)
                 code.append(state)
                 i += len(state)
-            elif line[i] == "/" and quotes == "regex" and REGEX.match(line, i) and regex_may_start(code, out):
-                literal = REGEX.match(line, i).group(0)  # A regular expression, which can hold quotes and brackets.
-                code.append("/" + "s" * (len(literal) - 2) + "/")
-                i += len(literal)
+            elif line[i] == "/" and quotes == "regex" and regex_end(line, i, ends) and regex_may_start(code, out):
+                end = regex_end(line, i, ends)  # A regular expression, which can hold quotes and brackets.
+                code.append("/" + "s" * (end - i - 2) + "/")
+                i = end
             elif line[i] == "'" and char_quote:
-                literal = CHARACTER.match(line[i:])  # A character, or else a Rust lifetime.
+                literal = CHARACTER.match(line, i)  # A character, or else a Rust lifetime.
                 code.append("s" if literal else " ")
                 i += len(literal.group(0)) if literal else 1
             elif line[i] in "\"'`":
@@ -1042,11 +1167,19 @@ RUBY_HEREDOC = re.compile(r"<<([~-])?(?:([\"'`])([^\"'`\n]+)\2|([A-Za-z_]\w*))")
 RUBY_PERCENT = re.compile(r"%([qQwWiIrsx]?)([^\w\s])")
 RUBY_GLOBAL = re.compile(r"\$(?:[!@&`'+~=/\\,;.<>_*$?:\"]|-\w|\d+)")
 RUBY_OPERATOR = r"\[\]=?|<=>|===?|=~|!=|!~|<<|>>|<=|>=|\*\*|[+\-~!]@?|[*/%<>^&|`]"
-RUBY_DEF_NAME = re.compile(r"(?<![\w$@.:])def\s+(?:(?:self|@@?\w+|[A-Za-z_][\w:]*)\s*\.\s*)?$")
+# Where an operator's name can follow def: after def and its spaces, or after a receiver and its . (def self.[]);
+# and after undef, each of its names (undef `, +), or alias, both (alias ` run): a name, an operator's, or a symbol.
+RUBY_DEF = re.compile(r"(?<![\w$@.:])def\s+")
+RUBY_RECEIVER = re.compile(r"(?:self|@@?\w+|[A-Za-z_][\w:]*)\s*\.\s*")
+RUBY_UNDEF = re.compile(r"(?<![\w$@.:])(undef|alias)\s+")
+RUBY_OPERATOR_NAME = re.compile(RUBY_OPERATOR)
+RUBY_NAME = re.compile(r":?(?:%s|[A-Za-z_\x80-\U0010ffff][0-9A-Za-z_\x80-\U0010ffff]*[?!=]?)" % RUBY_OPERATOR)
+RUBY_NAMES_GO_ON = (re.compile(r"\s*,\s*"), re.compile(r"\s+"))  # Between undef's names, and alias's.
 RUBY_SYMBOL_OPERATOR = re.compile(r":(?:%s)" % RUBY_OPERATOR)
-# The words after which a value can start, so that a /, a % or a ? opens a literal.
+# The words after which a value can start, so that a /, a % or a ? opens a literal; none is over 6 letters.
 RUBY_VALUE_AFTER = re.compile(r"(?<![\w$@.:])(?:if|unless|elsif|while|until|and|or|not|when|in|return|then|do|"
                               r"else|case|yield|raise|next|break|puts|print|p|begin)$")
+RUBY_CHARACTER = re.compile(r"\?(?:\\.|[^\s\w])(?!\w)")
 RUBY_PAIRS = {"(": ")", "[": "]", "{": "}", "<": ">"}
 RUBY_NAME_CHARACTER = re.compile(r"\w|[^\x00-\x7f]")
 # Ruby's code that starts nothing: not a comment, an operator's name, a symbol, a quote, a global, a heredoc,
@@ -1054,18 +1187,49 @@ RUBY_NAME_CHARACTER = re.compile(r"\w|[^\x00-\x7f]")
 RUBY_PLAIN = re.compile(r"[^#\[\]<=>!~+\-*/%^&|`:\"'$?{}]+")
 
 
+def ruby_def_names(line):
+    """The columns of a line of Ruby where an operator's name can start, after def, undef or alias: worked out once
+    per line, not again from the line's start for each operator."""
+    names = set()
+    for found in RUBY_DEF.finditer(line):
+        receiver = RUBY_RECEIVER.match(line, found.end())
+        names.update([found.end()] + ([receiver.end()] if receiver else []))
+    for found in RUBY_UNDEF.finditer(line):
+        alias = found.group(1) == "alias"
+        at, between = found.end(), RUBY_NAMES_GO_ON[alias]
+        for _ in range(2 if alias else len(line)):
+            names.add(at)
+            name = RUBY_NAME.match(line, at)
+            gap = between.match(line, name.end()) if name else None
+            if not gap:
+                break
+            at = gap.end()
+    return names
+
+
+def ruby_before(line, i):
+    """What comes before line[i] in Ruby, past spaces: the column after it (0 if nothing does), and whether it ends
+    with a word such as if or return (RUBY_VALUE_AFTER). Read in place, so a long line isn't copied, or searched
+    from its start, for each character asked about."""
+    end = i
+    while end > 0 and line[end - 1].isspace():
+        end -= 1
+    return end, bool(end and RUBY_VALUE_AFTER.search(line, max(0, end - 6), end))
+
+
 def ruby_value_may_start(line, i):
     """Whether a value can start at line[i] in Ruby, so that a /, % or ? there opens a literal rather than
     being an operator: at the start of the line, after an operator, an opening bracket, a comma or a word
     such as if or return; or after a method's name and a space, as in split /,/, when no space follows."""
-    before = line[:i].rstrip()
-    if not before:
+    end, word = ruby_before(line, i)
+    if not end:
         return True
-    ends_name = before[-1] in "?!" and bool(RUBY_NAME_CHARACTER.match(before[-2:-1]))  # empty?, save!
-    if (before[-1] in "(,=!&|?:;{[+-*/%<>~^" and not ends_name) or RUBY_VALUE_AFTER.search(before):
+    last = line[end - 1]
+    ends_name = last in "?!" and bool(RUBY_NAME_CHARACTER.match(line[max(0, end - 2):end - 1]))  # empty?, save!
+    if (last in "(,=!&|?:;{[+-*/%<>~^" and not ends_name) or word:
         return True
     after = line[i + 1:i + 2]
-    return (before[-1].isalnum() or before[-1] in "_?!") and i > 0 and line[i - 1].isspace() and \
+    return (last.isalnum() or last in "_?!") and i > 0 and line[i - 1].isspace() and \
         bool(after) and not after.isspace() and after != "="
 
 
@@ -1076,7 +1240,7 @@ def ruby_skeleton(lines):
     __END__. Each literal's text becomes s, and its delimiters "."""
     out, began_inside = [], []
     stack = []  # What's open: ["literal", closer, opener, nesting, interpolates] or ["code", braces] in #{...}.
-    waiting, heredocs = [], []  # Heredocs opened on this line, and those whose text the next lines are.
+    waiting, heredocs = [], deque()  # Heredocs opened on this line, and those whose text the next lines are.
     comment = ended = False
     for line in lines:
         if ended or comment:
@@ -1090,7 +1254,7 @@ def ruby_skeleton(lines):
             began_inside.append(True)
             closer, indented = heredocs[0]
             if (line.strip() if indented else line.rstrip()) == closer:
-                heredocs.pop(0)
+                heredocs.popleft()
             continue
         if not stack and re.match(r"=begin\b", line):
             comment = True
@@ -1105,6 +1269,7 @@ def ruby_skeleton(lines):
         began_inside.append(bool(stack))
         code = []
         i, n = 0, len(line)
+        names = None  # Where an operator's name can follow def on the line (ruby_def_names), when first asked.
         while i < n:
             c = line[i]
             top = stack[-1] if stack else None
@@ -1143,11 +1308,12 @@ def ruby_skeleton(lines):
             if c == "#":
                 break  # A comment, to the end of the line.
             # What comes before c is read in place, never copied, so a long line stays quick.
-            if c in "[]<=>!~+-*/%^&|`" and RUBY_DEF_NAME.search(line, 0, i):
-                name = re.match(RUBY_OPERATOR, line[i:])
+            if c in "[]<=>!~+-*/%^&|`":
+                names = ruby_def_names(line) if names is None else names
+                name = RUBY_OPERATOR_NAME.match(line, i) if i in names else None
                 if name:
                     code.append(mark(name.group(0)))
-                    i += name.end()
+                    i = name.end()
                     continue
             symbol = RUBY_SYMBOL_OPERATOR.match(line, i) if c == ":" and line[i - 1:i] != ":" else None
             if symbol and not line.startswith("::", i):
@@ -1189,13 +1355,12 @@ def ruby_skeleton(lines):
                 continue
             # A ? straight after a name's character ends the name, as in next? and nil?; else after a
             # bracket, an = or a word such as return, it can open a character, as ?a.
-            if c == "?" and not RUBY_NAME_CHARACTER.match(line[i - 1:i]) and (
-                    not line[:i].rstrip() or line[:i].rstrip()[-1] in "(,=[{" or
-                    RUBY_VALUE_AFTER.search(line[:i].rstrip())):
-                character = re.match(r"\?(?:\\.|[^\s\w])(?!\w)", line[i:])
+            if c == "?" and not RUBY_NAME_CHARACTER.match(line[i - 1:i]):
+                end, word = ruby_before(line, i)
+                character = RUBY_CHARACTER.match(line, i) if not end or line[end - 1] in "(,=[{" or word else None
                 if character:
                     code.append(mark("s" * len(character.group(0))))
-                    i += character.end()
+                    i = character.end()
                     continue
             if nested and c == "{":
                 top[1] += 1
@@ -1216,17 +1381,62 @@ def ruby_skeleton(lines):
     return out, began_inside
 
 
+def regex_end(line, i, ends):
+    """Where the JavaScript regular expression that may open with the / at line[i] ends, past its closing /; or None
+    if none opens there. ends keeps what's been read of the line, so that a line of thousands of / and [, or of \\/,
+    isn't read again from each /: per [ found to open a class, where the expression it's in ends, and so for each [
+    inside that class, as a class read from it reads on from where the outer one does; and per / read past as an
+    escape's, \\/, where one that opens with it would end, as it reads on from where the expression it's in does."""
+    if i in ends:
+        return ends[i]
+    j, opened, escaped = i + 1, [], []
+    while True:
+        run = j
+        j = REGEX_RUN.match(line, j).end()
+        k = line.find("/", run, j)
+        while k >= 0:
+            escaped.append((k, j))
+            k = line.find("/", k + 1, j)
+        if line[j:j + 1] != "[":  # Its closing /, unless it holds nothing; or else the line's end, or a \ ending it.
+            end = j + 1 if line[j:j + 1] == "/" and j > i + 1 else None
+            break
+        if j in ends:
+            end = ends[j]
+            break
+        found = REGEX_CLASS.match(line, j)
+        stop = found.end() if found else len(line)
+        k = j
+        while 0 <= k < stop:
+            opened.append(k)
+            k = line.find("[", k + 1, stop)
+        if not found:
+            end = None
+            break
+        j = stop
+    for k in opened:
+        ends[k] = end
+    for k, stop in escaped:  # One that opens just before its run's closing / holds nothing.
+        ends[k] = None if stop == k + 1 and line[stop:stop + 1] == "/" else end
+    ends[i] = end
+    return end
+
+
 def regex_may_start(code, out):
     """Whether a / in JavaScript, after the line's code so far (code, as pieces) or else the last line's,
     opens a regular expression rather than dividing: it comes after an operator, an opening bracket or an
     arrow, or after a word that only an expression can follow, such as return or typeof. Only the last
     few characters are read, so a long line stays quick."""
-    before = ""
+    # The pieces read back, their length and that of the spaces they end with: a word and the character before it
+    # are 7 at most, so 9 characters past those spaces say all that's asked, however many pieces hold them.
+    pieces, length, spaces = [], 0, None
     for piece in reversed(code):
-        before = piece + before
-        if len(before.strip()) > 8:
+        pieces.append(piece)
+        if spaces is None and piece.strip():
+            spaces = length + len(piece) - len(piece.rstrip())
+        length += len(piece)
+        if spaces is not None and length - spaces > 8:
             break
-    before = before.rstrip() or next((line.rstrip() for line in reversed(out) if line.strip()), "")
+    before = "".join(reversed(pieces)).rstrip() or next((line.rstrip() for line in reversed(out) if line.strip()), "")
     return not before or before[-1] in "(,=:[!&|?{};" or before.endswith("=>") or bool(REGEX_AFTER.search(before))
 
 
@@ -1353,6 +1563,7 @@ def body_by_brackets(code, inside, start, column=0, language=None, opened=None):
     for i in range(start, len(code)):
         offset = column if i == start else 0
         line = code[i][offset:]
+        closed = line.find(")")  # Where a parameter list may have closed first, for an = after it.
         if arrow and line.strip():
             expression, arrow = not line.strip().startswith("{"), False
         scan = line
@@ -1371,7 +1582,7 @@ def body_by_brackets(code, inside, start, column=0, language=None, opened=None):
                 elif line.startswith("=>", j):
                     rest = line[j + 2:].strip()
                     expression, arrow = bool(rest) and not rest.startswith("{"), not rest
-                elif c == "=" and ")" in line[:j] and line[j - 1:j] not in "=!<>" and \
+                elif c == "=" and 0 <= closed < j and line[j - 1:j] not in "=!<>" and \
                         (line[j + 1:j + 2] or " ") not in "=>":
                     expression = True  # Kotlin's fun f() = ..., C++'s = default.
                 elif c == ";":
@@ -1653,7 +1864,9 @@ def by_pattern(pattern, listed=False):
     pattern = re.compile(pattern)
 
     def find(code, i):
-        match = pattern.match(code[i])
+        # Each of the C family's shapes holds a (, so a line with none isn't read for one: a line of thousands of > or
+        # [...] can be split between a template, annotations and types in more ways than one, each tried.
+        match = pattern.match(code[i]) if not listed or "(" in code[i] else None
         name = next((g for g in match.groups() if g), None) if match else None
         if not name:
             return None

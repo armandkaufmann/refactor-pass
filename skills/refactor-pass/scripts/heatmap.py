@@ -634,7 +634,7 @@ CHORE_SCOPES = {"deps", "deps-dev", "dev-deps", "ci", "docs", "doc"}
 CHORE_TYPES = {"docs", "doc", "chore", "ci", "build", "style", "test", "tests", "release", "deps"}
 # A revert, as git writes one: its subject says revert, and its body names the commit. Squash merges carry
 # their branch's reverts in their bodies, so the subject has to say it too.
-REVERT_LINE = re.compile(r"(?m)^\s*This reverts commit ([0-9a-fA-F]{7,64})")
+REVERT_LINE = re.compile(r"(?m)^[^\S\n]*This reverts commit ([0-9a-fA-F]{7,64})")  # Each line read from its start once.
 QUOTED = re.compile(r'\brevert(?:s|ed)?\s*"(.*)"', re.I)
 # A subject that says it's a revert, at its start, after a type or the issue it closes if it has one (Django's
 # Fixed #12 -- Reverted "..."); and one that re-lands.
@@ -642,8 +642,11 @@ REVERT_OF = re.compile(r"\s*(?:[A-Za-z]+(?:\([^)]*\))?!?:\s*|[A-Za-z]+ #\d+ --\s
 RELANDS = re.compile(r'\s*(?:[A-Za-z]+(?:\([^)]*\))?!?:\s*)?(?:reapply\b|revert\s*"(?:[A-Za-z]+(?:\([^)]*\))?!?:\s*)?'
                      r'revert\b)', re.I)
 # Issue references, whose words name the tracker, not the change: "Fixed #12 --" closes an issue of any kind,
-# where "fix: #12" is a fix by its type. An issue is a number (#12, gh-12, org/repo#12), as #include isn't.
-CLOSER = re.compile(r"\b(?:fix(?:e[sd])?|close[sd]?|resolve[sd]?)\s*:?\s*(?:#|gh-|[\w.-]+/[\w.-]+#)\d+\b", re.I)
+# where "fix: #12" is a fix by its type. An issue is a number (#12, gh-12, org/repo#12), as #include isn't. An owner's
+# name and a repo's are read to 100 characters, a GitHub repo's most (an owner's is 39), so that the words after each
+# of thousands of fix- aren't all read again for a /.
+CLOSER = re.compile(r"\b(?:fix(?:e[sd])?|close[sd]?|resolve[sd]?)\s*(?::\s*)?"
+                    r"(?:#|gh-|[\w.-]{1,100}/[\w.-]{1,100}#)\d+\b", re.I)
 REFERENCE = re.compile(r"\b(?:issues?|pr|pull|ticket)\s*#?\d+\b", re.I)
 # The words, each with the forms that count as it. A subject's code (in backticks, or an identifier such as
 # should_ignore_error or Data.Render) isn't read.
@@ -766,12 +769,14 @@ def says(text):
 
 
 def untagged(subject):
-    """A subject without the tags at its start that aren't types, as its words are read."""
+    """A subject without the tags at its start that aren't types, as its words are read: each read where the last
+    ends, not in a copy of the rest."""
+    at = 0
     while True:
-        tag = TAG.match(subject)
+        tag = TAG.match(subject, at)
         if not tag or tag.group("tag").strip().lower() in BRACKET_TYPES:
-            return subject
-        subject = subject[tag.end():]
+            return subject[at:]
+        at = tag.end()
 
 
 def type_of(subject):

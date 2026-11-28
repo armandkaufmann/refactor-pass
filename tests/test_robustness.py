@@ -236,6 +236,132 @@ class Generics(unittest.TestCase):
         self.assertLess(float(result.out), 10, result)
 
 
+# Lines of a megabyte that a pattern read a character at a time, each a choice in a repeat that Python's re keeps a
+# step of for going back to, a hundred bytes or more per character: plain characters, a regular expression's
+# characters and its class's, and a heredoc's text of a run of { that open no hole. And plain words, in C, Rust and
+# PHP's code, whose b, a letter that may start a string's prefix, ended each run of them. And a JavaScript key given a
+# megabyte of values, all of which after its : were read for a type before an =; an annotation's arguments of a
+# megabyte, in Kotlin, Swift, Java and C#; and a Ruby method's name of a megabyte. Each is held under MEMORY, twice
+# the 3 MB its reading takes at most, so that a reading of the line's characters one at a time fails too: one that
+# keeps a piece of the line for each takes 10 MB or more.
+MEMORY = 6 * 1000 * 1000
+LONG_LINES = [("a.c", "template <" + "?>" * 500000 + "\n"), ("a.js", "x = (/" + "a" * 1000000 + "/)\n"),
+              ("a.js", "x = (/[" + "a" * 1000000 + "]/)\n"), ("a.php", "<?php\n$t = <<<A\n" + "a{" * 500000 + "\nA;\n"),
+              ("a.c", "int x = " + "ab " * 330000 + ";\n"), ("a.rs", "fn f() { let x = " + "ab " * 330000 + "}\n"),
+              ("a.php", "<?php\n$x = " + "ab " * 330000 + ";\n"),
+              ("a.js", "x = {\n  data: [" + "1," * 500000 + "]\n}\n"),
+              ("a.kt", "@A(" + "a" * 1000000 + ")\nfun f() {\n    g()\n}\n"),
+              ("a.swift", "@A(" + "a" * 1000000 + ")\nfunc f() {\n    g()\n}\n"),
+              ("a.java", "class C {\n  @A(" + "a" * 1000000 + ")\n  void f() {\n    g();\n  }\n}\n"),
+              ("a.cs", "class C {\n  [A(" + "a" * 1000000 + ")]\n  void F() {\n    G();\n  }\n}\n"),
+              ("a.rb", "def " + "\u00e9" * 1000000 + "\n  1\nend\n")]
+# And words of a letter, then one that may start a string's prefix elsewhere, a line for each such letter in each
+# language's search (b's are above): one the search took for a start would make each of them a piece of its own.
+LONG_LINES += [(name, before + ("a%s " % letter) * 330000 + after) for letter in "crRuUL" for name, before, after in (
+    ("a.c", "int x = ", ";\n"), ("a.rs", "fn f() { let x = ", "}\n"), ("a.php", "<?php\n$x = ", ";\n"))]
+# And Rust files read for their test modules: a string of a megabyte, and an attribute's # and [ a megabyte of spaces,
+# or of a comment's, apart; and in a file with no mod, read only if rust_heads finds an inner cfg, a # and its ! a
+# megabyte of spaces apart, and a megabyte of #!, each of which no comment follows, so it starts no head; nor does a
+# # or an include before a * or a / that starts no comment, a #! before either, a #![ before either or before a word
+# that is not cfg, or a # before [ and a comment, as no ! comes between.
+LONG_RUST = ['mod a;\nconst S: &str = "' + "a" * 1000000 + '";\n', "mod a;\n#" + " " * 1000000 + "[a]\nfn f() {}\n",
+             "mod a;\n#/*" + " " * 1000000 + "*/[a]\nfn f() {}\n", "#" + " " * 1000000 + "![cfg(test)]\nfn f() {}\n",
+             "#!" * 512000 + "\n", "#*" * 500000, "#!*" * 333333, "#![*" * 250000, "#![cf" * 200000,
+             "include*" * 400000, "#/" * 500000, "#!/" * 333333, "#![/" * 250000, "include/" * 125000,
+             "#[/*" * 250000]
+# Each line is read in a process of its own, as Growing reads its cases, so that a reading that took a time that grew
+# with the square of a line's length fails at TIMEOUT seconds rather than stalling the run.
+PEAK = """
+import sys, tracemalloc
+import measure, scoping
+from test_robustness import LONG_LINES, LONG_RUST
+k = int(sys.argv[2])
+tracemalloc.start()
+if sys.argv[1] == "lines":
+    measure.functions(LONG_LINES[k][0], LONG_LINES[k][1], [])
+else:
+    files = {"src/lib.rs": LONG_RUST[k], "src/a.rs": ""}
+    scoping.rust_test_modules(sorted(files), lambda paths: files)
+print(tracemalloc.get_traced_memory()[1])
+"""
+
+
+class Memory(unittest.TestCase):
+
+    def peak(self, which, k):
+        code = "import sys; sys.path[:0] = [%r, %r]\n" % (support.SCRIPTS, support.HERE) + PEAK
+        try:
+            result = support.run_python(code, which, k, timeout=TIMEOUT)
+        except subprocess.TimeoutExpired:
+            self.fail("its reading took over %d seconds" % TIMEOUT)
+        self.assertEqual(result.code, 0, result)
+        return int(result.out)
+
+    def test_long_lines(self):
+        for k, (name, text) in enumerate(LONG_LINES):
+            with self.subTest(name=name, start=text[:12]):
+                peak = self.peak("lines", k)
+                self.assertLess(peak, MEMORY, "%s: %.1f MB" % (name, peak / 1e6))
+
+    def test_long_rust_files(self):
+        for k, text in enumerate(LONG_RUST):
+            with self.subTest(start=text[:12]):
+                peak = self.peak("rust", k)
+                self.assertLess(peak, MEMORY, "%.1f MB" % (peak / 1e6))
+
+
+# Lines of a megabyte that a reading slower by a constant factor leaves in step with their size, which no growth case
+# can see and a fast machine hides under LIMIT: each is read against a line of plain letters as long, the same way in
+# the same process, one of their own, and must take under SLOWER times as long; the two, under TIMEOUT seconds.
+# PHP's ? and its placeholders, a < among words, a < before << and a run of <, in its code and in its HTML; and words
+# of letters that may start a string's prefix, in C, Rust and PHP. This head reads them 1 to 9 times as long as the
+# plain line; a reading of their characters one at a time, or of each as one that may start something, 35 to 200
+# times.
+SLOWER = 20
+STEADY = [("a.php", "<?php\n$x = 1 ", "?", ";\n"), ("a.php", "<?php\n$q = f(", "?,", ");\n"),
+          ("a.php", "<?php\n$x = ", "< ", ";\n"), ("a.php", "<?php\n$x = ", "a<< ", ";\n"),
+          ("a.php", "<?php\n$x = 1 ", "<", ";\n"), ("a.php", "<p>", "<", "\n<?php\n$x = 1;\n"),
+          ("a.c", "int x = ", "ab ", ";\n"), ("a.c", "int x = ", "aR ", ";\n"),
+          ("a.rs", "fn f() { let x = ", "ab ", "}\n"), ("a.php", "<?php\n$x = ", "ab ", ";\n")]
+
+
+STEADY_TIME = """
+import gc, sys, time
+import measure
+from test_robustness import STEADY
+name, before, piece, after = STEADY[int(sys.argv[1])]
+n = 1000000 // len(piece)
+clock = time.perf_counter if sys.platform == "win32" else time.process_time
+def fastest(text):
+    times = []
+    for _ in range(3):
+        gc.collect()
+        gc.disable()
+        start = clock()
+        measure.functions(name, text, [])
+        times.append(clock() - start)
+        gc.enable()
+    return min(times)
+took = fastest(before + piece * n + after)
+print("%.6f %.6f" % (took, fastest(before + "a" * (n * len(piece)) + after)))
+"""
+
+
+class AgainstPlainLetters(unittest.TestCase):
+
+    def test_lines_read_as_fast_as_plain_letters_nearly(self):
+        code = "import sys; sys.path[:0] = [%r, %r]\n" % (support.SCRIPTS, support.HERE) + STEADY_TIME
+        for k, (name, before, piece, after) in enumerate(STEADY):
+            with self.subTest(name=name, line=before + piece * 3):
+                try:
+                    result = support.run_python(code, k, timeout=TIMEOUT)
+                except subprocess.TimeoutExpired:
+                    self.fail("%s took over %d seconds" % (name, TIMEOUT))
+                self.assertEqual(result.code, 0, result)
+                took, plain = (float(t) for t in result.out.split())
+                self.assertLess(took, SLOWER * plain, "%.3f s against %.3f s" % (took, plain))
+
+
 # Files whose reading once took a time that grew with the square of their size, or faster. Each is made at a size
 # and at SCALE times it, and read at both, three times over: at the larger, its fastest reading must take under
 # RATIO times as long as its fastest at the smaller, where a time that grows with the size takes about SCALE times
@@ -246,7 +372,8 @@ class Generics(unittest.TestCase):
 # still make a case seem to grow too fast. A case that seems to is timed once more, as a reading slower per
 # character on a large text can also make it seem to; and one whose readings take over TIMEOUT seconds on the clock
 # fails. A case can name the step of measure.py it times, given the text's lines, where the rest of the reading
-# would hide it; or "modules", Rust's test modules of the files it makes, as {path: text}. Unclosed definitions,
+# would hide it; "modules", Rust's test modules of the files it makes, as {path: text}; or "message", the heatmap's
+# reading for fixes of a commit whose subject is the text's first line and whose body the rest. Unclosed definitions,
 # nested ones each indented one more (sized by their lines' indents), and #if blocks never closed, each branch of
 # which opens a function's body. Rust's tests inside a file, each set aside, as measure.py's run asks: thousands of
 # test modules, a run of thousands of cfgs on one item or on none, of attributes before a module's inner cfgs, of
@@ -414,6 +541,127 @@ GROWING = {
                                               [("src/b0/r%d.rs" % k, "mod s;\n") for k in range(n)] +
                                               [("src/b0/r%d/s.rs" % k, "#[path = \"../r%d.rs\"]\nmod x;\n" % (k + 1))
                                                for k in range(n)]), "modules"),
+    # A JavaScript name and thousands of spaces after it, which a name given a value, or a type, split every way
+    # around the ! or ? that may follow it.
+    "name-then-spaces.js": (75000, lambda n: "function f() {\n  return 1;\n}\nconst name" + " " * n +
+                            "\nconst b = 2;\n"),
+    # A run of thousands of # in Swift, which no quote follows, read for a raw string from each #; and after a name.
+    "hashes.swift": (500000, lambda n: "func f() {\n    return\n}\nlet s = " + "#" * n + "\n"),
+    "glued-hashes.swift": (500000, lambda n: "func f() {\n    return\n}\nlet s = x" + "#" * n + "\n"),
+    # A commit's subject that says fix, or a line of its body fixes, then thousands of spaces, read for the issue it
+    # may close by a split of the spaces around the : that may follow, in every way.
+    "fix-then-spaces": (70000, lambda n: "fix" + " " * n + "x", "message"),
+    "fixes-then-spaces": (150000, lambda n: "a change\n\nfixes" + " " * n + "x", "message"),
+    # JavaScript's other definitions split around an optional part, as they read thousands of spaces: after function,
+    # where a * may come; before a name, and after a modifier, where a * may come before it; after a wrapped function's
+    # keyword; and before an object's { on a line of a key and its ? and :. And a long word inside a function's return
+    # type, whose last word was looked for from each of its characters.
+    "function-then-spaces.js": (57000, lambda n: "function f() {\n  return 1;\n}\nfunction" + " " * n + "(\n"),
+    "spaces-then-name.js": (17000, lambda n: "function f() {\n  return 1;\n}\n" + " " * n + "x\n"),
+    "modifier-then-spaces.ts": (28000, lambda n: "class A {\n  static" + " " * n + "x\n}\n"),
+    "wrapped-then-spaces.js": (100000, lambda n: "const a = memo(function" + " " * n + ")\n"),
+    "key-then-spaces.js": (36000, lambda n: "x" + " " * n + "y {\n  a: () => 1,\n}\n"),
+    "type-word.ts": (40000, lambda n: "function f(): {\n  " + "a" * n + ";\n} {\n}\n"),
+    "type-dollars.ts": (8000, lambda n: "function f(): {\n  " + "$" * n + ";\n} {\n}\n"),
+    # A line of thousands of / and [ in JavaScript, each / read for a regular expression to the end of the class its [
+    # opens: none closed, all closed by one ] at the end, and then text after it.
+    "regex-classes.js": (4000, lambda n: "x = " + "/[" * n + "\n"),
+    "regex-classes-closed.js": (4000, lambda n: "x = " + "/[" * n + "]\n"),
+    "regex-class-then-text.js": (4000, lambda n: "x = " + "/[" * n + "]" + "a" * (2 * n) + "\n"),
+    # Thousands of spaces in a C++ conversion operator's name, before which its ( was looked for from each; and around
+    # the & that may come after PHP's function.
+    "operator-then-spaces.cpp": (17000, lambda n: "int f() {\n}\nbool operator x" + " " * n + "y f(;\n"),
+    "function-amp-spaces.php": (60000, lambda n: "<?php\nfunction" + " " * n + "&" + " " * n + "\n"),
+    # A line of Ruby of thousands of operators, each read for a def before it from the line's start; of thousands of
+    # % and of ?, each read for the word before it in a copy of all the line before it.
+    "operators.rb": (9000, lambda n: "x = " + "a + " * n + "\n"),
+    "percents.rb": (4000, lambda n: "x = " + "a % " * n + "\n"),
+    "questions.rb": (6500, lambda n: "x = " + "?" * n + "\n"),
+    # Thousands of spaces in a JavaScript template's hole before a /, each a piece of the line's code, which was joined
+    # again and stripped at each piece read back; thousands of = after a definition's name, before each of which the
+    # line was copied for a ); and a commit's subject of thousands of tags, the rest of it copied after each.
+    "hole-spaces.js": (24000, lambda n: "x = `${" + " " * n + "/a/}`\n"),
+    "equals.kt": (52000, lambda n: "fun f" + " =" * n + "\n"),
+    "tags": (16000, lambda n: "[a]" * n, "message"),
+    # A PHP heredoc's name of thousands of letters past ASCII, bare or quoted, that doesn't end its line, and a git
+    # conflict marker's: each letter could be read two ways, a time that doubled with each.
+    "heredoc-name.php": (150000, lambda n: "<?php\n$x = <<<" + "\u00e9" * n + ";\n"),
+    "nowdoc-name.php": (30000, lambda n: "<?php\n$x = <<<'" + "\u4e2d" * n + " x\n"),
+    "conflict-marker.php": (150000, lambda n: "<?php\n<<<<<<< " + "\u4e2d" * n + " (x)\n"),
+    # A JavaScript line of thousands of \/ after a division, each / read for a regular expression to the line's end:
+    # alone, in a template's hole and after a regular expression.
+    "escaped-slashes.js": (5000, lambda n: "x = y / " + "\\/" * n + "\n"),
+    "escaped-slashes-hole.js": (4000, lambda n: "x = `${y / " + "\\/" * n + "}`\n"),
+    "escaped-slashes-after.js": (5000, lambda n: "if (x) /a/ / " + "\\/" * n + "\n"),
+    # A JavaScript object opened at the end of a line of thousands of characters, then thousands of lines in it: of keys
+    # given functions, of if (x) {}, of keys given values, each of which read its line again for what opened it.
+    "object-keys.js": (20000, lambda n: "x = " + "a" * (n // 2) + " + {\n" + "  k: function () {},\n" * (n // 40) +
+                       "}\n"),
+    "object-ifs.js": (30000, lambda n: "x = " + "a" * (n // 2) + " + {\n" + "  if(x){}\n" * (n // 40) + "}\n"),
+    "object-values.js": (35000, lambda n: "x = " + "a" * (n // 2) + " + {\n" + "  k: 1,\n" * (n // 40) + "}\n"),
+    # Lines of the C family that can be split in every way between a template's <...>, annotations, modifiers and a
+    # type's words: thousands of > after template <, of [a] or [], with no ( (which a line needs to be read for a
+    # definition) or before one (which each of the caps keeps in step).
+    "template-words.cpp": (180000, lambda n: "template<" + "a> " * n + "\n"),
+    "template-types.cpp": (70000, lambda n: "template <typename T> " + "A<B<C>> " * n + "\n"),
+    "attributes.cs": (140000, lambda n: "[a] " * n + "\n"),
+    "brackets-after-quote.cs": (280000, lambda n: "'" + "[]" * n + "\n"),
+    "template-then-if.cpp": (550, lambda n: "template<" + "a> " * n + "if (\n"),
+    "attributes-then-call.cs": (480, lambda n: "[a] " * n + "= f(\n"),
+    "modifiers-then-call.java": (1800, lambda n: "public " * n + "= f(\n"),
+    "brackets-then-call.c": (7000, lambda n: "[]" * n + " = f(\n"),
+    # A Rust file's # before thousands of spaces, line ends or comments, read for an attribute's #[ or #![ by a split of
+    # them around the ! that may come, in every way: in a run of tokens, and first in the file, read for an attribute.
+    "attribute-spaces": (130000, lambda n: {"src/lib.rs": "mod a;\n#" + " " * n, "src/a.rs": ""}, "modules"),
+    "attribute-spaces-first": (130000, lambda n: {"src/lib.rs": "#" + " " * n + "mod a;\n", "src/a.rs": ""}, "modules"),
+    "attribute-lines": (130000, lambda n: {"src/lib.rs": "mod a;\n#" + "\n" * n, "src/a.rs": ""}, "modules"),
+    "attribute-comments": (5500, lambda n: {"src/lib.rs": "mod a;\n#" + "/**/ " * n, "src/a.rs": ""}, "modules"),
+    # A subject of thousands of fix-, a body of thousands of closes- or fixes., each read for an issue's org/repo#12 to
+    # the run's end; and a revert's body of thousands of lines of spaces, each read from every line's start before it.
+    "fix-dashes": (5500, lambda n: "fix-" * n, "message"),
+    "closes-dashes": (6300, lambda n: "a change\n\n" + "closes-" * n, "message"),
+    "fixes-dots": (6600, lambda n: "a change\n\n" + "fixes." * n, "message"),
+    "revert-spaces": (170000, lambda n: "Revert \"a\"\n\n" + " \n" * n + "x", "message"),
+    # A Rust file with no mod whose # or include is followed by thousands of /**/, which the search for an inner cfg or
+    # an include! read as one comment or many, in every way.
+    "head-comments": (50000, lambda n: {"src/lib.rs": "#" + "/**/ " * n + "x\n"}, "modules"),
+    "include-comments": (50000, lambda n: {"src/lib.rs": "include" + "/**/ " * n + "x\n"}, "modules"),
+    # And thousands of comment lines, each holding a # or an include, which the search read on from each to the end of
+    # the comments; as doc comments' hidden lines do, /// #.
+    "comment-hashes": (10000, lambda n: {"src/lib.rs": "// #\n" * n}, "modules"),
+    "comment-includes": (10000, lambda n: {"src/lib.rs": "// include\n" * n}, "modules"),
+    "hidden-doc-lines": (6000, lambda n: {"src/lib.rs": "/// Example:\n" + "/// #\n/// let x = 1;\n" * n}, "modules"),
+    # And thousands of # or include, each before a /* never closed or closed at the end, or a # before a // on a line,
+    # each read on to the end.
+    "head-openers": (20000, lambda n: {"src/lib.rs": "#/*" * n}, "modules"),
+    "closed-head-openers": (20000, lambda n: {"src/lib.rs": "#/*" * n + "*/"}, "modules"),
+    "include-openers": (15000, lambda n: {"src/lib.rs": "include/*" * n}, "modules"),
+    "head-line-comments": (20000, lambda n: {"src/lib.rs": "# //" * n + "\n"}, "modules"),
+    # And a run of # before a comment, which a search for heads that read a # as a space read from each # to the end.
+    "hashes-then-comment": (10000, lambda n: {"src/lib.rs": "#" * n + "/*"}, "modules"),
+    # A C# method's where clause of thousands of spaces before a ;, each read again for the => that may follow; and a
+    # Swift raw string opened by thousands of #, whose escape was made again at each character in it.
+    "where-spaces.cs": (120000, lambda n: "class A {\n  int F() where" + " " * n + "x;\n}\n"),
+    "raw-hashes.swift": (15000, lambda n: "let s = " + "#" * n + '"' + "a" * (2 * n) + '"' + "#" * n + "\n"),
+    # Thousands of Ruby heredocs opened on one line, the first taken off the list of those open as each ends.
+    "heredocs-on-a-line.rb": (30000, lambda n: "x = [" + "<<A, " * n + "]\n" + "A\n" * n, "ruby_skeleton"),
+    # Thousands of PHP heredocs opened, none closed by any line, each looked for its closing line.
+    "unclosed-heredocs.php": (1000, lambda n: "<?php\n" + "$x = <<<A\n" * n),
+    # PHP's <, which opens nothing but before << or ? (<<<, <?php): a million of it in its HTML and in its code, each
+    # read on its own, at a time per character that made the larger take over LIMIT seconds; and runs of an odd number,
+    # each read in pairs from its start, which a reading of a pair at a time took a time that grew with the square of.
+    # (PHP's ? and its placeholders, which grew in step, are held by AgainstPlainLetters.)
+    "less-thans.php": (1000000, lambda n: "<" * n + "\n<?php\n$x = 1 " + "<" * n + ";\n"),
+    "odd-less-thans.php": (400000, lambda n: "<p>" + "<" * (2 * n + 1) + "\n<?php\n$x = 1 " + "<" * (2 * n + 1) +
+                           ";\n"),
+    # A line of tens of thousands of ', a C table of characters and C++'s digit separators, each read for a character
+    # in a copy of the rest of the line.
+    "characters.c": (50000, lambda n: "static const char t[] = {" + "'a'," * n + "};\n"),
+    "digit-separators.cpp": (60000, lambda n: "int x = " + "1'0" * n + ";\n"),
+    # A line of Ruby of tens of thousands of operators' names, after undef or each after def, each read in a copy of
+    # the rest of the line.
+    "undef-operators.rb": (60000, lambda n: "undef " + "+, " * n + "+\n"),
+    "def-operators.rb": (20000, lambda n: "def +; end; " * n + "\n"),
 }
 
 
@@ -449,6 +697,12 @@ if step == "modules":  # Of {path: text}, as if git tracked them all, or that an
         sorted(made[0] if isinstance(made, tuple) else made),
         lambda paths: dict((p, (made[0] if isinstance(made, tuple) else made)[p]) for p in paths),
         made[1] if isinstance(made, tuple) else None)
+elif step == "message":
+    import heatmap
+    def read(text):
+        subject, _, body = text.partition("\\n")
+        commits = [("0" * 40, 0, subject, [("a.py", None, 1, 0)], "A <a@example.com>", body, [])]
+        heatmap.fix_summary(commits, heatmap.fix_trace(commits, commits, False), 0.0)
 elif step:
     read = (lambda found: lambda text: found(text.split("\\n")))(getattr(measure, step))
 else:
@@ -471,7 +725,22 @@ print("%.3f %.3f" % (min(small for small, _ in runs), min(large for _, large in 
 """
 
 
+def in_step(small, large):
+    """Whether a case's larger reading took under LIMIT seconds, and under RATIO times its smaller's, counted as a
+    thousandth of a second at least, as the times are printed."""
+    return large < LIMIT and large < RATIO * max(small, 0.001)
+
+
 class Growing(unittest.TestCase):
+
+    def test_a_reading_too_quick_to_time(self):
+        # A smaller reading under half a millisecond prints as 0.000, and counts as one: a larger under RATIO times
+        # that is in step with its size, one over isn't.
+        self.assertTrue(in_step(0.0, 0.023))
+        self.assertFalse(in_step(0.0, 0.025))
+        self.assertTrue(in_step(0.004, 0.09))
+        self.assertFalse(in_step(0.004, 0.1))
+        self.assertFalse(in_step(0.3, 5.1))
 
     def test_files_of_many_definitions(self):
         code = "import sys; sys.path[:0] = [%r, %r]\n" % (support.SCRIPTS, support.HERE) + TIME
@@ -484,10 +753,10 @@ class Growing(unittest.TestCase):
                         self.fail("%s took over %d seconds" % (name, TIMEOUT))
                     self.assertEqual(result.code, 0, result)
                     small, large = (float(t) for t in result.out.split())
-                    if large < LIMIT and large < RATIO * small:
+                    if in_step(small, large):
                         break
                 self.assertLess(large, LIMIT, name)
-                self.assertLess(large, RATIO * small, "%s: %.3f seconds at its size, %.3f at %d times it" % (
+                self.assertTrue(in_step(small, large), "%s: %.3f seconds at its size, %.3f at %d times it" % (
                     name, small, large, SCALE))
 
 
