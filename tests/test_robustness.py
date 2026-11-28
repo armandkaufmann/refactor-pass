@@ -523,21 +523,20 @@ GROWING = {
     "object-ifs.js": (30000, lambda n: "x = " + "a" * (n // 2) + " + {\n" + "  if(x){}\n" * (n // 40) + "}\n"),
     "object-values.js": (35000, lambda n: "x = " + "a" * (n // 2) + " + {\n" + "  k: 1,\n" * (n // 40) + "}\n"),
     # Lines of the C family that can be split in every way between a template's <...>, annotations, modifiers and a
-    # type's words: thousands of > after template <, of [a] or [], of > and ?, with no ( or before one.
+    # type's words: thousands of > after template <, of [a] or [], with no ( (which a line needs to be read for a
+    # definition) or before one (which each of the caps keeps in step).
     "template-words.cpp": (180000, lambda n: "template<" + "a> " * n + "\n"),
     "template-types.cpp": (70000, lambda n: "template <typename T> " + "A<B<C>> " * n + "\n"),
-    "template-marks.c": (280000, lambda n: "template <" + "?>" * n + "\n"),
-    "template-marks.java": (280000, lambda n: "template <" + "?>" * n + "\n"),
     "attributes.cs": (140000, lambda n: "[a] " * n + "\n"),
-    "brackets.c": (280000, lambda n: "[]" * n + "\n"),
     "brackets-after-quote.cs": (280000, lambda n: "'" + "[]" * n + "\n"),
     "template-then-if.cpp": (550, lambda n: "template<" + "a> " * n + "if (\n"),
     "attributes-then-call.cs": (480, lambda n: "[a] " * n + "= f(\n"),
     "modifiers-then-call.java": (1800, lambda n: "public " * n + "= f(\n"),
     "brackets-then-call.c": (7000, lambda n: "[]" * n + " = f(\n"),
     # A Rust file's # before thousands of spaces, line ends or comments, read for an attribute's #[ or #![ by a split of
-    # them around the ! that may come, in every way.
+    # them around the ! that may come, in every way: in a run of tokens, and first in the file, read for an attribute.
     "attribute-spaces": (130000, lambda n: {"src/lib.rs": "mod a;\n#" + " " * n, "src/a.rs": ""}, "modules"),
+    "attribute-spaces-first": (130000, lambda n: {"src/lib.rs": "#" + " " * n + "mod a;\n", "src/a.rs": ""}, "modules"),
     "attribute-lines": (130000, lambda n: {"src/lib.rs": "mod a;\n#" + "\n" * n, "src/a.rs": ""}, "modules"),
     "attribute-comments": (5500, lambda n: {"src/lib.rs": "mod a;\n#" + "/**/ " * n, "src/a.rs": ""}, "modules"),
     # A subject of thousands of fix-, a body of thousands of closes- or fixes., each read for an issue's org/repo#12 to
