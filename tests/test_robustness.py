@@ -645,8 +645,9 @@ print("%.3f %.3f" % (min(small for small, _ in runs), min(large for _, large in 
 
 
 def in_step(small, large):
-    """Whether a case's larger reading took under LIMIT seconds, and under RATIO times its smaller's."""
-    return large < LIMIT and large < RATIO * small
+    """Whether a case's larger reading took under LIMIT seconds, and under RATIO times its smaller's, counted as a
+    thousandth of a second at least, as the times are printed."""
+    return large < LIMIT and large < RATIO * max(small, 0.001)
 
 
 class Growing(unittest.TestCase):
