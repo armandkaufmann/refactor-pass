@@ -337,6 +337,7 @@ class Annotated(unittest.TestCase):
     def test_arguments_on_the_line(self):
         java = "class K {\n  %s void f() {\n    g();\n  }\n}\n"
         cs = "class K {\n  %s void F() {\n    G();\n  }\n}\n"
+        objc = "import Foundation\nclass K: NSObject {\n  %s {\n    print()\n  }\n}\n"
         for name, text, names in (
                 ("K.java", java % "@A()", ["f"]), ("K.java", java % '@SuppressWarnings("x")', ["f"]),
                 ("K.java", java % "@A(@B(1))", ["f"]), ("K.java", java % "@A(@B())", ["f"]),
@@ -359,25 +360,33 @@ class Annotated(unittest.TestCase):
                 ("K.cs", 'class K {\n  [Obsolete("x")]void F() {\n    G();\n  }\n}\n', ["F"]),
                 ("a.swift", "@available(macOS 10.15, *) func f() {\n  g()\n}\nfunc g() {}\n", ["f", "g"]),
                 ("a.swift", "@discardableResult func f() {\n  g()\n}\n", ["f"]),
-                ("a.swift", "@objc  func f() {\n  g()\n}\n", ["f"]),
-                ("a.swift", '@available(*, deprecated, message: "x") @objc func f() {\n  g()\n}\n', ["f"]),
+                ("a.swift", objc % "@objc  func f()", ["f"]),
+                ("a.swift", objc % '@available(*, deprecated, message: "x") @objc func f()', ["f"]),
                 ("a.swift", "struct S: Equatable {\n  @_implements(Equatable, ==(_:_:)) static func eq(_ a: S, "
                             "_ b: S) -> Bool {\n    return true\n  }\n}\n", ["eq"])):
-            with self.subTest(text=text.split("\n")[1 if text.startswith(("class", "struct")) else 0]):
+            line = 2 if text.startswith("import") else 1 if text.startswith(("class", "struct")) else 0
+            with self.subTest(text=text.split("\n")[line]):
                 self.assertEqual([f[0] for f in found(name, text)], names)
 
 
     def test_modifiers(self):
-        # Each of Kotlin's before fun, and each of JavaScript's before a name given a function.
+        # Each of Kotlin's before fun and TypeScript's before a name given a function, where the language takes it.
+        # Kotlin's abstract, external and expect take no body, actual needs an expect and TypeScript's declare no
+        # value: those lines are for the pattern's words alone.
+        kotlin = "class K {\n  %s fun f() {\n    println()\n  }\n}\n"
+        shapes = {"override": "interface B {\n  fun f()\n}\n" + kotlin.replace("K {", "K : B {"),
+                  "operator": kotlin.replace("f()", "invoke()"), "infix": kotlin.replace("f()", "f(x: Int)")}
         for word in ("public private protected internal override open abstract final suspend inline operator infix "
                      "tailrec external actual expect").split():
             with self.subTest(kotlin=word):
-                text = "class K {\n  %s fun f() {\n    g()\n  }\n}\n" % word
-                self.assertEqual([f[0] for f in found("K.kt", text)], ["f"])
+                names = [f[0] for f in found("K.kt", shapes.get(word, kotlin) % word)]
+                self.assertEqual(names, ["invoke" if word == "operator" else "f"])
+        typescript = "class K {\n  %s f = function () {\n    return 1;\n  };\n}\n"
+        shapes = dict.fromkeys(("const", "let", "var"), "%s f = function () {\n  return 1;\n};\n")
+        shapes["override"] = "declare class B {\n  f: () => number;\n}\n" + typescript.replace("K {", "K extends B {")
         for word in "const let var public private protected static readonly declare override accessor".split():
             with self.subTest(typescript=word):
-                text = "class K {\n  %s f = function () {\n    return 1;\n  };\n}\n" % word
-                self.assertEqual([f[0] for f in found("a.ts", text)], ["f"])
+                self.assertEqual([f[0] for f in found("a.ts", shapes.get(word, typescript) % word)], ["f"])
         # And a name of a $, its = with no space after it, or two; a modifier and two spaces, and names that start
         # with a modifier's word.
         for line, name in (("const $f = function () {", "$f"), ("const f =function () {", "f"),
