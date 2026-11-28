@@ -807,7 +807,7 @@ GOES_ON_NEXT = re.compile(r"\s*(?:\|\||&&|\?\?|\?(?!\.)|:|\.(?!\.)|[+-](?![+-])|
 REGEX_AFTER = re.compile(r"(?<![\w$.])(?:return|case|typeof|void|delete|throw|new|await|yield|in|of|do|else)$")
 # A JavaScript regular expression: from / to /, past escapes and the / in a class such as [/] (regex_end). Its
 # characters up to a /, a class's [ or a \ the line ends with; and a class.
-REGEX_RUN = re.compile(r"(?:[^/\\\[]+|\\.)*")  # In runs, as PLAIN; and a class's, past its ], at once.
+REGEX_RUN = re.compile(r"(?:[^/\\\[]+|\\.)*")  # In runs; and a class's, past its ], at once.
 REGEX_CLASS = re.compile(r"\[(?=((?:[^\]\\]+|\\.)*))\1\]")
 # A Python statement that is only a string, as a docstring is: documentation, so not a code line.
 DOCSTRING = re.compile(r"""\s*[rRuUbBfF]{0,2}("{3}|'{3}|"|')""")
@@ -912,14 +912,16 @@ def string_holes(language, quotes, quote, line, at):
 
 # A run of quotes, as opens C#'s raw string; and of #s, as opens Swift's.
 QUOTES, HASHES = re.compile(r'"+'), re.compile(r"#+")
-# Characters that start nothing outside a string or a comment, in any language: not a comment's start (# or
-# /), a quote, a raw string's start ($ @ #, or b c r R u U L at the start of a word) or a regular expression's;
-# and what a raw string can't open just after, a word's character, a $ or an @. In Rust, an @ before a raw string
-# is a macro's token or a binding's (@r"...", as inline snapshots write), so the string opens there. In PHP, not a <
-# or a ? either, which can open a heredoc, or open or close PHP's code.
-PLAIN = re.compile(r"(?:[^/#\"'`$@bcrRuUL]+|(?<=[\w$@])[bcrRuUL])+")  # Runs, so a long one isn't read a character at a
-PLAIN_RUST = re.compile(r"(?:[^/#\"'`$@bcrRuUL]+|(?<=[\w$])[bcrRuUL])+")  # time, each kept for going back to.
-PLAIN_PHP = re.compile(r"(?:[^/#\"'`$@bcrRuUL<?]+|(?<=[\w$@])[bcrRuUL])+")
+# What may start something outside a string or a comment, in any language: a comment's start (# or /), a quote, a
+# raw string's start ($ @ #, or b c r R u U L at the start of a word) or a regular expression's; a letter after a
+# word's character, a $ or an @ starts none. In Rust, an @ before a raw string is a macro's token or a binding's
+# (@r"...", as inline snapshots write), so the string opens there. In PHP, a < or a ? too, which can open a heredoc,
+# or open or close PHP's code. What comes before it starts nothing and is copied at once. It's searched for, rather
+# than what's before it matched by a repeat, of which Python's re keeps a step for going back to at each choice, a
+# hundred bytes or more: a line of words made one at each b after a letter.
+MAY_START = re.compile(r"[/#\"'`$@bcrRuUL](?<![\w$@][bcrRuUL])")
+MAY_START_RUST = re.compile(r"[/#\"'`$@bcrRuUL](?<![\w$][bcrRuUL])")
+MAY_START_PHP = re.compile(r"[/#\"'`$@bcrRuUL<?](?<![\w$@][bcrRuUL])")
 GLUED, GLUED_RUST = re.compile(r"[\w$@]"), re.compile(r"[\w$]")
 # PHP's heredoc and nowdoc: <<<ID, <<<"ID" or <<<'ID' at the end of a line, whose text is the lines after it up to
 # the first that starts with ID, after any spaces or tabs and before no character a name can hold, as PHP 7.3 and
@@ -992,8 +994,8 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
     templates = []
     holes = None  # In a string with holes: what opens one (string_holes).
     opens_raw = RAW_STRING.get(language)
-    plain_text, glued = (PLAIN_RUST, GLUED_RUST) if language == "Rust" else \
-        (PLAIN_PHP, GLUED) if language == "PHP" else (PLAIN, GLUED)
+    may_start, glued = (MAY_START_RUST, GLUED_RUST) if language == "Rust" else \
+        (MAY_START_PHP, GLUED) if language == "PHP" else (MAY_START, GLUED)
     starts = {}  # PHP's lines by the name each starts with, for php_heredoc.
     in_php = False  # In PHP's code, which a file starts outside of, not in HTML around it.
     for n, line in enumerate(lines):
@@ -1007,10 +1009,13 @@ def skeleton(lines, comments, quotes, attributes=False, language=None):
             code.append("s" * (closing.end() - 1) + '"')
             i, state, holes = closing.end(), None, None
         while i < len(line):
-            plain = plain_text.match(line, i) if state is None and raw is None and not templates else None
-            if plain:  # Characters that start nothing, copied at once.
-                code.append(plain.group())
-                i = plain.end()
+            plain = i  # Where the characters that start nothing, from i, end.
+            if state is None and raw is None and not templates:
+                next_start = may_start.search(line, i)
+                plain = next_start.start() if next_start else len(line)
+            if plain > i:  # They're copied at once.
+                code.append(line[i:plain])
+                i = plain
             elif holes == "{" and (line.startswith("{{", i) or line.startswith("}}", i)):
                 code.append("ss")  # C#'s brace written twice is a brace.
                 i += 2
