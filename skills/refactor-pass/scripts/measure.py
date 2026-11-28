@@ -353,9 +353,10 @@ JS_METHOD = re.compile(r"^\s*(?:(?:public|private|protected|static|async|readonl
 # throw() do; and in an object literal when no space comes before its bracket, unlike a statement's.
 JS_ANY_METHOD = re.compile(r"^\s*(?:(?:public|private|protected|static|async|readonly|override|abstract|get|set|"
                            r"declare|accessor)\s+)*(?:\*\s*)?([\w$]+)\??\s*(?=[(<])")
-# A name given a value: a variable or a class's property, typed or not; or an object literal's key.
+# A name given a value: a variable or a class's property, typed or not; or an object literal's key. Its type's
+# characters up to an = or an arrow's are matched at once, not each a choice that Python's re keeps a step of.
 JS_ASSIGNED = re.compile(r"^\s*(?:export\s+)?(?:(?:const|let|var|public|private|protected|static|readonly|declare|"
-                         r"override|accessor)\s+)*(#?[\w$]+)\s*(?:!\s*)?(?::(?:[^=]|=>)+)?=(?![=>])\s*")
+                         r"override|accessor)\s+)*(#?[\w$]+)\s*(?:!\s*)?(?::(?=[^=]|=>)[^=]*(?:=>[^=]*)*)?=(?![=>])\s*")
 JS_KEY = re.compile(r"^\s*([\w$]+|\[[^\]]*\])\s*:\s*")
 # A function given to a member in an assignment, named by the last name (exports, for module.exports = ...);
 # and an anonymous one exported as the default, named default.
