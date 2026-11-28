@@ -418,9 +418,11 @@ COMMENTS = re.compile(r"/\*[^*]*\*+(?:[^/*][^*]*\*+)*/|//[^\n]*")
 # What a file must hold to be read so, each searched for on its own, the word first, so that every search takes time
 # in step with the text: mod, not in a word, then a name and a ; or a comment, or a comment, or a $name (mod$m;
 # too); and an inner cfg, or include!, past spaces and comments in their heads (rust_heads), from each # or include
-# before a ! or a comment.
+# whose head, past spaces, goes on to a comment or to its end: #! then a comment or [, #![ then a comment or cfg; so
+# that a run of #! starts none.
 RUST_READ = re.compile(r"mod(?<![\w$]mod)(?:\s+(?:r#)?\w+\s*[;/]|\s*/|\s*\$)")
-HEADS, SPACES = (re.compile(r"#(?=\s*[!/])"), re.compile(r"include(?=\s*[!/])")), re.compile(r"\s+")
+HEADS = (re.compile(r"#(?=\s*(?:/[/*]|!\s*(?:/[/*]|\[\s*(?:/[/*]|cfg))))"), re.compile(r"include(?=\s*(?:/[/*]|!))"))
+SPACES = re.compile(r"\s+")
 BLOCK_COMMENT = re.compile(r"/\*|\*/")
 KINDS = (None, "comment", "raw", "string", "attribute", "mod", "bracket")
 RUST_NAME = re.compile(r"\s*((?:r#)?[A-Za-z_]\w*)\s*$")
