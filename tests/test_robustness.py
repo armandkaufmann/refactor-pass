@@ -544,6 +544,10 @@ GROWING = {
     # in a copy of the rest of the line.
     "characters.c": (50000, lambda n: "static const char t[] = {" + "'a'," * n + "};\n"),
     "digit-separators.cpp": (60000, lambda n: "int x = " + "1'0" * n + ";\n"),
+    # A line of Ruby of tens of thousands of operators' names, after undef or each after def, each read in a copy of
+    # the rest of the line.
+    "undef-operators.rb": (60000, lambda n: "undef " + "+, " * n + "+\n"),
+    "def-operators.rb": (20000, lambda n: "def +; end; " * n + "\n"),
 }
 
 
