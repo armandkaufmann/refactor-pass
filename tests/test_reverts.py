@@ -178,6 +178,15 @@ class OneCommit(unittest.TestCase):
     def setUp(self):
         self.heatmap = support.load("heatmap")
 
+    def test_gits_line_on_a_line_of_its_own(self):
+        # Past spaces or a tab before it, as a squash merge's body may indent it; not in the middle of a sentence.
+        for body, named in (("  This reverts commit 1234567.\n", ["1234567"]),
+                            ("\tThis reverts commit 1234567.\n", ["1234567"]),
+                            ("As This reverts commit 1234567 did.\n", [])):
+            with self.subTest(body=body):
+                commit = ("0" * 40, 0, 'Revert "x"', [("a.py", None, 1, 0)], "Ann <a@b>", body)
+                self.assertEqual(self.heatmap.reverted(commit), named)
+
     def test_a_revert_without_gits_line_reads_by_its_own_words(self):
         heatmap = self.heatmap
         commits = [("%040d" % n, n, subject, [("a.py", None, 1, 0)], "Ann <a@b>", "") for n, subject in enumerate(

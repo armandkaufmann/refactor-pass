@@ -427,6 +427,17 @@ class Words(unittest.TestCase):
                         "Add a regression test for totals"]:
             self.assertEqual(says(subject), ([], []), subject)
 
+    def test_an_issue_in_another_repo(self):
+        # owner/repo#12, each name of letters, digits, _, . or -, read to 100 characters (a GitHub repo's most; an
+        # owner's is 39): one longer, or a repo's name left out, is no issue's, and Fixes says fix.
+        says = self.heatmap.says
+        for subject, closes in (("Fixes o/r#12", True), ("Fixes o.k/r#12", True), ("Fixes o/r.k-2_x#12", True),
+                                ("Fixes %s/r#12" % ("o" * 100), True), ("Fixes o/%s#12" % ("r" * 100), True),
+                                ("Fixes %s/r#12" % ("o" * 101), False), ("Fixes o/%s#12" % ("r" * 101), False),
+                                ("Fixes o/#12", False)):
+            with self.subTest(subject=subject):
+                self.assertEqual(says(subject), ([], []) if closes else (["fix"], []))
+
     def test_files_that_arent_the_projects_code(self):
         not_code = self.heatmap.not_code
 
