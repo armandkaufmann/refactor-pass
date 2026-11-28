@@ -535,6 +535,11 @@ GROWING = {
     "heredocs-on-a-line.rb": (30000, lambda n: "x = [" + "<<A, " * n + "]\n" + "A\n" * n, "ruby_skeleton"),
     # Thousands of PHP heredocs opened, none closed by any line, each looked for its closing line.
     "unclosed-heredocs.php": (1000, lambda n: "<?php\n" + "$x = <<<A\n" * n),
+    # PHP's ? and <, which open or close nothing but before a > (?>), or before << or ? (<<<, <?php): hundreds of
+    # thousands of placeholders and of ? in its code, and of < in its HTML and in its code, each read on its own, at a
+    # time per character that made the larger take over LIMIT seconds.
+    "question-marks.php": (250000, lambda n: "<?php\n$q = f(" + "?," * n + ");\n$x = 1 " + "?" * n + ";\n"),
+    "less-thans.php": (1000000, lambda n: "<" * n + "\n<?php\n$x = 1 " + "<" * n + ";\n"),
 }
 
 
