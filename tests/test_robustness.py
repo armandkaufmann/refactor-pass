@@ -243,9 +243,10 @@ class Generics(unittest.TestCase):
 # characters and its class's, and a heredoc's text of a run of { that open no hole. And plain words, in C, Rust and
 # PHP's code, whose b, a letter that may start a string's prefix, ended each run of them. And a JavaScript key given a
 # megabyte of values, all of which after its : were read for a type before an =; an annotation's arguments of a
-# megabyte, in Kotlin, Swift, Java and C#; and a Ruby method's name of a megabyte. Each is held under 10 MB, which
-# its reading takes 1 to 3 of, so that a reading of the line's characters one at a time, which keeps one or two
-# pieces of the line for each, 25 MB or so, fails too.
+# megabyte, in Kotlin, Swift, Java and C#; and a Ruby method's name of a megabyte. Each is held under MEMORY, twice
+# the 3 MB its reading takes at most, so that a reading of the line's characters one at a time fails too: one that
+# keeps a piece of the line for each takes 10 MB or more.
+MEMORY = 6 * 1000 * 1000
 LONG_LINES = [("a.c", "template <" + "?>" * 500000 + "\n"), ("a.js", "x = (/" + "a" * 1000000 + "/)\n"),
               ("a.js", "x = (/[" + "a" * 1000000 + "]/)\n"), ("a.php", "<?php\n$t = <<<A\n" + "a{" * 500000 + "\nA;\n"),
               ("a.c", "int x = " + "ab " * 330000 + ";\n"), ("a.rs", "fn f() { let x = " + "ab " * 330000 + "}\n"),
@@ -257,17 +258,19 @@ LONG_LINES = [("a.c", "template <" + "?>" * 500000 + "\n"), ("a.js", "x = (/" + 
               ("a.cs", "class C {\n  [A(" + "a" * 1000000 + ")]\n  void F() {\n    G();\n  }\n}\n"),
               ("a.rb", "def " + "\u00e9" * 1000000 + "\n  1\nend\n")]
 # And words of a letter, then one that may start a string's prefix elsewhere, a line for each such letter in each
-# language's search: one the search took for a start would make each of them a piece of its own.
-LONG_LINES += [(name, before + ("a%s " % letter) * 330000 + after) for letter in "bcrRuUL" for name, before, after in (
+# language's search (b's are above): one the search took for a start would make each of them a piece of its own.
+LONG_LINES += [(name, before + ("a%s " % letter) * 330000 + after) for letter in "crRuUL" for name, before, after in (
     ("a.c", "int x = ", ";\n"), ("a.rs", "fn f() { let x = ", "}\n"), ("a.php", "<?php\n$x = ", ";\n"))]
 # And Rust files read for their test modules: a string of a megabyte, and an attribute's # and [ a megabyte of spaces,
 # or of a comment's, apart; and in a file with no mod, read only if rust_heads finds an inner cfg, a # and its ! a
 # megabyte of spaces apart, and a megabyte of #!, each of which no comment follows, so it starts no head; nor does a
-# # or an include before a *, a #! before one, a #![ before one, or before a word that is not cfg.
+# # or an include before a * or a / that starts no comment, a #! before either, a #![ before either or before a word
+# that is not cfg, or a # before [ and a comment, as no ! comes between.
 LONG_RUST = ['mod a;\nconst S: &str = "' + "a" * 1000000 + '";\n', "mod a;\n#" + " " * 1000000 + "[a]\nfn f() {}\n",
              "mod a;\n#/*" + " " * 1000000 + "*/[a]\nfn f() {}\n", "#" + " " * 1000000 + "![cfg(test)]\nfn f() {}\n",
              "#!" * 512000 + "\n", "#*" * 500000, "#!*" * 333333, "#![*" * 250000, "#![cf" * 200000,
-             "include*" * 400000]
+             "include*" * 400000, "#/" * 500000, "#!/" * 333333, "#![/" * 250000, "include/" * 125000,
+             "#[/*" * 250000]
 
 
 class Memory(unittest.TestCase):
@@ -285,7 +288,7 @@ class Memory(unittest.TestCase):
         for name, text in LONG_LINES:
             with self.subTest(name=name, start=text[:12]):
                 peak = self.peak(lambda: measure.functions(name, text, []))
-                self.assertLess(peak, 10 * 1000 * 1000, "%s: %d MB" % (name, peak // 1000000))
+                self.assertLess(peak, MEMORY, "%s: %.1f MB" % (name, peak / 1e6))
 
     def test_long_rust_files(self):
         scoping = support.load("scoping")
@@ -293,7 +296,7 @@ class Memory(unittest.TestCase):
             with self.subTest(start=text[:12]):
                 files = {"src/lib.rs": text, "src/a.rs": ""}
                 peak = self.peak(lambda: scoping.rust_test_modules(sorted(files), lambda paths: files))
-                self.assertLess(peak, 10 * 1000 * 1000, "%d MB" % (peak // 1000000))
+                self.assertLess(peak, MEMORY, "%.1f MB" % (peak / 1e6))
 
 
 # Lines of a megabyte that a reading slower by a constant factor leaves in step with their size, which no growth case
@@ -609,6 +612,8 @@ GROWING = {
     "closed-head-openers": (20000, lambda n: {"src/lib.rs": "#/*" * n + "*/"}, "modules"),
     "include-openers": (15000, lambda n: {"src/lib.rs": "include/*" * n}, "modules"),
     "head-line-comments": (20000, lambda n: {"src/lib.rs": "# //" * n + "\n"}, "modules"),
+    # And a run of # before a comment, which a search for heads that read a # as a space read from each # to the end.
+    "hashes-then-comment": (10000, lambda n: {"src/lib.rs": "#" * n + "/*"}, "modules"),
     # A C# method's where clause of thousands of spaces before a ;, each read again for the => that may follow; and a
     # Swift raw string opened by thousands of #, whose escape was made again at each character in it.
     "where-spaces.cs": (120000, lambda n: "class A {\n  int F() where" + " " * n + "x;\n}\n"),
