@@ -404,7 +404,7 @@ def cfg_needs_test(attribute):
 # What a Rust file's text is read in, past its comments and strings: a comment's or a string's opening, an
 # attribute's (#[ or #![, past spaces and comments between), the word mod, a brace, a bracket or a ;; and anything
 # else at once, in runs. A string is one of Rust's literals, whatever its prefix (b, c, r and br, cr; r#name is a
-# name), and one never closed runs to the end. A file that holds none of RUST_READ isn't read so.
+# name), and one never closed runs to the end. A file that holds no RUST_READ, nor rust_heads, isn't read so.
 GAP = r"""(?:\s|/\*(?:[^*]|\*(?!/))*\*/|//[^\n]*\n)*"""  # Spaces and comments, a block comment unnested.
 RUST_TOKEN = re.compile(r"""(//[^\n]*|/\*)|([bc]?r\#*")|([bc]?"(?:\\.|[^"\\])*(?:"|\\?\Z)|"""
                         r"""b?'(?:\\(?:x[0-9a-fA-F]{2}|u\{[0-9a-fA-F]{1,6}\}|.)|[^'\\\n])')|(\#%s(?:!%s)?\[)|"""
@@ -414,12 +414,10 @@ RUST_TOKEN = re.compile(r"""(//[^\n]*|/\*)|([bc]?r\#*")|([bc]?"(?:\\.|[^"\\])*(?
 COMMENTS = re.compile(r"/\*(?:[^*]|\*(?!/))*\*/|//[^\n]*")
 # What a file must hold to be read so, each searched for on its own, the word first, so that every search takes time
 # in step with the text: mod, not in a word, then a name and a ; or a comment, or a comment, or a $name (mod$m;
-# too); an inner cfg, and include!, past comments in their heads (but nested ones), each to its first */, as GAP reads
-# them, so a run of them is read one way only.
-HEAD_GAP = GAP
-RUST_READ = (re.compile(r"mod(?<![\w$]mod)(?:\s+(?:r#)?\w+\s*[;/]|\s*/|\s*\$)"),
-             re.compile(r"#%s!%s\[%scfg" % (HEAD_GAP, HEAD_GAP, HEAD_GAP), re.S),
-             re.compile(r"include%s!" % HEAD_GAP, re.S))
+# too); and an inner cfg, or include!, past spaces and comments in their heads (rust_heads), from each # or include
+# before a ! or a comment.
+RUST_READ = re.compile(r"mod(?<![\w$]mod)(?:\s+(?:r#)?\w+\s*[;/]|\s*/|\s*\$)")
+HEADS, SPACES = (re.compile(r"#(?=\s*[!/])"), re.compile(r"include(?=\s*[!/])")), re.compile(r"\s+")
 BLOCK_COMMENT = re.compile(r"/\*|\*/")
 KINDS = (None, "comment", "raw", "string", "attribute", "mod", "bracket")
 RUST_NAME = re.compile(r"\s*((?:r#)?[A-Za-z_]\w*)\s*$")
@@ -434,6 +432,47 @@ BRANCH_BEFORE = re.compile(r"(?<![\w$])if\s*$|\$\(\s*$")  # cfg_if! { if #[cfg(t
 ENV_BEFORE = re.compile(r"\benv\s*!\s*\(\s*$")  # Before a string that names a variable, not a path.
 ATOM = re.compile(r"\$?(?:r#)?[A-Za-z_]\w*|\w+|[^\s\w]")  # In a run: a word, a $name, a number or a mark.
 WORD, WORDS = re.compile(r"\w"), re.compile(r"[A-Za-z_]\w*")
+
+
+def rust_heads(text):
+    """Whether a Rust file's text holds an inner cfg (#![cfg) or an include!, past spaces and comments between their
+    parts, as GAP reads them (a block comment unnested, to its first */). Where the spaces and comments from a place
+    end is kept for each place on the way, and where a comment ends is looked up in a list of where lines end and
+    comments close, made once: a run of comment lines that each hold a #, or of /* never closed, is read once, not on
+    from each # in it to its end."""
+    ends, marks = {}, {}
+
+    def gap(i):  # Where the spaces and comments from text[i] end.
+        passed = []
+        while i not in ends:
+            passed.append(i)
+            kind = text[i:i + 2]
+            if kind in ("//", "/*"):
+                if kind not in marks:
+                    marks[kind] = [found.start() for found in re.finditer(r"\n" if kind == "//" else r"\*/", text)]
+                k = bisect.bisect_left(marks[kind], i + 2)
+                after = marks[kind][k] + (1 if kind == "//" else 2) if k < len(marks[kind]) else i  # Or never closed.
+            else:
+                spaces = SPACES.match(text, i)
+                after = spaces.end() if spaces else i
+            if after == i:
+                ends[i] = i
+            i = after
+        for k in passed:
+            ends[k] = ends[i]
+        return ends[i]
+
+    for head in HEADS:
+        for found in head.finditer(text):
+            at = gap(found.end())
+            if not text.startswith("!", at):
+                continue
+            if found.group() == "include":
+                return True
+            at = gap(at + 1)
+            if text.startswith("[", at) and text.startswith("cfg", gap(at + 1)):
+                return True
+    return False
 
 
 def rust_tokens(text):
@@ -918,7 +957,7 @@ def macro_packages(texts, paths, package, shared=(), lands=None, compiled=None):
     found, reach, pathed = set(), set(), []
     for path in paths:  # The files that may hold one, by a mod declaration (RUST_READ's), or one that reaches others.
         text = texts[path]
-        if (path in shared or "macro_export" in text or RUST_READ[0].search(text)) and \
+        if (path in shared or "macro_export" in text or RUST_READ.search(text)) and \
                 ("macro_rules" in text or macro_head(text)):
             here, outermost, trees = defs(path), [], {}
             for k, definition in enumerate(here):
@@ -1030,7 +1069,8 @@ def rust_test_modules(tracked, read, links=None):
             linked.add(link)
             texts[link] = texts[target]
     known |= linked
-    parsed = dict((p, rust_modules(t)) for p, t in texts.items() if p in known and any(r.search(t) for r in RUST_READ))
+    parsed = dict((p, rust_modules(t)) for p, t in texts.items()
+                  if p in known and (RUST_READ.search(t) or rust_heads(t)))
     # The folders the tracked files are in, numbered, each with its parent and its files and folders by name. A folder
     # elsewhere is one of these and a count of the folders under it that hold none: (number, count). Numbered in
     # order, each folder's own are below it, up to the last of them (last); and each has its name (names).
