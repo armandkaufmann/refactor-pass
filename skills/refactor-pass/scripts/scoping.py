@@ -404,14 +404,17 @@ def cfg_needs_test(attribute):
 # What a Rust file's text is read in, past its comments and strings: a comment's or a string's opening, an
 # attribute's (#[ or #![, past spaces and comments between), the word mod, a brace, a bracket or a ;; and anything
 # else at once, in runs. A string is one of Rust's literals, whatever its prefix (b, c, r and br, cr; r#name is a
-# name), and one never closed runs to the end. A file that holds no RUST_READ, nor rust_heads, isn't read so.
-GAP = r"""(?:\s|/\*(?:[^*]|\*(?!/))*\*/|//[^\n]*\n)*"""  # Spaces and comments, a block comment unnested.
-RUST_TOKEN = re.compile(r"""(//[^\n]*|/\*)|([bc]?r\#*")|([bc]?"(?:\\.|[^"\\])*(?:"|\\?\Z)|"""
+# name), and one never closed runs to the end. A file that holds no RUST_READ, nor rust_heads, isn't read so. Spaces,
+# a comment's text and a string's are matched in runs, up to a * or an escape, not each character a choice that
+# Python's re keeps a step of for going back to, a hundred bytes or more.
+COMMENT = r"(?:/\*[^*]*\*+(?:[^/*][^*]*\*+)*/|//[^\n]*\n)"  # A block comment, unnested, to its first */; or a line's.
+GAP = r"\s*(?:%s\s*)*" % COMMENT  # Spaces and comments.
+RUST_TOKEN = re.compile(r"""(//[^\n]*|/\*)|([bc]?r\#*")|([bc]?"[^"\\]*(?:\\.[^"\\]*)*(?:"|\\?\Z)|"""
                         r"""b?'(?:\\(?:x[0-9a-fA-F]{2}|u\{[0-9a-fA-F]{1,6}\}|.)|[^'\\\n])')|(\#%s(?:!%s)?\[)|"""
                         r"""(\bmod\b)|([{}\[\];])|"""
                         r"""(?:[^/"'\#{}\[\];\w]+|(?!\bmod\b)(?![bc]?r\#*")(?![bc]?")(?!b?')\w+|/(?![/*])|"""
                         r"""'(?![^'\\\n]'|\\)|\#(?!%s(?:!%s)?\[))+|\w+|.""" % (GAP, GAP, GAP, GAP), re.S)
-COMMENTS = re.compile(r"/\*(?:[^*]|\*(?!/))*\*/|//[^\n]*")
+COMMENTS = re.compile(r"/\*[^*]*\*+(?:[^/*][^*]*\*+)*/|//[^\n]*")
 # What a file must hold to be read so, each searched for on its own, the word first, so that every search takes time
 # in step with the text: mod, not in a word, then a name and a ; or a comment, or a comment, or a $name (mod$m;
 # too); and an inner cfg, or include!, past spaces and comments in their heads (rust_heads), from each # or include
