@@ -28,22 +28,33 @@ SEARCHES = (re.compile(r"#%s!%s\[%scfg" % (GAP, GAP, GAP), re.S), re.compile(r"i
 # Texts, and whether each holds one. Spaces of each kind and comments of each kind between the parts, one or more,
 # an odd number and an even one; a block comment whose */ starts at the opening's *, or holds a * or a !; a comment
 # of each kind in one head; a place in a comment that two searches reach; and what is no head: an outer attribute, a
-# word after the !, a cfg that isn't the bracket's, a comment never closed, a ! or a [ missing.
+# word after the !, a cfg that isn't the bracket's, a comment never closed, a ! or a [ missing. Each head is one
+# rustc reads, with its spaces past ASCII too (U+0085, U+2028), and each include! one with its ;.
 HEADS = [
-    ("#![cfg(test)]", True), ("# ![cfg(test)]", True), ("#\t![cfg(test)]", True), ("#\x0c![cfg(test)]", True),
-    ("#\n![cfg(test)]", True), ("#\r\n![cfg(test)]", True), ("#! [cfg(test)]", True), ("#![ cfg(test)]", True),
-    ("#![cfg (test)]", True), ("#![allow(dead_code)]\n#![cfg(test)]", True), ("#/**/![cfg(test)]", True),
-    ("#/**//**/![cfg(test)]", True), ("#/**//**//**/![cfg(test)]", True), ("#//\n![cfg(test)]", True),
-    ("#//\n//\n![cfg(test)]", True), ("#//\n//\n//\n![cfg(test)]", True), ("#/*/!*/![cfg(test)]", True),
-    ("#/* * */![cfg(test)]", True), ("#/***/![cfg(test)]", True), ("#/* a */ // b\n![cfg(test)]", True),
-    ("#// b\n/* a */![cfg(test)]", True), ("#!/* a */[cfg(test)]", True), ("#![// a\ncfg(test)]", True),
-    ("// #![cfg(test)]", True), ('include!("t.rs")', True), ('include !("t.rs")', True),
-    ('include/**/!("t.rs")', True), ('include//\n!("t.rs")', True), ('include//#/*#//\n/**/ !("t.rs");\n', True),
+    ("#![cfg(test)]", True), ("# ![cfg(test)]", True), ("#  ![cfg(test)]", True), ("#\t![cfg(test)]", True),
+    ("#\x0c![cfg(test)]", True), ("#\n![cfg(test)]", True), ("#\r\n![cfg(test)]", True), ("#\x85![cfg(test)]", True),
+    ("#\u2028![cfg(test)]", True), ("#! [cfg(test)]", True), ("#!  [cfg(test)]", True), ("#!\t[cfg(test)]", True),
+    ("#!\x0c[cfg(test)]", True), ("#!\n[cfg(test)]", True), ("#!\r\n[cfg(test)]", True), ("#!\x85[cfg(test)]", True),
+    ("#![ cfg(test)]", True), ("#![  cfg(test)]", True), ("#![\tcfg(test)]", True), ("#![\ncfg(test)]", True),
+    ("#![\x85cfg(test)]", True), ("#![cfg (test)]", True), ("#![cfg/**/(test)]", True),
+    ("#![allow(dead_code)]\n#![cfg(test)]", True), ("#/**/![cfg(test)]", True), ("#/**//**/![cfg(test)]", True),
+    ("#/**//**//**/![cfg(test)]", True), ("#//\n![cfg(test)]", True), ("#//\n//\n![cfg(test)]", True),
+    ("#//\n//\n//\n![cfg(test)]", True), ("#/*/!*/![cfg(test)]", True), ("#/* * */![cfg(test)]", True),
+    ("#/***/![cfg(test)]", True), ("#/* a */ // b\n![cfg(test)]", True), ("#// b\n/* a */![cfg(test)]", True),
+    ("#!/* a */[cfg(test)]", True), ("#!//\n[cfg(test)]", True), ("#![// a\ncfg(test)]", True),
+    ('include!("t.rs");', True), ('include !("t.rs");', True), ('include  !("t.rs");', True),
+    ('include\t!("t.rs");', True), ('include\n!("t.rs");', True), ('include/**/!("t.rs");', True),
+    ('include//\n!("t.rs");', True), ('include//#/*#//\n/**/ !("t.rs");\n', True),
     ("#[cfg(test)]", False), ("#![allow(x)]", False), ("#!x[cfg(test)]", False), ("#!xcfg(test)", False),
     ("#/**/x[cfg(test)]", False), ("#/* never closed ![cfg(test)]", False), ("#// no line end ![cfg(test)]", False),
     ("#/*/![cfg(test)]", False), ("#! /x[cfg(test)]", False), ("include /x", False), ('include("t.rs")', False),
     ("include/**/x!", False), ("#!" * 8, False), ("#//\n" * 8, False), ("", False), ("#", False), ("include", False),
 ]
+# And texts that hold no inner cfg as rustc reads them, which the searches, and rust_heads, still take for one: a head
+# in a comment, one whose attribute is a word that starts with cfg, and a # after another #, a word or a !. The file is
+# then read for its modules, which finds no inner cfg there. These say what the search may take for a head, not what
+# Rust's rule is: a sharper search would read them otherwise and break no file's answer.
+OVER_HEADS = ["// #![cfg(test)]", "#![cfgc]", "##![cfg(test)]", "a#![cfg(test)]", "!#![cfg(test)]"]
 PIECES = ["#", "!", "[", "cfg", "include", " ", "\t", "\n", "\r\n", "/**/", "/* a */", "/*", "*/", "*", "/", "//x\n",
           "//", "x", "/***/", "/*/", "**/", "!*/"]
 
@@ -52,7 +63,7 @@ class RustHeads(unittest.TestCase):
 
     def test_each_text(self):
         rust_heads = support.load("scoping").rust_heads
-        for text, holds in HEADS:
+        for text, holds in HEADS + [(text, True) for text in OVER_HEADS]:
             with self.subTest(text=text):
                 self.assertEqual(rust_heads(text), holds)
                 self.assertEqual(any(search.search(text) for search in SEARCHES), holds)
@@ -67,19 +78,23 @@ class RustHeads(unittest.TestCase):
 
 
 # Texts, and whether each holds a mod declaration as RUST_READ looks for one: mod, not in a word, then a name and a ; or
-# a comment, or a comment, or a $name, past spaces of any kind; not mod in a word, before an inline module's brace, nor
-# without a name.
+# a comment, or a comment, past spaces of any kind; not mod in a word, before an inline module's brace, nor without a
+# name.
 DECLARES = [("mod a;", True), ("pub mod a;", True), ("mod r#a;", True), ("mod a // c\n;", True),
-            ("mod a /* c */;", True), ("mod/* c */a;", True), ("mod $m;", True), ("mod\ta\t;", True),
-            ("x::mod a;", True), ("mod $", True), ("amod a;", False), ("$mod a;", False), ("mod a {", False),
-            ("modx;", False), ("mod", False), ("mod a", False), ("mod  a;", True), ("god a;", False), ("mod ;", False)]
+            ("mod a /* c */;", True), ("mod/* c */a;", True), ("mod\ta\t;", True), ("mod  a;", True),
+            ("amod a;", False), ("$mod a;", False), ("mod a {", False), ("modx;", False), ("mod", False),
+            ("mod a", False), ("god a;", False), ("mod ;", False)]
+# And texts the search takes for a declaration though none declares a file there: mod after a path, and mod before a
+# macro's $name, or a $ alone, as in a macro_rules! body whose expansion may declare one. The reading after the search
+# decides what each is; these say what the search may take, not Rust's rule.
+OVER_DECLARES = ["x::mod a;", "mod $m;", "mod $"]
 
 
 class RustRead(unittest.TestCase):
 
     def test_each_text(self):
         read = support.load("scoping").RUST_READ
-        for text, declares in DECLARES:
+        for text, declares in DECLARES + [(text, True) for text in OVER_DECLARES]:
             with self.subTest(text=text):
                 self.assertEqual(bool(read.search(text)), declares)
 
@@ -111,8 +126,9 @@ class WhatTheTokensMake(unittest.TestCase):
 
     def test_outer_attributes_whose_comments_hold_a_bang(self):
         # The comments taken out of the head before its ! is looked for, each whole: one holding a /, a *, a run of
-        # them or a !, at its start or its end, and two in a row.
-        for head in ("#/* a / ! */", "#/* ! */", "#/** ! **/", "#/* * / ! */", "#/*!*/", "#/* a ** ! */",
+        # them or a !, at its start or its end, and two in a row; none a doc comment (/** or /*!), which rustc reads
+        # as a token, not a space.
+        for head in ("#/* a / ! */", "#/* ! */", "#/* ! **/", "#/* * / ! */", "#/* a ** ! */", "#/* a * b ** ! */",
                      "#/* a ***/ /* ! */", "#/*/ ! */", "#// a!\n/* ! */", "#/* ! **b*/"):
             with self.subTest(head=head):
                 files = {"src/lib.rs": head + "[cfg(test)]\nmod t;\n", "src/t.rs": "pub fn f() {}\n"}

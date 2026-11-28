@@ -292,7 +292,7 @@ class NothingAboutTheSuite(unittest.TestCase):
                     size = len(f.read().replace(b"\r\n", b"\n"))
                 total += size
                 biggest = max(biggest, (size, name))
-        self.assertLess(total, 844900)
+        self.assertLess(total, 846300)
         self.assertLess(biggest[0], 60 * 1024, biggest[1])
 
     def test_a_copy_by_hand_takes_only_the_skill(self):
