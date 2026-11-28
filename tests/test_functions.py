@@ -329,6 +329,30 @@ class TypeArguments(unittest.TestCase):
                 self.assertEqual(self.names(name, text), [want])
 
 
+class Annotated(unittest.TestCase):
+    """A definition after an annotation or an attribute with arguments, on the definition's own line: brackets
+    empty, nested, after a nested one and two of them; C#'s list of attributes; Swift's @available and an argument
+    that holds a bracket's pair. Each language's way to write them."""
+
+    def test_arguments_on_the_line(self):
+        java = "class K {\n  %s void f() {\n    g();\n  }\n}\n"
+        cs = "class K {\n  %s void F() {\n    G();\n  }\n}\n"
+        for name, text, names in (
+                ("K.java", java % "@A()", ["f"]), ("K.java", java % '@SuppressWarnings("x")', ["f"]),
+                ("K.java", java % "@A(@B(1))", ["f"]), ("K.java", java % "@A(@B())", ["f"]),
+                ("K.java", java % "@A(b = @B(1), c = 2)", ["f"]),
+                ("K.java", java % "@A(b = @B(1), c = @C(2))", ["f"]),
+                ("K.kt", 'class K {\n  @Suppress("x") fun f() {\n    g()\n  }\n}\n', ["f"]),
+                ("K.kt", "class K {\n  @A(B(1)) fun f() {\n    g()\n  }\n}\n", ["f"]),
+                ("K.cs", cs % "[A(1)]", ["F"]), ("K.cs", cs % "[A(typeof(int))]", ["F"]),
+                ("K.cs", cs % "[A(1), B]", ["F"]),
+                ("a.swift", "@available(macOS 10.15, *) func f() {\n  g()\n}\nfunc g() {}\n", ["f", "g"]),
+                ("a.swift", "struct S: Equatable {\n  @_implements(Equatable, ==(_:_:)) static func eq(_ a: S, "
+                            "_ b: S) -> Bool {\n    return true\n  }\n}\n", ["eq"])):
+            with self.subTest(text=text.split("\n")[1 if text.startswith(("class", "struct")) else 0]):
+                self.assertEqual([f[0] for f in found(name, text)], names)
+
+
 class Caps(unittest.TestCase):
     """How far a definition's line is read, where a line that isn't one can be split between its parts in every way:
     in the C family, sixteen annotations, a template's first seventeen > and eight modifiers, one more of which loses
@@ -605,6 +629,48 @@ class Strings(unittest.TestCase):
                "  return 1;\n}\n"
         self.assertEqual([f[:3] for f in found("a.js", text)], [["a", 1, 5], ["b", 6, 8]])
 
+    def test_cpp_raw_strings_with_a_prefix(self):
+        # R"(...)", and u8R, uR, UR and LR: a quote and a brace in it are the string's.
+        for prefix in ("", "u8", "u", "U", "L"):
+            with self.subTest(prefix=prefix):
+                text = 'int f() {\n  auto s = %sR"("})";\n  return 1;\n}\nint g() {\n  return 2;\n}\n' % prefix
+                self.assertEqual([f[:3] for f in found("a.cpp", text)], [["f", 1, 4], ["g", 5, 7]])
+
+    def test_a_php_shell_string(self):
+        # `...` is a string, whose brace is its own.
+        text = "<?php\nfunction a() {\n    $x = `echo }`;\n    return 1;\n}\nfunction b() {\n    return 2;\n}\n"
+        self.assertEqual([f[:3] for f in found("a.php", text)], [["a", 2, 5], ["b", 6, 8]])
+
+    def test_ruby_names_past_ascii(self):
+        # After the first letter too, from U+0080 to past the BMP.
+        for name in ("a\u2764", "a\x80b", "a\U0001f600"):
+            with self.subTest(name=name):
+                text = "def %s\n  1\nend\n\ndef g\n  2\nend\n" % name
+                self.assertEqual([f[:3] for f in found("a.rb", text)], [[name, 1, 3], ["g", 5, 7]])
+
+    def test_ruby_operator_methods(self):
+        # Their names read where they end, so what follows is read as code: a default with a brace in a string, a
+        # comment holding a quote and a brace, a body on the name's line.
+        for line, last in (('def +(o = "}")', 4), ('def +(o="}")', 4), ('def +# "}', 4), ("def +(o)", 4),
+                           ('def +(o); "#"; end', 2), ("def -@; [1].map { |x| x }; end", 2)):
+            with self.subTest(line=line):
+                body = "" if last == 2 else "\n    1\n  end"
+                text = "class A\n  %s%s\n\n  def g\n    1\n  end\nend\n" % (line, body)
+                name = line.split()[1].split("(")[0].split(";")[0].split("#")[0]
+                self.assertEqual([f[:3] for f in found("a.rb", text)], [[name, 2, last], ["g", last + 2, last + 4]])
+
+    def test_typescript_functions_typed_as_functions(self):
+        # A parameter typed as a function and given one as its default, its type with an arrow or two; and a class's
+        # property so typed.
+        for text, functions in (
+                ("function g(\n  f: () => void = function () {\n    return 1;\n  },\n) {\n  return 2;\n}\n",
+                 [["g", 1, 7], ["f", 2, 4]]),
+                ("function g(\n  f: (h: () => void) => void = function () {\n    return 1;\n  },\n) {\n"
+                 "  return 2;\n}\n", [["g", 1, 7], ["f", 2, 4]]),
+                ("class K {\n  f: (h: () => void) => void = function () {\n    return 1;\n  };\n}\n", [["f", 2, 4]])):
+            with self.subTest(text=text):
+                self.assertEqual([f[:3] for f in found("a.ts", text)], functions)
+
     def test_rust_raw_strings_after_an_at(self):
         # An @ before a raw string is a macro's token or a binding's, as inline snapshots write: @r#"..."#, @r"...".
         for string in ('@r#"say("(")"#', '@r"C:\\"', '@br"(\\"'):
@@ -652,6 +718,12 @@ class Heredocs(unittest.TestCase):
                 text = "<?php\nfunction a() {\n    $t = 1 %sEOT\n}\nEOT;\n    return $t;\n}\nfunction b() {\n" \
                        "    return 1;\n}\n" % ("<" * run)
                 self.assertEqual([f[:3] for f in found("a.php", text)], [["a", 2, last], ["b", 8, 10]])
+        # In HTML, a run of < before ?php: its last opens PHP's code, whatever the run's length.
+        for run in (1, 2, 3, 4, 5):
+            with self.subTest(html_run=run):
+                text = "<p>%s?php\nfunction a() {\n    $t = <<<EOT\n}\nEOT;\n    return 1;\n}\nfunction b() {\n" \
+                       "    return 2;\n}\n" % ("<" * run)
+                self.assertEqual([f[:3] for f in found("a.php", text)], [["a", 2, 7], ["b", 8, 10]])
 
     def test_only_in_phps_code(self):
         # Not in HTML, where a line can end with <<<Name: before <?php, or after a ?> in code or ending a line
