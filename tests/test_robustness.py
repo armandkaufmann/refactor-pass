@@ -247,21 +247,36 @@ LONG_LINES = [("a.c", "template <" + "?>" * 500000 + "\n"), ("a.js", "x = (/" + 
               ("a.c", "int x = " + "ab " * 330000 + ";\n"), ("a.rs", "fn f() { let x = " + "ab " * 330000 + "}\n"),
               ("a.php", "<?php\n$x = " + "ab " * 330000 + ";\n"),
               ("a.js", "x = {\n  data: [" + "1," * 500000 + "]\n}\n")]
+# And Rust files read for their test modules: a string of a megabyte, and an attribute's # and [ a megabyte of spaces,
+# or of a comment's, apart.
+LONG_RUST = ['mod a;\nconst S: &str = "' + "a" * 1000000 + '";\n', "mod a;\n#" + " " * 1000000 + "[a]\nfn f() {}\n",
+             "mod a;\n#/*" + " " * 1000000 + "*/[a]\nfn f() {}\n"]
 
 
 class Memory(unittest.TestCase):
+
+    def peak(self, read):
+        tracemalloc.start()
+        try:
+            read()
+            return tracemalloc.get_traced_memory()[1]
+        finally:
+            tracemalloc.stop()
 
     def test_long_lines(self):
         measure = support.load("measure")
         for name, text in LONG_LINES:
             with self.subTest(name=name, start=text[:12]):
-                tracemalloc.start()
-                try:
-                    measure.functions(name, text, [])
-                    peak = tracemalloc.get_traced_memory()[1]
-                finally:
-                    tracemalloc.stop()
+                peak = self.peak(lambda: measure.functions(name, text, []))
                 self.assertLess(peak, 30 * 1000 * 1000, "%s: %d MB" % (name, peak // 1000000))
+
+    def test_long_rust_files(self):
+        scoping = support.load("scoping")
+        for text in LONG_RUST:
+            with self.subTest(start=text[:12]):
+                files = {"src/lib.rs": text, "src/a.rs": ""}
+                peak = self.peak(lambda: scoping.rust_test_modules(sorted(files), lambda paths: files))
+                self.assertLess(peak, 30 * 1000 * 1000, "%d MB" % (peak // 1000000))
 
 
 # Files whose reading once took a time that grew with the square of their size, or faster. Each is made at a size
