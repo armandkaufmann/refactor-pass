@@ -28,6 +28,10 @@ CASES = {
                              "function b() {\n    return 2;\n}\n"),
     "comment in html": ("a.php", "<?php\nfunction a() {\n    ?>\n    <p>#1 <?php $t = <<<EOT\n}\nEOT;\n"
                                  "    return $t;\n}\nfunction b() {\n    return 2;\n}\n"),
+    "block comment in html": ("a.php", "<?php\nfunction a() {\n    ?>\n    <p>/* not a comment</p>\n    <?php\n"
+                                       "    return 1;\n}\nfunction b() {\n    return 2;\n}\n"),
+    "line comment in html": ("a.php", "<?php\nfunction a() {\n    ?>\n    <p>#1</p>\n    <?php $t = <<<EOT\n}\nEOT;\n"
+                                      "    return $t;\n}\nfunction b() {\n    return 2;\n}\n"),
     "regex after bracket": ("a.js", "function f(s) {\n  if (ok(s)) /}/.test(s)\n  return 1\n}\n"
                                     "function g() {\n  return 2\n}\n"),
     "misindented": ("a.rb", "class App\n  def call(env)\n    raise 'bzzzt' if @called > 0\n  @called += 1\n"
@@ -94,6 +98,15 @@ class KnownLimits(unittest.TestCase):
         self.assertEqual(spans("comment in html"), [["a", 2, 8, 7], ["b", 9, 11, 3]])
 
     @unittest.expectedFailure
+    def test_a_block_comments_start_in_a_php_files_html(self):
+        # A /* in the HTML hides the <?php on a later line, as a quote does.
+        self.assertEqual(spans("block comment in html"), [["a", 2, 7, 6], ["b", 8, 10, 3]])
+
+    def test_a_line_comments_start_in_a_php_files_html_hides_no_later_line(self):
+        # A # in the HTML ends with its line: the <?php on the next is read, and the heredoc after it.
+        self.assertEqual(spans("line comment in html"), [["a", 2, 9, 8], ["b", 10, 12, 3]])
+
+    @unittest.expectedFailure
     def test_a_regular_expression_after_a_closing_bracket(self):
         self.assertEqual(spans("regex after bracket"), [["f", 1, 4, 4], ["g", 5, 7, 3]])
 
@@ -146,7 +159,8 @@ class KnownLimits(unittest.TestCase):
                       "a brace or a quote in a JavaScript regular expression", "follows a closing bracket or a name",
                       "a PHP file's text outside <?php ... ?> is read as code",
                       "a quote, a brace or a comment's start (#, //, /*) in its HTML",
-                      "a quote or a comment's start there hides the code after a <?php that follows it",
+                      "a quote or a /* there hides a <?php after it, on its line or a later one",
+                      "and a # or a // the code after a <?php on its own line",
                       "an arrow function that returns JSX with no brackets around it ends at its first line",
                       "a line indented less than its body ends it there",
                       "only the last branch is read",
