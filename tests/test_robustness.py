@@ -239,9 +239,12 @@ class Generics(unittest.TestCase):
 
 # Lines of a megabyte that a pattern read a character at a time, each a choice in a repeat that Python's re keeps a
 # step of for going back to, a hundred bytes or more per character: plain characters, a regular expression's
-# characters and its class's, and a heredoc's text of a run of { that open no hole.
+# characters and its class's, and a heredoc's text of a run of { that open no hole. And plain words, in C, Rust and
+# PHP's code, whose b, a letter that may start a string's prefix, ended each run of them.
 LONG_LINES = [("a.c", "template <" + "?>" * 500000 + "\n"), ("a.js", "x = (/" + "a" * 1000000 + "/)\n"),
-              ("a.js", "x = (/[" + "a" * 1000000 + "]/)\n"), ("a.php", "<?php\n$t = <<<A\n" + "a{" * 500000 + "\nA;\n")]
+              ("a.js", "x = (/[" + "a" * 1000000 + "]/)\n"), ("a.php", "<?php\n$t = <<<A\n" + "a{" * 500000 + "\nA;\n"),
+              ("a.c", "int x = " + "ab " * 330000 + ";\n"), ("a.rs", "fn f() { let x = " + "ab " * 330000 + "}\n"),
+              ("a.php", "<?php\n$x = " + "ab " * 330000 + ";\n")]
 
 
 class Memory(unittest.TestCase):
